@@ -157,7 +157,7 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] `--normalize`: peak-normalize using library primitive
   - [x] `--dc-block`: remove DC offset using `design.Highpass` biquad filter (20 Hz cutoff)
   - [x] `--fade-in-ms` / `--fade-out-ms`: linear amplitude ramp
-  - [ ] Apply DSP chain after WAV decode, before WAV encode/write (wired in Phase 6)
+  - [x] Apply DSP chain after WAV decode, before WAV encode/write (wired in Phase 6)
 
 - [x] Task 5.3: **Unit tests for audio package**
   - [x] Test WAV decode → validate format with a fixture WAV
@@ -168,58 +168,58 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
 
 ## Phase 6 — `synth` CLI command (end-to-end)
 
-- [ ] Task 6.1: **Wire up `pockettts synth`**
-  - [ ] Accept `--text` flag or read from stdin when flag is absent
-  - [ ] Accept `--voice` flag (resolved via VoiceManager from Phase 2)
-  - [ ] Accept `--out` flag (`-` for stdout, default `out.wav`)
-  - [ ] Pass extra `pocket-tts` flags through via `--tts-arg key=value` (forwarded verbatim)
+- [x] Task 6.1: **Wire up `pockettts synth`**
+  - [x] Accept `--text` flag or read from stdin when flag is absent
+  - [x] Accept `--voice` flag (resolved via VoiceManager from Phase 2)
+  - [x] Accept `--out` flag (`-` for stdout, default `out.wav`)
+  - [x] Pass extra `pocket-tts` flags through via `--tts-arg key=value` (forwarded verbatim)
 
-- [ ] Task 6.2: **Handle chunked synthesis**
-  - [ ] If `--chunk` is set, split text via `ChunkBySentence` from Phase 4
-  - [ ] Run one subprocess call per chunk sequentially
-  - [ ] Concatenate resulting PCM buffers into a single `AudioBuffer`
+- [x] Task 6.2: **Handle chunked synthesis**
+  - [x] If `--chunk` is set, split text via `ChunkBySentence` from Phase 4
+  - [x] Run one subprocess call per chunk sequentially
+  - [x] Concatenate resulting PCM buffers into a single `AudioBuffer`
 
-- [ ] Task 6.3: **Apply DSP chain and write output**
-  - [ ] Run configured DSP steps (Phase 5) on the merged PCM buffer
-  - [ ] Write WAV to file or stdout
+- [x] Task 6.3: **Apply DSP chain and write output**
+  - [x] Run configured DSP steps (Phase 5) on the merged PCM buffer
+  - [x] Write WAV to file or stdout
 
-- [ ] Task 6.4: **Unit tests for `synth` command**
-  - [ ] Test stdin fallback: when `--text` is absent, text is read from a mock reader
-  - [ ] Test chunk path: multiple PCM buffers are correctly concatenated
-  - [ ] Test DSP + write pipeline with a mock audio buffer and no subprocess involved
+- [x] Task 6.4: **Unit tests for `synth` command**
+  - [x] Test stdin fallback: when `--text` is absent, text is read from a mock reader
+  - [x] Test chunk path: multiple PCM buffers are correctly concatenated
+  - [x] Test DSP + write pipeline with a mock audio buffer and no subprocess involved
 
 - [ ] Task 6.5: **Integration test for `synth`** (build tag `integration`)
-  - [ ] Skip gracefully if `pocket-tts` binary is not found
-  - [ ] `synth --text “Hello.” --voice <fixture-voice> --out /tmp/out.wav`
-  - [ ] Assert output file has valid RIFF header and non-zero duration
+  - [x] Skip gracefully if `pocket-tts` binary is not found
+  - [x] `synth --text “Hello.” --voice <fixture-voice> --out /tmp/out.wav`
+  - [x] Assert output file has valid RIFF header and non-zero duration
 
 ---
 
 ## Phase 7 — `serve` HTTP command
 
-- [ ] Task 7.1: **Implement HTTP server (`internal/server/server.go`)**
-  - [ ] `GET /health` — returns `{“status”:”ok”,”version”:”<build-version>”}`
-  - [ ] `GET /voices` — returns JSON array from VoiceManager
-  - [ ] `POST /tts` — JSON body `{text, voice, chunk?}`; synthesizes and returns `audio/wav`
+- [x] Task 7.1: **Implement HTTP server (`internal/server/server.go`)**
+  - [x] `GET /health` — returns `{“status”:”ok”,”version”:”<build-version>”}`
+  - [x] `GET /voices` — returns JSON array from VoiceManager
+  - [x] `POST /tts` — JSON body `{text, voice, chunk?}`; synthesizes and returns `audio/wav`
 
-- [ ] Task 7.2: **Subprocess worker pool**
-  - [ ] Configurable concurrency limit via `--workers` (default 2)
-  - [ ] Semaphore-based throttling; excess requests wait with context cancellation
-  - [ ] Each worker runs one `pocket-tts generate` subprocess independently
+- [x] Task 7.2: **Subprocess worker pool**
+  - [x] Configurable concurrency limit via `--workers` (default 2)
+  - [x] Semaphore-based throttling; excess requests wait with context cancellation
+  - [x] Each worker runs one `pocket-tts generate` subprocess independently
 
-- [ ] Task 7.3: **Graceful shutdown**
-  - [ ] Handle `SIGINT` / `SIGTERM` via `signal.NotifyContext`
-  - [ ] Stop accepting new connections; drain in-flight requests up to `--shutdown-timeout` (default 30s)
+- [x] Task 7.3: **Graceful shutdown**
+  - [x] Handle `SIGINT` / `SIGTERM` via `signal.NotifyContext`
+  - [x] Stop accepting new connections; drain in-flight requests up to `--shutdown-timeout` (default 30s)
 
-- [ ] Task 7.4: **Request validation and limits**
-  - [ ] Reject empty or oversized text (`--max-text-bytes`, default 4096)
-  - [ ] Per-request context timeout (`--request-timeout`, default 60s)
-  - [ ] Return structured JSON errors `{“error”:”...”}` with appropriate HTTP status codes
+- [x] Task 7.4: **Request validation and limits**
+  - [x] Reject empty or oversized text (`--max-text-bytes`, default 4096)
+  - [x] Per-request context timeout (`--request-timeout`, default 60s)
+  - [x] Return structured JSON errors `{“error”:”...”}` with appropriate HTTP status codes
 
-- [ ] Task 7.5: **Unit tests for server package**
-  - [ ] Test `/health` returns 200 with expected body
-  - [ ] Test `/tts` with missing or empty body returns 400
-  - [ ] Test concurrency throttling with a mock subprocess runner interface
+- [x] Task 7.5: **Unit tests for server package**
+  - [x] Test `/health` returns 200 with expected body
+  - [x] Test `/tts` with missing or empty body returns 400
+  - [x] Test concurrency throttling with a mock subprocess runner interface
 
 ---
 
