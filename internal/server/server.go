@@ -272,9 +272,14 @@ func (s *Server) WithShutdownTimeout(d time.Duration) *Server {
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	workers := s.cfg.Server.Workers
-	if workers <= 0 {
-		workers = s.cfg.TTS.Concurrency
+	backend, err := config.NormalizeBackend(s.cfg.TTS.Backend)
+	if err != nil {
+		return err
+	}
+
+	synth, voiceLister, workers, err := s.runtimeDeps(backend)
+	if err != nil {
+		return err
 	}
 
 	handlerOpts := []Option{
@@ -283,7 +288,7 @@ func (s *Server) Start(ctx context.Context) error {
 		WithRequestTimeout(time.Duration(s.cfg.Server.RequestTimeout) * time.Second),
 	}
 
-	h := NewHandler(&noopSynthesizer{}, &noopVoiceLister{}, handlerOpts...)
+	h := NewHandler(synth, voiceLister, handlerOpts...)
 
 	httpServer := &http.Server{
 		Addr:              s.cfg.Server.ListenAddr,
@@ -325,16 +330,104 @@ func ProbeHTTP(addr string) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
-// no-op placeholders used until Phase 6 wires the real implementations
-// ---------------------------------------------------------------------------
+func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, error) {
+	voices := loadVoiceLister()
 
-type noopSynthesizer struct{}
-
-func (n *noopSynthesizer) Synthesize(_ context.Context, _, _ string) ([]byte, error) {
-	return nil, fmt.Errorf("synthesizer not configured — wire in Phase 6")
+	switch backend {
+	case "native":
+		svc := s.tts
+		if svc == nil {
+			var err error
+			svc, err = tts.NewService(s.cfg)
+			if err != nil {
+				return nil, nil, 0, fmt.Errorf("initialize native service: %w", err)
+			}
+		}
+		// Native mode does not use subprocess worker throttling.
+		return &nativeSynthesizer{svc: svc}, voices, 0, nil
+	case "cli":
+		workers := chooseWorkerLimit(s.cfg, backend)
+		return &cliSynthesizer{
+			executablePath: s.cfg.TTS.CLIPath,
+			configPath:     s.cfg.TTS.CLIConfigPath,
+			quiet:          s.cfg.TTS.Quiet,
+		}, voices, workers, nil
+	default:
+		return nil, nil, 0, fmt.Errorf("unsupported backend %q", backend)
+	}
 }
 
-type noopVoiceLister struct{}
+func chooseWorkerLimit(cfg config.Config, backend string) int {
+	if backend != "cli" {
+		return 0
+	}
+	workers := cfg.Server.Workers
+	if workers <= 0 {
+		workers = cfg.TTS.Concurrency
+	}
+	return workers
+}
 
-func (n *noopVoiceLister) ListVoices() []tts.Voice { return []tts.Voice{} }
+func loadVoiceLister() VoiceLister {
+	vm, err := tts.NewVoiceManager("voices/manifest.json")
+	if err != nil {
+		return staticVoiceLister{}
+	}
+	return vm
+}
+
+type staticVoiceLister struct {
+	voices []tts.Voice
+}
+
+func (s staticVoiceLister) ListVoices() []tts.Voice {
+	return append([]tts.Voice(nil), s.voices...)
+}
+
+type nativeSynthesizer struct {
+	svc *tts.Service
+}
+
+func (n *nativeSynthesizer) Synthesize(_ context.Context, text, _ string) ([]byte, error) {
+	samples, err := n.svc.Synthesize(text)
+	if err != nil {
+		return nil, err
+	}
+	return audio.EncodeWAV(samples)
+}
+
+type cliSynthesizer struct {
+	executablePath string
+	configPath     string
+	quiet          bool
+}
+
+func (c *cliSynthesizer) Synthesize(ctx context.Context, text, voice string) ([]byte, error) {
+	exe := c.executablePath
+	if exe == "" {
+		exe = "pocket-tts"
+	}
+
+	args := []string{"generate", "--text", "-", "--output-path", "-"}
+	if strings.TrimSpace(voice) != "" {
+		args = append(args, "--voice", voice)
+	}
+	if c.configPath != "" {
+		args = append(args, "--config", c.configPath)
+	}
+	if c.quiet {
+		args = append(args, "--quiet")
+	}
+
+	cmd := exec.CommandContext(ctx, exe, args...)
+	cmd.Stdin = strings.NewReader(text)
+
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = io.Discard
+
+	if err := cmd.Run(); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}

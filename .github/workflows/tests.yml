@@ -21,3 +21,11 @@ jobs:
   format:
     name: Format Check
     uses: ./.github/workflows/test-format.yml
+
+  runtime-native:
+    name: Runtime Native
+    uses: ./.github/workflows/test-runtime-native.yml
+
+  tooling:
+    name: Tooling Profile
+    uses: ./.github/workflows/test-tooling.yml

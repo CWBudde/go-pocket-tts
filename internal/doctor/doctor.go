@@ -22,8 +22,12 @@ type VersionFunc func() (string, error)
 type Config struct {
 	// PocketTTSVersion returns the output of `pocket-tts --version`.
 	PocketTTSVersion VersionFunc
+	// SkipPocketTTS skips pocket-tts version check (native backend mode).
+	SkipPocketTTS bool
 	// PythonVersion returns the Python version string (e.g. "3.11.4").
 	PythonVersion VersionFunc
+	// SkipPython skips Python version check (native backend mode).
+	SkipPython bool
 	// VoiceFiles is the list of voice file paths to verify on disk.
 	VoiceFiles []string
 }
@@ -50,24 +54,32 @@ func Run(cfg Config, w io.Writer) Result {
 	var res Result
 
 	// ---- pocket-tts binary ------------------------------------------------
-	ver, err := cfg.PocketTTSVersion()
-	if err != nil {
-		res.fail(fmt.Sprintf("pocket-tts binary: %v", err))
-		fmt.Fprintf(w, "%s pocket-tts binary: not found (%v)\n", FailMark, err)
+	if cfg.SkipPocketTTS {
+		fmt.Fprintf(w, "%s pocket-tts binary: skipped\n", PassMark)
 	} else {
-		fmt.Fprintf(w, "%s pocket-tts binary: %s\n", PassMark, ver)
+		ver, err := cfg.PocketTTSVersion()
+		if err != nil {
+			res.fail(fmt.Sprintf("pocket-tts binary: %v", err))
+			fmt.Fprintf(w, "%s pocket-tts binary: not found (%v)\n", FailMark, err)
+		} else {
+			fmt.Fprintf(w, "%s pocket-tts binary: %s\n", PassMark, ver)
+		}
 	}
 
 	// ---- Python version ---------------------------------------------------
-	pyVer, err := cfg.PythonVersion()
-	if err != nil {
-		res.fail(fmt.Sprintf("python version: %v", err))
-		fmt.Fprintf(w, "%s python version: not found (%v)\n", FailMark, err)
-	} else if pyErr := checkPythonVersion(pyVer); pyErr != nil {
-		res.fail(fmt.Sprintf("python version: %v", pyErr))
-		fmt.Fprintf(w, "%s python version %s: %v\n", FailMark, pyVer, pyErr)
+	if cfg.SkipPython {
+		fmt.Fprintf(w, "%s python version: skipped\n", PassMark)
 	} else {
-		fmt.Fprintf(w, "%s python version: %s\n", PassMark, pyVer)
+		pyVer, err := cfg.PythonVersion()
+		if err != nil {
+			res.fail(fmt.Sprintf("python version: %v", err))
+			fmt.Fprintf(w, "%s python version: not found (%v)\n", FailMark, err)
+		} else if pyErr := checkPythonVersion(pyVer); pyErr != nil {
+			res.fail(fmt.Sprintf("python version: %v", pyErr))
+			fmt.Fprintf(w, "%s python version %s: %v\n", FailMark, pyVer, pyErr)
+		} else {
+			fmt.Fprintf(w, "%s python version: %s\n", PassMark, pyVer)
+		}
 	}
 
 	// ---- voice files ------------------------------------------------------

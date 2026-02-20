@@ -150,6 +150,27 @@ func TestRun_OutputContainsPassAndFailMarkers(t *testing.T) {
 	}
 }
 
+func TestRun_SkipRuntimeChecks(t *testing.T) {
+	cfg := doctor.Config{
+		SkipPocketTTS: true,
+		SkipPython:    true,
+		VoiceFiles:    []string{},
+	}
+
+	var out strings.Builder
+	result := doctor.Run(cfg, &out)
+	if result.Failed() {
+		t.Fatalf("expected no failures when runtime checks are skipped, got: %v", result.Failures())
+	}
+	body := out.String()
+	if !strings.Contains(body, "pocket-tts binary: skipped") {
+		t.Fatalf("expected pocket-tts skipped output, got:\n%s", body)
+	}
+	if !strings.Contains(body, "python version: skipped") {
+		t.Fatalf("expected python skipped output, got:\n%s", body)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------

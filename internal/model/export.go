@@ -3,6 +3,7 @@ package model
 import (
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
 )
@@ -38,6 +39,9 @@ func ExportONNX(opts ExportOptions) error {
 	if pythonBin == "" {
 		pythonBin = detectPocketTTSPython()
 	}
+	if err := validateExportTooling(pythonBin); err != nil {
+		return err
+	}
 
 	scriptPath, err := resolveScriptPath(filepath.Join("scripts", "export_onnx.py"))
 	if err != nil {
@@ -56,5 +60,19 @@ func ExportONNX(opts ExportOptions) error {
 		return fmt.Errorf("run ONNX export helper: %w", err)
 	}
 
+	return nil
+}
+
+func validateExportTooling(pythonBin string) error {
+	if _, err := exec.LookPath(pythonBin); err != nil {
+		return fmt.Errorf("python interpreter %q not found: %w", pythonBin, err)
+	}
+
+	check := exec.Command(pythonBin, "-c", "import pocket_tts, torch, onnx")
+	check.Stdout = io.Discard
+	check.Stderr = os.Stderr
+	if err := check.Run(); err != nil {
+		return fmt.Errorf("python tooling dependencies missing for export (need pocket_tts, torch, onnx): %w", err)
+	}
 	return nil
 }
