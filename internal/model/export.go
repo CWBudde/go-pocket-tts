@@ -1,0 +1,60 @@
+package model
+
+import (
+	"fmt"
+	"io"
+	"os/exec"
+	"path/filepath"
+)
+
+type ExportOptions struct {
+	ModelsDir string
+	OutDir    string
+	Int8      bool
+	Variant   string
+	PythonBin string
+	Stdout    io.Writer
+	Stderr    io.Writer
+}
+
+func ExportONNX(opts ExportOptions) error {
+	if opts.ModelsDir == "" {
+		return fmt.Errorf("models dir is required")
+	}
+	if opts.OutDir == "" {
+		return fmt.Errorf("out dir is required")
+	}
+	if opts.Variant == "" {
+		opts.Variant = "b6369a24"
+	}
+	if opts.Stdout == nil {
+		opts.Stdout = io.Discard
+	}
+	if opts.Stderr == nil {
+		opts.Stderr = io.Discard
+	}
+
+	pythonBin := opts.PythonBin
+	if pythonBin == "" {
+		pythonBin = detectPocketTTSPython()
+	}
+
+	scriptPath, err := resolveScriptPath(filepath.Join("scripts", "export_onnx.py"))
+	if err != nil {
+		return fmt.Errorf("resolve export helper: %w", err)
+	}
+
+	args := []string{scriptPath, "--models-dir", opts.ModelsDir, "--out-dir", opts.OutDir, "--variant", opts.Variant}
+	if opts.Int8 {
+		args = append(args, "--int8")
+	}
+
+	cmd := exec.Command(pythonBin, args...)
+	cmd.Stdout = opts.Stdout
+	cmd.Stderr = opts.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run ONNX export helper: %w", err)
+	}
+
+	return nil
+}
