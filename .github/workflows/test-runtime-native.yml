@@ -1,0 +1,31 @@
+name: Runtime Native (No Python)
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-native:
+    name: Native runtime checks (Go only)
+    runs-on: ubuntu-latest
+    container:
+      image: golang:1.25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure Python is absent
+        run: |
+          if command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1; then
+            echo "Python unexpectedly available in runtime-native job"
+            exit 1
+          fi
+
+      - name: Build CLI
+        run: go build ./cmd/pockettts
+
+      - name: Test native runtime packages
+        run: |
+          go test ./cmd/pockettts ./internal/server ./internal/doctor ./internal/config

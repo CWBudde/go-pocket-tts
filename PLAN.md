@@ -73,7 +73,7 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] Added voice file existence validation on resolve (`os.Stat` in `ResolvePath`)
 
 - [x] Task 2.3: **Add `export-voice` helper command**
-  - [x] Implemented `pockettts export-voice --audio <file> --out <voice.safetensors>` in `cmd/pockettts/export_voice.go`
+  - [x] Implemented `pockettts-tools export-voice --audio <file> --out <voice.safetensors>` in `cmd/pockettts-tools/export_voice.go`
   - [x] Delegates to upstream `pocket-tts export-voice` via `go-call-pocket-tts`
   - [x] On success, prints a suggested `manifest.json` entry
 
@@ -94,7 +94,7 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] Print download progress and verify checksums against pinned checksums or a persisted lock manifest (`models/download-manifest.lock.json`)
 
 - [x] Task 3.2: **`pockettts model export` — convert PyTorch weights to ONNX**
-  - [x] Delegates to Python helper script `scripts/export_onnx.py` via subprocess (`pockettts model export`)
+  - [x] Delegates to Python helper script `scripts/export_onnx.py` via subprocess (`pockettts-tools model export`)
   - [x] Script exports required sub-graphs: `text_conditioner`, `flow_lm_main`, `flow_lm_flow`, `mimi_encoder`, `mimi_decoder`
   - [x] Supports `--models-dir`, `--out-dir` (default `models/onnx`), optional `--int8` quantization flag
   - [x] Writes `models/onnx/manifest.json` with filenames, input/output names, shapes, and dtypes (inspected from exported ONNX)
@@ -227,9 +227,9 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] Test concurrency throttling with a mock subprocess runner interface
 
 - [ ] Task 7.6: **Backend parity follow-up for `serve`**
-  - [ ] Reuse same backend selection as `synth` (`native|cli`)
-  - [ ] Ensure `native` mode serves TTS without Python subprocess workers
-  - [ ] Keep worker-pool behavior for `cli` mode only
+  - [x] Reuse same backend selection as `synth` (`native|cli`)
+  - [x] Ensure `native` mode serves TTS without Python subprocess workers
+  - [x] Keep worker-pool behavior for `cli` mode only
 
 ---
 
@@ -256,29 +256,29 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] Test log output contains expected fields (voice, duration) using a captured `slog.Handler`
   - [ ] Test metrics counter increments on success and error paths (skipped — metrics Task 8.2 not implemented)
 
-- [ ] Task 8.5: **Doctor backend-awareness follow-up**
-  - [ ] Make `doctor` checks conditional on selected backend
-  - [ ] In `native` mode, do not require `pocket-tts` binary or Python
-  - [ ] In `cli` mode, keep `pocket-tts` and Python checks
+- [x] Task 8.5: **Doctor backend-awareness follow-up**
+  - [x] Make `doctor` checks conditional on selected backend
+  - [x] In `native` mode, do not require `pocket-tts` binary or Python
+  - [x] In `cli` mode, keep `pocket-tts` and Python checks
 
 ---
 
 ## Phase 9 — Benchmarking
 
-- [ ] Task 9.1: **Implement `pockettts bench` command**
-  - [ ] Flags: `--text`, `--voice`, `--runs` (default 5), `--format json|table`
-  - [ ] Treat first run as cold-start; remaining runs as warm
-  - [ ] Compute per-run and aggregate: min, max, mean synthesis duration
+- [x] Task 9.1: **Implement `pockettts bench` command**
+  - [x] Flags: `--text`, `--voice`, `--runs` (default 5), `--format json|table`
+  - [x] Treat first run as cold-start; remaining runs as warm
+  - [x] Compute per-run and aggregate: min, max, mean synthesis duration
 
-- [ ] Task 9.2: **Realtime factor (RTF) calculation**
-  - [ ] Parse output WAV duration from header after each run
-  - [ ] RTF = synthesis_duration / audio_duration; print alongside latency
-  - [ ] Optional: `--rtf-threshold` flag — exit non-zero if mean RTF exceeds threshold (CI gate)
+- [x] Task 9.2: **Realtime factor (RTF) calculation**
+  - [x] Parse output WAV duration from header after each run
+  - [x] RTF = synthesis_duration / audio_duration; print alongside latency
+  - [x] Optional: `--rtf-threshold` flag — exit non-zero if mean RTF exceeds threshold (CI gate)
 
-- [ ] Task 9.3: **Unit tests for `bench` command**
-  - [ ] Test aggregation logic (min/max/mean) with synthetic timing data
-  - [ ] Test RTF calculation with known WAV duration and synthesis duration
-  - [ ] Test `--rtf-threshold` gate: assert exit non-zero when threshold exceeded
+- [x] Task 9.3: **Unit tests for `bench` command**
+  - [x] Test aggregation logic (min/max/mean) with synthetic timing data
+  - [x] Test RTF calculation with known WAV duration and synthesis duration
+  - [x] Test `--rtf-threshold` gate: assert exit non-zero when threshold exceeded
 
 ---
 
@@ -303,22 +303,22 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
 
 ## Phase 11 — Runtime de-Pythonization and dependency cleanup
 
-- [ ] Task 11.1: **Classify Python usage by scope**
-  - [ ] Runtime path: target Python-free (`synth`, `serve`, `doctor` in `native` mode)
-  - [ ] Tooling path: allow Python (`model export`, optional `export-voice`)
-  - [ ] Document boundary clearly in README + INSTALL
+- [x] Task 11.1: **Classify Python usage by scope**
+  - [x] Runtime path: target Python-free (`synth`, `serve`, `doctor` in `native` mode)
+  - [x] Tooling path: allow Python (`model export`, optional `export-voice`)
+  - [x] Document boundary clearly in README + INSTALL
 
-- [ ] Task 11.2: **Isolate tooling commands**
-  - [ ] Keep `model export` as Python-required helper command
-  - [ ] Mark `export-voice` as optional tooling command (not runtime requirement)
-  - [ ] Add explicit error messages when tooling prerequisites are missing
+- [x] Task 11.2: **Isolate tooling commands**
+  - [x] Keep `model export` as Python-required helper command
+  - [x] Mark `export-voice` as optional tooling command (not runtime requirement)
+  - [x] Add explicit error messages when tooling prerequisites are missing
 
-- [ ] Task 11.3: **Remove runtime dependency on `go-call-pocket-tts`**
-  - [ ] Remove usage from `synth` and `doctor` runtime path
-  - [ ] Keep only for tooling compatibility (if still needed), or remove entirely
-  - [ ] Add CI job proving runtime commands pass in environment without Python
+- [x] Task 11.3: **Remove runtime dependency on `go-call-pocket-tts`**
+  - [x] Remove usage from `synth` and `doctor` runtime path
+  - [x] Keep only for tooling compatibility (if still needed), or remove entirely
+  - [x] Add CI job proving runtime commands pass in environment without Python
 
 - [ ] Task 11.4: **Packaging profiles**
-  - [ ] Add `runtime-native` profile (no Python installed)
-  - [ ] Add `tooling` profile (Python + pocket-tts + export dependencies)
-  - [ ] Validate both profiles in CI
+  - [x] Add `runtime-native` profile (no Python installed)
+  - [x] Add `tooling` profile (Python + pocket-tts + export dependencies)
+  - [x] Validate both profiles in CI

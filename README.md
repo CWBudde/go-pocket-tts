@@ -2,29 +2,34 @@
 
 Go CLI (and a small HTTP server skeleton) for working with [PocketTTS](https://github.com/kyutai-labs/pocket-tts):
 
-- Run text-to-speech via the `pocket-tts` executable
+- Run text-to-speech with native Go backend by default (`--backend native`)
 - Download PocketTTS model checkpoints from Hugging Face
 - Export PocketTTS PyTorch checkpoints to ONNX subgraphs + manifest
 - Smoke-verify exported ONNX graphs
-- Export voice embeddings (`.safetensors`) from a WAV prompt
+- Export voice embeddings (`.safetensors`) from a WAV prompt (optional tooling)
 
 ## Status
 
 - CLI commands (`synth`, `model *`, `export-voice`, `doctor`, `health`) are implemented.
+- Runtime binary: `pockettts` (`synth`, `serve`, `doctor`, `health`, `model download`, `model verify`).
+- Tooling binary: `pockettts-tools` (`model export`, `export-voice`).
 - The HTTP server currently only exposes `/healthz`. The `/v1/synth` route is present but **returns 501 (not implemented)**.
 
 ## Requirements
 
+### Runtime (no Python required)
+
 - Go `1.25+`
-- For CLI synthesis and voice export:
-  - `pocket-tts` installed and available in `PATH`, or set `--tts-cli-path` / `POCKETTTS_TTS_CLI_PATH`
-- For ONNX export:
-  - Python environment that can import: `torch`, `onnx`, and `pocket_tts` (from PocketTTS)
-  - Optional for `--int8`: Python `onnxruntime` with quantization support
-- For ONNX verify:
-  - Python environment that can import: `numpy` and `onnxruntime`
-- For native ONNX Runtime usage in the Go runtime bootstrap:
-  - An ONNX Runtime shared library (see [docs/INSTALL.md](docs/INSTALL.md))
+- ONNX Runtime shared library for native backend
+  - see [docs/INSTALL.md](docs/INSTALL.md)
+
+### Tooling (Python required)
+
+- `pockettts-tools model export`
+  - Python environment with `pocket_tts`, `torch`, `onnx`
+  - optional for `--int8`: Python `onnxruntime`
+- `pockettts-tools export-voice`
+  - `pocket-tts` CLI installed (Python package), available in `PATH` or set via `--tts-cli-path`
 
 ## Build
 
@@ -79,6 +84,12 @@ If ONNX Runtime can’t be found automatically, point to it (see [docs/INSTALL.m
 ./pockettts synth --text "Hello from PocketTTS" --out out.wav
 ```
 
+Force CLI compatibility backend:
+
+```bash
+./pockettts synth --backend cli --text "Hello from PocketTTS" --out out.wav
+```
+
 Override voice for a single request:
 
 ```bash
@@ -96,13 +107,13 @@ Write the WAV to stdout:
 ### Export
 
 ```bash
-./pockettts model export --models-dir models --out-dir models/onnx
+./pockettts-tools model export --models-dir models --out-dir models/onnx
 ```
 
 Optional INT8 quantization:
 
 ```bash
-./pockettts model export --models-dir models --out-dir models/onnx --int8
+./pockettts-tools model export --models-dir models --out-dir models/onnx --int8
 ```
 
 ### Verify
@@ -124,9 +135,10 @@ export ORT_LIBRARY_PATH=/usr/local/lib/libonnxruntime.so
 ## Export a voice embedding
 
 Exports a `.safetensors` voice embedding from a speaker WAV prompt and prints a suggested `voices/manifest.json` entry.
+This is an optional tooling command requiring Python `pocket-tts`.
 
 ```bash
-./pockettts export-voice --audio speaker.wav --out voices/my_voice.safetensors --id my-voice --license "CC-BY-4.0"
+./pockettts-tools export-voice --audio speaker.wav --out voices/my_voice.safetensors --id my-voice --license "CC-BY-4.0"
 ```
 
 See [voices/README.md](voices/README.md) for licensing guidance.
@@ -179,6 +191,8 @@ server:
   grpc_addr: ":9090"
 
 tts:
+  # Backend: native (default) or cli
+  backend: "native"
   # Voice name/ID (or a .safetensors path, depending on your PocketTTS setup)
   voice: "mimi"
   # Path to the pocket-tts executable (leave empty to use PATH)
@@ -192,6 +206,7 @@ tts:
 ### Useful environment variables
 
 - `POCKETTTS_TTS_CLI_PATH` (points to `pocket-tts`)
+- `POCKETTTS_BACKEND` (`native` or `cli`)
 - `POCKETTTS_TTS_VOICE`
 - `POCKETTTS_SERVER_LISTEN_ADDR`
 - `POCKETTTS_RUNTIME_ORT_LIBRARY_PATH` (or `POCKETTTS_ORT_LIB`, or `ORT_LIBRARY_PATH`)
