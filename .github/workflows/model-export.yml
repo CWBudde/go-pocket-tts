@@ -1,0 +1,97 @@
+name: Model Export (Ungated)
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      go-version:
+        description: Go version
+        required: false
+        type: string
+        default: "1.25.x"
+      python-version:
+        description: Python version
+        required: false
+        type: string
+        default: "3.13"
+      hf-repo:
+        description: Hugging Face repo to download from
+        required: false
+        type: string
+        default: "kyutai/pocket-tts-without-voice-cloning"
+      model-variant:
+        description: PocketTTS variant/config
+        required: false
+        type: string
+        default: "b6369a24"
+      enable-int8:
+        description: Enable ONNX INT8 quantization
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  export-onnx:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version || '1.25.x' }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version || '3.13' }}
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install \
+            pocket-tts \
+            onnx \
+            onnxruntime \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --index-strategy unsafe-best-match
+
+      - name: Download ungated PocketTTS model files
+        run: |
+          go run ./cmd/pockettts model download \
+            --hf-repo "${{ inputs.hf-repo || 'kyutai/pocket-tts-without-voice-cloning' }}" \
+            --out-dir models
+
+      - name: Export ONNX
+        run: |
+          EXTRA_FLAGS=""
+          if [ "${{ inputs.enable-int8 }}" = "true" ]; then
+            EXTRA_FLAGS="--int8"
+          fi
+
+          go run ./cmd/pockettts model export \
+            --models-dir models \
+            --out-dir models/onnx \
+            --variant "${{ inputs.model-variant || 'b6369a24' }}" \
+            ${EXTRA_FLAGS}
+
+      - name: List outputs
+        run: |
+          ls -lah models
+          ls -lah models/onnx
+          test -f models/onnx/manifest.json
+
+      - name: Upload ONNX artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pockettts-onnx-${{ github.run_id }}
+          path: |
+            models/download-manifest.lock.json
+            models/onnx/*.onnx
+            models/onnx/manifest.json
+          if-no-files-found: error

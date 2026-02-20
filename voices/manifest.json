@@ -1,0 +1,9 @@
+{
+  "voices": [
+    {
+      "id": "mimi",
+      "path": "mimi.safetensors",
+      "license": "CC-BY-4.0"
+    }
+  ]
+}
