@@ -3,36 +3,251 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/example/go-pocket-tts/internal/config"
 	"github.com/example/go-pocket-tts/internal/tts"
 )
 
+// ParseLogLevel converts a case-insensitive level string to slog.Level.
+// An empty string returns slog.LevelInfo. Unknown strings return an error.
+func ParseLogLevel(s string) (slog.Level, error) {
+	switch strings.ToLower(s) {
+	case "", "info":
+		return slog.LevelInfo, nil
+	case "debug":
+		return slog.LevelDebug, nil
+	case "warn", "warning":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	default:
+		return slog.LevelInfo, fmt.Errorf("unknown log level %q (want debug|info|warn|error)", s)
+	}
+}
+
+// Synthesizer produces WAV bytes from text and a voice ID.
+type Synthesizer interface {
+	Synthesize(ctx context.Context, text, voice string) ([]byte, error)
+}
+
+// VoiceLister returns the list of available voices.
+type VoiceLister interface {
+	ListVoices() []tts.Voice
+}
+
+// ---------------------------------------------------------------------------
+// Functional options
+// ---------------------------------------------------------------------------
+
+type options struct {
+	maxTextBytes   int
+	workers        int
+	requestTimeout time.Duration
+}
+
+func defaultOptions() options {
+	return options{
+		maxTextBytes:   4096,
+		workers:        2,
+		requestTimeout: 60 * time.Second,
+	}
+}
+
+// Option configures the HTTP handler.
+type Option func(*options)
+
+// WithMaxTextBytes sets the maximum allowed text length in bytes for POST /tts.
+func WithMaxTextBytes(n int) Option {
+	return func(o *options) { o.maxTextBytes = n }
+}
+
+// WithWorkers sets the maximum number of concurrent synthesis calls.
+func WithWorkers(n int) Option {
+	return func(o *options) { o.workers = n }
+}
+
+// WithRequestTimeout sets the per-request synthesis deadline.
+func WithRequestTimeout(d time.Duration) Option {
+	return func(o *options) { o.requestTimeout = d }
+}
+
+// ---------------------------------------------------------------------------
+// handler
+// ---------------------------------------------------------------------------
+
+// handler holds the dependencies needed to serve HTTP requests.
+type handler struct {
+	synth   Synthesizer
+	voices  VoiceLister
+	opts    options
+	sem     chan struct{} // semaphore for worker pool
+}
+
+// NewHandler returns an http.Handler that serves /health, /voices, and POST /tts.
+func NewHandler(synth Synthesizer, voices VoiceLister, optFns ...Option) http.Handler {
+	opts := defaultOptions()
+	for _, fn := range optFns {
+		fn(&opts)
+	}
+
+	h := &handler{
+		synth:  synth,
+		voices: voices,
+		opts:   opts,
+		sem:    make(chan struct{}, opts.workers),
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", h.handleHealth)
+	mux.HandleFunc("/voices", h.handleVoices)
+	mux.HandleFunc("/tts", h.handleTTS)
+	return mux
+}
+
+func buildVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return "dev"
+}
+
+func (h *handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":  "ok",
+		"version": buildVersion(),
+	})
+}
+
+func (h *handler) handleVoices(w http.ResponseWriter, _ *http.Request) {
+	voices := h.voices.ListVoices()
+	if voices == nil {
+		voices = []tts.Voice{}
+	}
+	writeJSON(w, http.StatusOK, voices)
+}
+
+type ttsRequest struct {
+	Text  string `json:"text"`
+	Voice string `json:"voice"`
+	Chunk bool   `json:"chunk"`
+}
+
+func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if r.Body == nil {
+		writeError(w, http.StatusBadRequest, "request body is required")
+		return
+	}
+
+	var req ttsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+
+	if req.Text == "" {
+		writeError(w, http.StatusBadRequest, "text field is required")
+		return
+	}
+
+	if len(req.Text) > h.opts.maxTextBytes {
+		writeError(w, http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("text exceeds maximum size of %d bytes", h.opts.maxTextBytes))
+		return
+	}
+
+	// Acquire a worker slot — honour context cancellation while waiting.
+	select {
+	case h.sem <- struct{}{}:
+		// slot acquired
+	case <-r.Context().Done():
+		writeError(w, http.StatusServiceUnavailable, "request cancelled while waiting for worker")
+		return
+	}
+	defer func() { <-h.sem }()
+
+	// Apply per-request timeout.
+	ctx, cancel := context.WithTimeout(r.Context(), h.opts.requestTimeout)
+	defer cancel()
+
+	wav, err := h.synth.Synthesize(ctx, req.Text, req.Voice)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			writeError(w, http.StatusGatewayTimeout, "synthesis timed out")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "audio/wav")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(wav)
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+// ---------------------------------------------------------------------------
+// Server — wires handler into net/http.Server with graceful shutdown
+// ---------------------------------------------------------------------------
+
+// Server wires the HTTP handler into a net/http.Server with graceful shutdown.
 type Server struct {
-	cfg config.Config
-	tts *tts.Service
+	cfg             config.Config
+	tts             *tts.Service
+	shutdownTimeout time.Duration
 }
 
 func New(cfg config.Config, svc *tts.Service) *Server {
-	return &Server{cfg: cfg, tts: svc}
+	return &Server{
+		cfg:             cfg,
+		tts:             svc,
+		shutdownTimeout: 30 * time.Second,
+	}
+}
+
+// WithShutdownTimeout overrides the graceful-shutdown drain period.
+func (s *Server) WithShutdownTimeout(d time.Duration) *Server {
+	s.shutdownTimeout = d
+	return s
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
-	})
-	mux.HandleFunc("/v1/synth", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNotImplemented)
-		_, _ = w.Write([]byte("not implemented"))
-	})
+	workers := s.cfg.Server.Workers
+	if workers <= 0 {
+		workers = s.cfg.TTS.Concurrency
+	}
+
+	handlerOpts := []Option{
+		WithWorkers(workers),
+		WithMaxTextBytes(s.cfg.Server.MaxTextBytes),
+		WithRequestTimeout(time.Duration(s.cfg.Server.RequestTimeout) * time.Second),
+	}
+
+	h := NewHandler(&noopSynthesizer{}, &noopVoiceLister{}, handlerOpts...)
 
 	httpServer := &http.Server{
 		Addr:              s.cfg.Server.ListenAddr,
-		Handler:           mux,
+		Handler:           h,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -43,7 +258,7 @@ func (s *Server) Start(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
 		defer cancel()
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
 			return fmt.Errorf("http shutdown: %w", err)
@@ -58,7 +273,7 @@ func (s *Server) Start(ctx context.Context) error {
 }
 
 func ProbeHTTP(addr string) error {
-	resp, err := http.Get("http://" + addr + "/healthz")
+	resp, err := http.Get("http://" + addr + "/health") //nolint:noctx
 	if err != nil {
 		return err
 	}
@@ -69,3 +284,17 @@ func ProbeHTTP(addr string) error {
 	}
 	return nil
 }
+
+// ---------------------------------------------------------------------------
+// no-op placeholders used until Phase 6 wires the real implementations
+// ---------------------------------------------------------------------------
+
+type noopSynthesizer struct{}
+
+func (n *noopSynthesizer) Synthesize(_ context.Context, _, _ string) ([]byte, error) {
+	return nil, fmt.Errorf("synthesizer not configured — wire in Phase 6")
+}
+
+type noopVoiceLister struct{}
+
+func (n *noopVoiceLister) ListVoices() []tts.Voice { return []tts.Voice{} }

@@ -28,8 +28,12 @@ type RuntimeConfig struct {
 }
 
 type ServerConfig struct {
-	ListenAddr string `mapstructure:"listen_addr"`
-	GRPCAddr   string `mapstructure:"grpc_addr"`
+	ListenAddr      string `mapstructure:"listen_addr"`
+	GRPCAddr        string `mapstructure:"grpc_addr"`
+	Workers         int    `mapstructure:"workers"`
+	ShutdownTimeout int    `mapstructure:"shutdown_timeout_secs"`
+	MaxTextBytes    int    `mapstructure:"max_text_bytes"`
+	RequestTimeout  int    `mapstructure:"request_timeout_secs"`
 }
 
 type TTSConfig struct {
@@ -63,8 +67,12 @@ func DefaultConfig() Config {
 			ORTVersion:     "",
 		},
 		Server: ServerConfig{
-			ListenAddr: ":8080",
-			GRPCAddr:   ":9090",
+			ListenAddr:      ":8080",
+			GRPCAddr:        ":9090",
+			Workers:         2,
+			ShutdownTimeout: 30,
+			MaxTextBytes:    4096,
+			RequestTimeout:  60,
 		},
 		TTS: TTSConfig{
 			Voice:         "",
@@ -86,6 +94,10 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.String("runtime-ort-version", defaults.Runtime.ORTVersion, "Expected ONNX Runtime version")
 	fs.String("server-listen-addr", defaults.Server.ListenAddr, "HTTP listen address")
 	fs.String("server-grpc-addr", defaults.Server.GRPCAddr, "gRPC listen address")
+	fs.Int("workers", defaults.Server.Workers, "Max concurrent pocket-tts subprocesses for serve command")
+	fs.Int("shutdown-timeout", defaults.Server.ShutdownTimeout, "Graceful shutdown drain timeout in seconds")
+	fs.Int("max-text-bytes", defaults.Server.MaxTextBytes, "Maximum POST /tts text size in bytes")
+	fs.Int("request-timeout", defaults.Server.RequestTimeout, "Per-request synthesis timeout in seconds")
 	fs.String("tts-voice", defaults.TTS.Voice, "Voice name or .safetensors file path")
 	fs.String("tts-cli-path", defaults.TTS.CLIPath, "Path to pocket-tts executable")
 	fs.String("tts-cli-config-path", defaults.TTS.CLIConfigPath, "Path to pocket-tts config file")
@@ -144,6 +156,10 @@ func setDefaults(v *viper.Viper, c Config) {
 	v.SetDefault("runtime.ort_version", c.Runtime.ORTVersion)
 	v.SetDefault("server.listen_addr", c.Server.ListenAddr)
 	v.SetDefault("server.grpc_addr", c.Server.GRPCAddr)
+	v.SetDefault("server.workers", c.Server.Workers)
+	v.SetDefault("server.shutdown_timeout_secs", c.Server.ShutdownTimeout)
+	v.SetDefault("server.max_text_bytes", c.Server.MaxTextBytes)
+	v.SetDefault("server.request_timeout_secs", c.Server.RequestTimeout)
 	v.SetDefault("tts.voice", c.TTS.Voice)
 	v.SetDefault("tts.cli_path", c.TTS.CLIPath)
 	v.SetDefault("tts.cli_config_path", c.TTS.CLIConfigPath)
@@ -161,6 +177,10 @@ func registerAliases(v *viper.Viper) {
 	v.RegisterAlias("runtime.ort_version", "runtime-ort-version")
 	v.RegisterAlias("server.listen_addr", "server-listen-addr")
 	v.RegisterAlias("server.grpc_addr", "server-grpc-addr")
+	v.RegisterAlias("server.workers", "workers")
+	v.RegisterAlias("server.shutdown_timeout_secs", "shutdown-timeout")
+	v.RegisterAlias("server.max_text_bytes", "max-text-bytes")
+	v.RegisterAlias("server.request_timeout_secs", "request-timeout")
 	v.RegisterAlias("tts.voice", "tts-voice")
 	v.RegisterAlias("tts.cli_path", "tts-cli-path")
 	v.RegisterAlias("tts.cli_config_path", "tts-cli-config-path")
