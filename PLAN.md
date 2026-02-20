@@ -193,6 +193,11 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] `synth --text “Hello.” --voice <fixture-voice> --out /tmp/out.wav`
   - [x] Assert output file has valid RIFF header and non-zero duration
 
+- [ ] Task 6.6: **Native synthesis backend follow-up (de-Pythonize runtime path)**
+  - [ ] Add backend selection (`--backend` / `POCKETTTS_BACKEND`: `native|cli`)
+  - [ ] Implement `native` synthesis path as default (Go + ONNX Runtime, no `pocket-tts` subprocess)
+  - [ ] Keep `cli` backend as compatibility mode during migration
+
 ---
 
 ## Phase 7 — `serve` HTTP command
@@ -221,30 +226,40 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] Test `/tts` with missing or empty body returns 400
   - [x] Test concurrency throttling with a mock subprocess runner interface
 
+- [ ] Task 7.6: **Backend parity follow-up for `serve`**
+  - [ ] Reuse same backend selection as `synth` (`native|cli`)
+  - [ ] Ensure `native` mode serves TTS without Python subprocess workers
+  - [ ] Keep worker-pool behavior for `cli` mode only
+
 ---
 
 ## Phase 8 — Observability and operational hardening
 
-- [ ] Task 8.1: **Structured logging**
-  - [ ] Use `log/slog` (Go 1.21+) throughout; no third-party logging dependency
-  - [ ] Log per-request: voice, text length, synthesis duration, exit code
-  - [ ] Log level configurable via `--log-level` / `POCKETTTS_LOG_LEVEL` (default `info`)
+- [x] Task 8.1: **Structured logging**
+  - [x] Use `log/slog` (Go 1.21+) throughout; no third-party logging dependency
+  - [x] Log per-request: voice, text length, synthesis duration, exit code
+  - [x] Log level configurable via `--log-level` / `POCKETTTS_LOG_LEVEL` (default `info`)
 
 - [ ] Task 8.2: **Metrics (optional, off by default)**
   - [ ] Expose Prometheus metrics on `--metrics-addr` if flag is non-empty
   - [ ] Counters: requests total, errors total; histogram: synthesis duration; gauge: worker queue depth
 
-- [ ] Task 8.3: **`doctor` command hardening**
-  - [ ] Run `pocket-tts --version` and print result; fail if binary not found or exits non-zero
-  - [ ] Check Python version satisfies `>=3.10,<3.15`
-  - [ ] Verify each voice file in `manifest.json` exists on disk
+- [x] Task 8.3: **`doctor` command hardening**
+  - [x] Run `pocket-tts --version` and print result; fail if binary not found or exits non-zero
+  - [x] Check Python version satisfies `>=3.10,<3.15`
+  - [x] Verify each voice file in `manifest.json` exists on disk
   - [x] Run `pockettts model verify` as a sub-check (Phase 3.6)
-  - [ ] Print colour-coded pass/fail per check; exit non-zero on any failure
+  - [x] Print colour-coded pass/fail per check; exit non-zero on any failure
 
-- [ ] Task 8.4: **Tests for observability and `doctor`**
-  - [ ] Test `doctor` with a mock environment: all-pass and one-fail scenarios
-  - [ ] Test log output contains expected fields (voice, duration) using a captured `slog.Handler`
-  - [ ] Test metrics counter increments on success and error paths (using `promtest` or equivalent)
+- [x] Task 8.4: **Tests for observability and `doctor`**
+  - [x] Test `doctor` with a mock environment: all-pass and one-fail scenarios
+  - [x] Test log output contains expected fields (voice, duration) using a captured `slog.Handler`
+  - [ ] Test metrics counter increments on success and error paths (skipped — metrics Task 8.2 not implemented)
+
+- [ ] Task 8.5: **Doctor backend-awareness follow-up**
+  - [ ] Make `doctor` checks conditional on selected backend
+  - [ ] In `native` mode, do not require `pocket-tts` binary or Python
+  - [ ] In `cli` mode, keep `pocket-tts` and Python checks
 
 ---
 
@@ -283,3 +298,27 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [ ] Example: `pockettts synth --text “Hello world.” --voice en-default --out hello.wav`
   - [ ] Example: `pockettts serve --listen :8080 --workers 4`
   - [ ] Docker example: sidecar pattern with Go binary + Python `pocket-tts` in one image
+
+---
+
+## Phase 11 — Runtime de-Pythonization and dependency cleanup
+
+- [ ] Task 11.1: **Classify Python usage by scope**
+  - [ ] Runtime path: target Python-free (`synth`, `serve`, `doctor` in `native` mode)
+  - [ ] Tooling path: allow Python (`model export`, optional `export-voice`)
+  - [ ] Document boundary clearly in README + INSTALL
+
+- [ ] Task 11.2: **Isolate tooling commands**
+  - [ ] Keep `model export` as Python-required helper command
+  - [ ] Mark `export-voice` as optional tooling command (not runtime requirement)
+  - [ ] Add explicit error messages when tooling prerequisites are missing
+
+- [ ] Task 11.3: **Remove runtime dependency on `go-call-pocket-tts`**
+  - [ ] Remove usage from `synth` and `doctor` runtime path
+  - [ ] Keep only for tooling compatibility (if still needed), or remove entirely
+  - [ ] Add CI job proving runtime commands pass in environment without Python
+
+- [ ] Task 11.4: **Packaging profiles**
+  - [ ] Add `runtime-native` profile (no Python installed)
+  - [ ] Add `tooling` profile (Python + pocket-tts + export dependencies)
+  - [ ] Validate both profiles in CI

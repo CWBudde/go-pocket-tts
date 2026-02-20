@@ -9,10 +9,11 @@ import (
 )
 
 type Config struct {
-	Paths   PathsConfig   `mapstructure:"paths"`
-	Runtime RuntimeConfig `mapstructure:"runtime"`
-	Server  ServerConfig  `mapstructure:"server"`
-	TTS     TTSConfig     `mapstructure:"tts"`
+	Paths    PathsConfig   `mapstructure:"paths"`
+	Runtime  RuntimeConfig `mapstructure:"runtime"`
+	Server   ServerConfig  `mapstructure:"server"`
+	TTS      TTSConfig     `mapstructure:"tts"`
+	LogLevel string        `mapstructure:"log_level"`
 }
 
 type PathsConfig struct {
@@ -37,6 +38,7 @@ type ServerConfig struct {
 }
 
 type TTSConfig struct {
+	Backend       string `mapstructure:"backend"`
 	Voice         string `mapstructure:"voice"`
 	CLIPath       string `mapstructure:"cli_path"`
 	CLIConfigPath string `mapstructure:"cli_config_path"`
@@ -75,12 +77,14 @@ func DefaultConfig() Config {
 			RequestTimeout:  60,
 		},
 		TTS: TTSConfig{
+			Backend:       "native",
 			Voice:         "",
 			CLIPath:       "",
 			CLIConfigPath: "",
 			Concurrency:   1,
 			Quiet:         true,
 		},
+		LogLevel: "info",
 	}
 }
 
@@ -98,11 +102,13 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.Int("shutdown-timeout", defaults.Server.ShutdownTimeout, "Graceful shutdown drain timeout in seconds")
 	fs.Int("max-text-bytes", defaults.Server.MaxTextBytes, "Maximum POST /tts text size in bytes")
 	fs.Int("request-timeout", defaults.Server.RequestTimeout, "Per-request synthesis timeout in seconds")
+	fs.String("backend", defaults.TTS.Backend, "Synthesis backend (native|cli)")
 	fs.String("tts-voice", defaults.TTS.Voice, "Voice name or .safetensors file path")
 	fs.String("tts-cli-path", defaults.TTS.CLIPath, "Path to pocket-tts executable")
 	fs.String("tts-cli-config-path", defaults.TTS.CLIConfigPath, "Path to pocket-tts config file")
 	fs.Int("tts-concurrency", defaults.TTS.Concurrency, "Max concurrent pocket-tts subprocesses")
 	fs.Bool("tts-quiet", defaults.TTS.Quiet, "Pass --quiet to pocket-tts generate")
+	fs.String("log-level", defaults.LogLevel, "Log level (debug|info|warn|error)")
 }
 
 func Load(opts LoadOptions) (Config, error) {
@@ -160,11 +166,13 @@ func setDefaults(v *viper.Viper, c Config) {
 	v.SetDefault("server.shutdown_timeout_secs", c.Server.ShutdownTimeout)
 	v.SetDefault("server.max_text_bytes", c.Server.MaxTextBytes)
 	v.SetDefault("server.request_timeout_secs", c.Server.RequestTimeout)
+	v.SetDefault("tts.backend", c.TTS.Backend)
 	v.SetDefault("tts.voice", c.TTS.Voice)
 	v.SetDefault("tts.cli_path", c.TTS.CLIPath)
 	v.SetDefault("tts.cli_config_path", c.TTS.CLIConfigPath)
 	v.SetDefault("tts.concurrency", c.TTS.Concurrency)
 	v.SetDefault("tts.quiet", c.TTS.Quiet)
+	v.SetDefault("log_level", c.LogLevel)
 }
 
 func registerAliases(v *viper.Viper) {
@@ -181,9 +189,11 @@ func registerAliases(v *viper.Viper) {
 	v.RegisterAlias("server.shutdown_timeout_secs", "shutdown-timeout")
 	v.RegisterAlias("server.max_text_bytes", "max-text-bytes")
 	v.RegisterAlias("server.request_timeout_secs", "request-timeout")
+	v.RegisterAlias("tts.backend", "backend")
 	v.RegisterAlias("tts.voice", "tts-voice")
 	v.RegisterAlias("tts.cli_path", "tts-cli-path")
 	v.RegisterAlias("tts.cli_config_path", "tts-cli-config-path")
 	v.RegisterAlias("tts.concurrency", "tts-concurrency")
 	v.RegisterAlias("tts.quiet", "tts-quiet")
+	v.RegisterAlias("log_level", "log-level")
 }

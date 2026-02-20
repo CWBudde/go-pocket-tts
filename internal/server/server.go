@@ -50,6 +50,7 @@ type options struct {
 	maxTextBytes   int
 	workers        int
 	requestTimeout time.Duration
+	logger         *slog.Logger
 }
 
 func defaultOptions() options {
@@ -57,6 +58,7 @@ func defaultOptions() options {
 		maxTextBytes:   4096,
 		workers:        2,
 		requestTimeout: 60 * time.Second,
+		logger:         slog.Default(),
 	}
 }
 
@@ -78,16 +80,22 @@ func WithRequestTimeout(d time.Duration) Option {
 	return func(o *options) { o.requestTimeout = d }
 }
 
+// WithLogger sets the slog.Logger used for request logging.
+func WithLogger(l *slog.Logger) Option {
+	return func(o *options) { o.logger = l }
+}
+
 // ---------------------------------------------------------------------------
 // handler
 // ---------------------------------------------------------------------------
 
 // handler holds the dependencies needed to serve HTTP requests.
 type handler struct {
-	synth   Synthesizer
-	voices  VoiceLister
-	opts    options
-	sem     chan struct{} // semaphore for worker pool
+	synth  Synthesizer
+	voices VoiceLister
+	opts   options
+	sem    chan struct{} // semaphore for worker pool
+	log    *slog.Logger
 }
 
 // NewHandler returns an http.Handler that serves /health, /voices, and POST /tts.
@@ -102,6 +110,7 @@ func NewHandler(synth Synthesizer, voices VoiceLister, optFns ...Option) http.Ha
 		voices: voices,
 		opts:   opts,
 		sem:    make(chan struct{}, opts.workers),
+		log:    opts.logger,
 	}
 
 	mux := http.NewServeMux()
@@ -181,15 +190,37 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), h.opts.requestTimeout)
 	defer cancel()
 
+	start := time.Now()
 	wav, err := h.synth.Synthesize(ctx, req.Text, req.Voice)
+	durationMS := time.Since(start).Milliseconds()
+
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			h.log.WarnContext(r.Context(), "synthesis timed out",
+				slog.String("voice", req.Voice),
+				slog.Int("text_len", len(req.Text)),
+				slog.Int64("duration_ms", durationMS),
+				slog.String("error", err.Error()),
+			)
 			writeError(w, http.StatusGatewayTimeout, "synthesis timed out")
 			return
 		}
+		h.log.ErrorContext(r.Context(), "synthesis failed",
+			slog.String("voice", req.Voice),
+			slog.Int("text_len", len(req.Text)),
+			slog.Int64("duration_ms", durationMS),
+			slog.String("error", err.Error()),
+		)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	h.log.InfoContext(r.Context(), "synthesis complete",
+		slog.String("voice", req.Voice),
+		slog.Int("text_len", len(req.Text)),
+		slog.Int64("duration_ms", durationMS),
+		slog.Int("wav_bytes", len(wav)),
+	)
 
 	w.Header().Set("Content-Type", "audio/wav")
 	w.WriteHeader(http.StatusOK)
