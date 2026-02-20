@@ -152,17 +152,17 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] Validate decoded format: 24000 Hz, mono, 16-bit PCM; return typed error on mismatch
   - [x] Use library writer to encode PCM and write WAV to file path or stdout (`-`)
 
-- [ ] Task 5.2: **Add `github.com/cwbudde/algo-dsp` and wire DSP chain**
-  - [ ] `go get github.com/cwbudde/algo-dsp`
-  - [ ] `--normalize`: peak-normalize using library primitive
-  - [ ] `--dc-block`: remove DC offset using library primitive
-  - [ ] `--fade-in-ms` / `--fade-out-ms`: linear amplitude ramp using library primitive
-  - [ ] Apply DSP chain after WAV decode, before WAV encode/write
+- [x] Task 5.2: **Add `github.com/cwbudde/algo-dsp` and wire DSP chain**
+  - [x] `go get github.com/cwbudde/algo-dsp`
+  - [x] `--normalize`: peak-normalize using library primitive
+  - [x] `--dc-block`: remove DC offset using `design.Highpass` biquad filter (20 Hz cutoff)
+  - [x] `--fade-in-ms` / `--fade-out-ms`: linear amplitude ramp
+  - [ ] Apply DSP chain after WAV decode, before WAV encode/write (wired in Phase 6)
 
-- [ ] Task 5.3: **Unit tests for audio package**
-  - [ ] Test WAV decode → validate format with a fixture WAV
-  - [ ] Test WAV encode roundtrip: decode then re-encode, assert header fields match
-  - [ ] Test each DSP step with synthetic PCM input
+- [x] Task 5.3: **Unit tests for audio package**
+  - [x] Test WAV decode → validate format with a fixture WAV
+  - [x] Test WAV encode roundtrip: decode then re-encode, assert header fields match
+  - [x] Test each DSP step with synthetic PCM input
 
 ---
 

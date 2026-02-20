@@ -3,6 +3,8 @@ github.com/MeKo-Christian/go-call-pocket-tts v0.0.0-20260220171509-60efea706958/
 github.com/cpuguy83/go-md2man/v2 v2.0.4/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
 github.com/cwbudde/algo-dsp v0.4.0 h1:0qXkIpI0VYTwTfxM6xSDVvovtRmHp9Q4DIKjElvSIKo=
 github.com/cwbudde/algo-dsp v0.4.0/go.mod h1:cDRwoYw/6i3QKFLXDUuZa2AqeMnzb0u7Yn+nZV6Tl4U=
+github.com/cwbudde/algo-vecmath v0.1.0 h1:RjZLXt3BAu1f3UmdWWXbgw3Xscyh+bsg31PkS5K4y4c=
+github.com/cwbudde/algo-vecmath v0.1.0/go.mod h1:lc9dLv41D4RCmhXG/CsIesfJXmONI7pQXcFrkxQSfeQ=
 github.com/cwbudde/wav v0.0.0-20260207095734-97d781a5fb8a h1:e6kN+v8Z9TgJz6GClDFcOd7nfI4ZgF8+IvoAb3/XIBs=
 github.com/cwbudde/wav v0.0.0-20260207095734-97d781a5fb8a/go.mod h1:sc3u5nhwaPxuQ8NUWj1bAcZ7jhlTGk4fk5vARqgHrMs=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
@@ -77,8 +79,6 @@ go.uber.org/multierr v1.9.0 h1:7fIwc/ZtS0q++VgcfqFDxSBZVv/Xo49/SYnDFupUwlI=
 go.uber.org/multierr v1.9.0/go.mod h1:X2jQV1h+kxSjClGpnseKVIxpmcjrj7MNnI0bnlfKTVQ=
 golang.org/x/exp v0.0.0-20230905200255-921286631fa9 h1:GoHiUyI/Tp2nVkLI2mCxVkOjsbSXD66ic0XW0js0R9g=
 golang.org/x/exp v0.0.0-20230905200255-921286631fa9/go.mod h1:S2oDrQGGwySpoQPVqRShND87VCbxmc6bL1Yd2oYrm6k=
-golang.org/x/sys v0.18.0 h1:DBdB3niSjOA/O0blCZBqDefyWNYveAYMNF1Wum0DYQ4=
-golang.org/x/sys v0.18.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
 golang.org/x/sys v0.40.0 h1:DBZZqJ2Rkml6QMQsZywtnjnnGvHza6BTfYFWY9kjEWQ=
 golang.org/x/sys v0.40.0/go.mod h1:OgkHotnGiDImocRcuBABYBEXf8A9a87e/uXjp9XT3ks=
 golang.org/x/text v0.14.0 h1:ScX5w1eTa3QqT8oi6+ziP7dTV1S2+ALU0bI+0zXKWiQ=
