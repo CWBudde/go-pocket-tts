@@ -4,15 +4,17 @@ go 1.25.0
 
 require (
 	github.com/MeKo-Christian/go-call-pocket-tts v0.0.0-20260220171509-60efea706958
+	github.com/cwbudde/algo-dsp v0.4.0
 	github.com/cwbudde/wav v0.0.0-20260207095734-97d781a5fb8a
 	github.com/go-audio/audio v1.0.0
+	github.com/shota3506/onnxruntime-purego v0.0.0-20251207004809-1c85186598a5
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.19.0
 )
 
 require (
-	github.com/cwbudde/algo-dsp v0.4.0 // indirect
+	github.com/cwbudde/algo-vecmath v0.1.0 // indirect
 	github.com/ebitengine/purego v0.9.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-audio/riff v1.0.0 // indirect
@@ -23,7 +25,6 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
 	github.com/sagikazarmark/slog-shim v0.1.0 // indirect
-	github.com/shota3506/onnxruntime-purego v0.0.0-20251207004809-1c85186598a5 // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect

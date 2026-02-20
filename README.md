@@ -107,13 +107,14 @@ Optional INT8 quantization:
 
 ### Verify
 
-Runs a small Python smoke inference for each graph in the exported `manifest.json`.
+Runs a native Go smoke inference for each graph in the exported `manifest.json`
+using ONNX Runtime (`onnxruntime-purego`).
 
 ```bash
 ./pockettts model verify --manifest models/onnx/manifest.json
 ```
 
-If you need to provide the ONNX Runtime shared library path to Python:
+If you need to provide a custom ONNX Runtime shared library path:
 
 ```bash
 export ORT_LIBRARY_PATH=/usr/local/lib/libonnxruntime.so
