@@ -188,15 +188,15 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] Test chunk path: multiple PCM buffers are correctly concatenated
   - [x] Test DSP + write pipeline with a mock audio buffer and no subprocess involved
 
-- [ ] Task 6.5: **Integration test for `synth`** (build tag `integration`)
+- [x] Task 6.5: **Integration test for `synth`** (build tag `integration`)
   - [x] Skip gracefully if `pocket-tts` binary is not found
   - [x] `synth --text “Hello.” --voice <fixture-voice> --out /tmp/out.wav`
   - [x] Assert output file has valid RIFF header and non-zero duration
 
-- [ ] Task 6.6: **Native synthesis backend follow-up (de-Pythonize runtime path)**
-  - [ ] Add backend selection (`--backend` / `POCKETTTS_BACKEND`: `native|cli`)
-  - [ ] Implement `native` synthesis path as default (Go + ONNX Runtime, no `pocket-tts` subprocess)
-  - [ ] Keep `cli` backend as compatibility mode during migration
+- [x] Task 6.6: **Native synthesis backend follow-up (de-Pythonize runtime path)**
+  - [x] Add backend selection (`--backend` / `POCKETTTS_BACKEND`: `native|cli`)
+  - [x] Implement `native` synthesis path as default (Go + ONNX Runtime, no `pocket-tts` subprocess)
+  - [x] Keep `cli` backend as compatibility mode during migration
 
 ---
 
