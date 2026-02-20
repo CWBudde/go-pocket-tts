@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PocketTTS WASM Demo</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --text: #e5e7eb;
+        --muted: #94a3b8;
+        --accent: #22c55e;
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: radial-gradient(circle at top right, #1f2937, var(--bg) 60%);
+        color: var(--text);
+      }
+      main {
+        max-width: 860px;
+        margin: 2rem auto;
+        padding: 1rem;
+      }
+      .card {
+        background: color-mix(in oklab, var(--panel), black 10%);
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 1rem;
+      }
+      h1 {
+        margin-top: 0;
+      }
+      textarea {
+        width: 100%;
+        min-height: 100px;
+        background: #020617;
+        color: var(--text);
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 0.75rem;
+      }
+      .row {
+        display: flex;
+        gap: 0.75rem;
+        margin-top: 0.75rem;
+      }
+      button {
+        background: var(--accent);
+        color: #052e16;
+        border: none;
+        border-radius: 10px;
+        padding: 0.6rem 1rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      pre {
+        background: #020617;
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 0.75rem;
+        white-space: pre-wrap;
+      }
+      .muted {
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="card">
+        <h1>PocketTTS WASM Demo</h1>
+        <p class="muted">
+          This demo runs a Go-compiled wasm kernel in the browser and emits a small WAV tone track from tokenized text.
+        </p>
+        <textarea id="text" placeholder="Type text here">Hello World from PocketTTS wasm.</textarea>
+        <div class="row">
+          <button id="run" type="button">Generate WAV</button>
+          <a id="download" download="hello.wav">Download</a>
+        </div>
+        <audio id="player" controls style="margin-top: 0.75rem; width: 100%"></audio>
+        <pre id="log" class="muted">Loading wasm kernel...</pre>
+      </div>
+    </main>
+
+    <script src="./wasm_exec.js"></script>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

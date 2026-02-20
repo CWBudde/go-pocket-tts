@@ -10,10 +10,52 @@ Go CLI (and a small HTTP server skeleton) for working with [PocketTTS](https://g
 
 ## Status
 
-- CLI commands (`synth`, `model *`, `export-voice`, `doctor`, `health`) are implemented.
+- CLI commands are implemented.
 - Runtime binary: `pockettts` (`synth`, `serve`, `doctor`, `health`, `model download`, `model verify`).
 - Tooling binary: `pockettts-tools` (`model export`, `export-voice`).
-- The HTTP server currently only exposes `/healthz`. The `/v1/synth` route is present but **returns 501 (not implemented)**.
+- HTTP server endpoints: `GET /health`, `GET /voices`, `POST /tts`.
+
+## Get Started (No Python)
+
+This path gets you from zero to a first `hello.wav` using the native backend only.
+
+1. Build the runtime CLI:
+
+```bash
+go build -o pockettts ./cmd/pockettts
+```
+
+2. Download model files (ungated repo, no HF token required):
+
+```bash
+./pockettts model download \
+  --hf-repo kyutai/pocket-tts-without-voice-cloning \
+  --out-dir models
+```
+
+3. (Optional but recommended) point `pockettts` to ONNX Runtime explicitly:
+
+```bash
+export POCKETTTS_ORT_LIB=/usr/local/lib/libonnxruntime.so
+```
+
+4. Run local checks in native mode:
+
+```bash
+./pockettts doctor --backend native
+```
+
+5. Generate your first WAV:
+
+```bash
+./pockettts synth --backend native --text "Hello world" --out hello.wav
+```
+
+6. Confirm the file exists:
+
+```bash
+ls -lh hello.wav
+```
 
 ## Requirements
 
@@ -64,7 +106,7 @@ export HF_TOKEN=...  # or use --hf-token
 
 Checks:
 
-- `pocket-tts` executable is available
+- native runtime preflight checks
 - configured model path exists
 - configured voice path exists (if set)
 
@@ -154,7 +196,7 @@ Start the server (HTTP):
 Health check:
 
 ```bash
-curl -s http://localhost:8080/healthz
+curl -s http://localhost:8080/health
 ```
 
 The CLI also has a probe command:
@@ -163,6 +205,27 @@ The CLI also has a probe command:
 ./pockettts health
 ./pockettts health --addr localhost:8080
 ```
+
+## Web WASM App (Experimental)
+
+This repo now includes a GitHub Action that builds a browser app artifact with:
+
+- Go wasm kernel: `web/dist/pockettts-kernel.wasm`
+- Go runtime JS shim: `web/dist/wasm_exec.js`
+- Static app: `web/dist/index.html`, `web/dist/main.js`
+
+Run the workflow:
+
+- GitHub Actions -> `Web WASM App` -> `Run workflow`
+
+The uploaded artifact (`pockettts-web-wasm-<run_id>`) can be served as static files.
+It currently demonstrates text normalization/tokenization and a wasm-generated WAV demo tone.
+
+Current gap for full browser PocketTTS inference:
+
+- Native ONNX Runtime (`onnxruntime-purego`) is not available in browser wasm.
+- The action does not yet bundle an ONNX-web backend + full model execution graph in the browser.
+- Model download/export still happens outside the browser runtime.
 
 ## Configuration
 

@@ -1,0 +1,54 @@
+name: Web WASM App
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      go-version:
+        description: Go version
+        required: false
+        type: string
+        default: "1.25.x"
+
+permissions:
+  contents: read
+
+jobs:
+  build-web-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ inputs.go-version || '1.25.x' }}
+
+      - name: Build Go wasm kernel
+        run: |
+          mkdir -p web/dist
+          GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o web/dist/pockettts-kernel.wasm ./cmd/pockettts-wasm
+
+      - name: Copy Go wasm runtime JS
+        run: |
+          cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" web/dist/wasm_exec.js
+
+      - name: Copy web app assets
+        run: |
+          cp web/index.html web/main.js web/dist/
+
+      - name: List web artifact
+        run: |
+          ls -lah web/dist
+          test -f web/dist/index.html
+          test -f web/dist/main.js
+          test -f web/dist/wasm_exec.js
+          test -f web/dist/pockettts-kernel.wasm
+
+      - name: Upload web app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pockettts-web-wasm-${{ github.run_id }}
+          path: web/dist
+          if-no-files-found: error
