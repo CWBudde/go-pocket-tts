@@ -103,10 +103,10 @@ func TestTTS_ConcurrencyThrottling(t *testing.T) {
 
 	// Synthesizer that counts concurrent executions.
 	var (
-		mu          sync.Mutex
-		peak        int
-		current     int32
-		releaseAll  = make(chan struct{})
+		mu         sync.Mutex
+		peak       int
+		current    int32
+		releaseAll = make(chan struct{})
 	)
 	synth := &countingSynthesizer{
 		onEnter: func() {
@@ -234,5 +234,7 @@ func (c *countingSynthesizer) Synthesize(ctx context.Context, _, _ string) ([]by
 
 // stubVoiceLister is already defined in server_test.go (same package), reused here.
 // stubSynthesizer is already defined in server_test.go (same package), reused here.
-var _ server.VoiceLister = (*stubVoiceLister)(nil)
-var _ tts.Voice = tts.Voice{}
+var (
+	_ server.VoiceLister = (*stubVoiceLister)(nil)
+	_ tts.Voice          = tts.Voice{}
+)

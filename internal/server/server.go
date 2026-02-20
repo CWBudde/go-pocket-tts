@@ -1,16 +1,20 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
+	"os/exec"
 	"runtime/debug"
 	"strings"
 	"time"
 
+	"github.com/example/go-pocket-tts/internal/audio"
 	"github.com/example/go-pocket-tts/internal/config"
 	"github.com/example/go-pocket-tts/internal/tts"
 )
@@ -109,8 +113,10 @@ func NewHandler(synth Synthesizer, voices VoiceLister, optFns ...Option) http.Ha
 		synth:  synth,
 		voices: voices,
 		opts:   opts,
-		sem:    make(chan struct{}, opts.workers),
 		log:    opts.logger,
+	}
+	if opts.workers > 0 {
+		h.sem = make(chan struct{}, opts.workers)
 	}
 
 	mux := http.NewServeMux()
@@ -177,14 +183,17 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Acquire a worker slot — honour context cancellation while waiting.
-	select {
-	case h.sem <- struct{}{}:
-		// slot acquired
-	case <-r.Context().Done():
-		writeError(w, http.StatusServiceUnavailable, "request cancelled while waiting for worker")
-		return
+	// In native backend mode, worker throttling can be disabled (sem == nil).
+	if h.sem != nil {
+		select {
+		case h.sem <- struct{}{}:
+			// slot acquired
+		case <-r.Context().Done():
+			writeError(w, http.StatusServiceUnavailable, "request cancelled while waiting for worker")
+			return
+		}
+		defer func() { <-h.sem }()
 	}
-	defer func() { <-h.sem }()
 
 	// Apply per-request timeout.
 	ctx, cancel := context.WithTimeout(r.Context(), h.opts.requestTimeout)
