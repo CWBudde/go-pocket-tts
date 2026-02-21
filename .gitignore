@@ -62,3 +62,7 @@ coverage.html
 
 # Generated web app artifacts
 web/dist/
+
+# Python cache
+__pycache__/
+*.pyc
