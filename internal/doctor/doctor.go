@@ -55,14 +55,14 @@ func Run(cfg Config, w io.Writer) Result {
 
 	// ---- pocket-tts binary ------------------------------------------------
 	if cfg.SkipPocketTTS {
-		fmt.Fprintf(w, "%s pocket-tts binary: skipped\n", PassMark)
+		_, _ = fmt.Fprintf(w, "%s pocket-tts binary: skipped\n", PassMark)
 	} else {
 		ver, err := cfg.PocketTTSVersion()
 		if err != nil {
 			res.fail(fmt.Sprintf("pocket-tts binary: %v", err))
-			fmt.Fprintf(w, "%s pocket-tts binary: not found (%v)\n", FailMark, err)
+			_, _ = fmt.Fprintf(w, "%s pocket-tts binary: not found (%v)\n", FailMark, err)
 		} else {
-			fmt.Fprintf(w, "%s pocket-tts binary: %s\n", PassMark, ver)
+			_, _ = fmt.Fprintf(w, "%s pocket-tts binary: %s\n", PassMark, ver)
 		}
 	}
 

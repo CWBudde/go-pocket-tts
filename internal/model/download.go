@@ -155,7 +155,7 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 	if err != nil {
 		return "", fmt.Errorf("download request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return "", &ErrAccessDenied{
@@ -233,7 +233,7 @@ func resolveChecksumFromMetadata(client *http.Client, repo string, f ModelFile, 
 	if err != nil {
 		return "", fmt.Errorf("metadata request failed for %s: %w", f.Filename, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return "", &ErrAccessDenied{
@@ -282,7 +282,7 @@ func fileSHA256(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open file for checksum: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {

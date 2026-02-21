@@ -173,7 +173,7 @@ func FormatTable(runs []RunResult, stats Stats, w io.Writer) {
 	fmt.Fprintf(sb, "%-5s  %-5s  %10.1f  %12s  %8s  (mean)\n", "", "", float64(stats.Mean.Milliseconds()), "", "")
 	fmt.Fprintf(sb, "%-5s  %-5s  %10.1f  %12s  %8s  (max)\n", "", "", float64(stats.Max.Milliseconds()), "", "")
 
-	fmt.Fprint(w, sb.String())
+	_, _ = fmt.Fprint(w, sb.String())
 }
 
 // jsonReport is the top-level JSON structure emitted by FormatJSON.

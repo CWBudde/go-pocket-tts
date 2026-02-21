@@ -18,7 +18,7 @@ func detectPocketTTSPython() string {
 	if err != nil {
 		return "python3"
 	}
-	defer fh.Close()
+	defer func() { _ = fh.Close() }()
 
 	s := bufio.NewScanner(fh)
 	if !s.Scan() {
