@@ -1,0 +1,122 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+
+	"github.com/example/go-pocket-tts/internal/config"
+	"github.com/example/go-pocket-tts/internal/doctor"
+	"github.com/example/go-pocket-tts/internal/model"
+	"github.com/example/go-pocket-tts/internal/tts"
+	"github.com/spf13/cobra"
+)
+
+func newDoctorCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "doctor",
+		Short: "Run local runtime and model checks",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, err := requireConfig()
+			if err != nil {
+				return err
+			}
+
+			exe := cfg.TTS.CLIPath
+			if exe == "" {
+				exe = "pocket-tts"
+			}
+			backend, err := config.NormalizeBackend(cfg.TTS.Backend)
+			if err != nil {
+				return err
+			}
+			nativeMode := backend == "native"
+			_, _ = fmt.Fprintf(os.Stdout, "backend: %s\n", backend)
+
+			dcfg := doctor.Config{
+				PocketTTSVersion: func() (string, error) {
+					return probePocketTTSVersion(exe)
+				},
+				SkipPocketTTS: nativeMode,
+				PythonVersion: func() (string, error) {
+					return probePythonVersion()
+				},
+				SkipPython: nativeMode,
+				VoiceFiles: collectVoiceFiles(),
+			}
+
+			result := doctor.Run(dcfg, os.Stdout)
+
+			// ONNX model verify as an additional check.
+			// Skip gracefully when no manifest is present (models not yet downloaded).
+			const onnxManifest = "models/onnx/manifest.json"
+			if _, statErr := os.Stat(onnxManifest); os.IsNotExist(statErr) {
+				_, _ = fmt.Fprintf(os.Stdout, "%s model verify: skipped (no manifest at %s)\n", doctor.PassMark, onnxManifest)
+			} else if err := model.VerifyONNX(model.VerifyOptions{
+				ManifestPath: onnxManifest,
+				ORTLibrary:   cfg.Runtime.ORTLibraryPath,
+				Stdout:       os.Stdout,
+				Stderr:       os.Stderr,
+			}); err != nil {
+				result.AddFailure(fmt.Sprintf("model verify: %v", err))
+				_, _ = fmt.Fprintf(os.Stdout, "%s model verify: %v\n", doctor.FailMark, err)
+			} else {
+				_, _ = fmt.Fprintf(os.Stdout, "%s model verify: ok\n", doctor.PassMark)
+			}
+
+			if result.Failed() {
+				for _, f := range result.Failures() {
+					fmt.Fprintf(os.Stderr, "FAIL: %s\n", f)
+				}
+				return errors.New("doctor checks failed")
+			}
+
+			_, _ = fmt.Fprintln(os.Stdout, "doctor checks passed")
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+// probePocketTTSVersion runs `pocket-tts --version` and returns its output.
+func probePocketTTSVersion(exe string) (string, error) {
+	out, err := exec.Command(exe, "--version").Output() //nolint:gosec
+	if err != nil {
+		return "", fmt.Errorf("%s --version failed: %w", exe, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// probePythonVersion tries python3 then python and returns the version string.
+func probePythonVersion() (string, error) {
+	for _, bin := range []string{"python3", "python"} {
+		out, err := exec.Command(bin, "--version").Output() //nolint:gosec
+		if err != nil {
+			continue
+		}
+		// Output is e.g. "Python 3.11.4\n"
+		raw := strings.TrimSpace(string(out))
+		raw = strings.TrimPrefix(raw, "Python ")
+		if raw != "" {
+			return raw, nil
+		}
+	}
+	return "", fmt.Errorf("python3/python not found on PATH")
+}
+
+// collectVoiceFiles returns voice file paths from the manifest (ignores errors).
+func collectVoiceFiles() []string {
+	vm, err := tts.NewVoiceManager("voices/manifest.json")
+	if err != nil {
+		return nil
+	}
+	voices := vm.ListVoices()
+	paths := make([]string, 0, len(voices))
+	for _, v := range voices {
+		paths = append(paths, v.Path)
+	}
+	return paths
+}
