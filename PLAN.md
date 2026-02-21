@@ -1,435 +1,244 @@
 # PLAN
 
-> **Goal:** Integrate Pocket TTS into Go by spawning the official `pocket-tts generate` CLI as a subprocess, passing text via stdin (`--text -`) and reading WAV audio from stdout (`--output-path -`). This approach maximizes upstream stability and avoids re-implementing the tokenizer, sampling loop, and decoder. Voice states are pre-exported as `.safetensors` via `pocket-tts export-voice`. For repeated/concurrent requests the plan is to optionally front the CLI with `pocket-tts serve` (warm model, streaming HTTP).
+> **Goal:** Go CLI and HTTP server for PocketTTS. Phases 0–15 complete. Active work: Phases 16–19 (native ONNX inference pipeline). Future: Phases 20–22 (pure-Go replacements for CGO dependencies).
 
-## Phase 0 — Scaffolding and repo shape
+## Phases 0–15 ✅ Complete
 
-- [x] Created repository structure:
-  - `cmd/pockettts/`
-  - `internal/server/`
-  - `internal/tts/`
-  - `internal/onnx/`
-  - `internal/text/`
-  - `internal/audio/`
-  - `internal/config/`
-- [x] Chosen CLI framework: `cobra`
-- [x] Added CLI commands:
-  - `pockettts synth ...`
-  - `pockettts serve ...`
-  - `pockettts health ...`
-  - `pockettts doctor`
-- [x] Added config support with one `Config` struct:
-  - flags
-  - env vars (`POCKETTTS_*`)
-  - optional config file (`yaml`/`toml`/`json` via `--config`)
-  - defaults
-- [x] Added CI skeleton in `.github/workflows/ci.yml`:
-  - `go test ./...`
-  - `golangci-lint`
-  - build binary for `linux/amd64`
-- [x] Added dev smoke command `pockettts doctor`:
-  - prints detected ORT library path/version
-  - checks model files exist
-  - exits non-zero on failure
-- [x] Verified project compiles and tests pass locally (`go test ./...`, `go build ./cmd/pockettts`)
+- **0** Repo scaffolding, Cobra CLI, config, CI skeleton, `doctor` command
+- **1** Adopted `go-call-pocket-tts` for CLI subprocess backend
+- **2** Voice manifest (`voices/manifest.json`), `VoiceManager`, `export-voice` helper
+- **3** `model download/export/verify`, ORT bootstrap (`sync.Once`), `SessionManager`, tensor helpers
+- **4** Text normalization and sentence-level chunking
+- **5** WAV I/O (`cwbudde/wav`), DSP chain (normalize, DC-block, fade)
+- **6** `synth` end-to-end: text→WAV, chunking, DSP, stdout support, `native|cli` backend flag
+- **7** HTTP server (`/health`, `/voices`, `/tts`), worker pool, graceful shutdown, request limits
+- **8** Structured logging (`log/slog`), `doctor` backend-awareness (native skips Python checks)
+- **9** `bench` command with RTF calculation and CI gate flag
+- **10** Packaging/release: INSTALL docs, release artifacts, operational README *(partially done)*
+- **11** Runtime de-Pythonization: `native` mode needs no Python; `cli` mode kept for compatibility
+- **12** Browser/WASM kernel (`cmd/pockettts-wasm`), static web app, ONNX bundle CI pipeline
+- **13** Go-first WASM orchestration, JS narrowed to host bridge, `download-onnx` bundle command
+- **14** Integration test suite (`integration` build tag): `synth`, `serve`, `doctor`, `model verify`, CI job
+- **15** Fixed `doctor` voice path resolution (was CWD-relative; now resolved absolute via `VoiceManager`)
 
 ---
 
-## Phase 1 — Reuse `../go-call-pocket-tts` instead of reimplementing wrapper
+## Reference architecture (from Python/Rust implementations)
 
-Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christian/go-call-pocket-tts` and wiring this repo to it.
+The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — includes `mimi_encoder` for voice audio encoding):
 
-- [x] Task 1.1: **Suitability check completed**
-  - [x] Python/runtime/install docs already covered upstream (`README.md` in `../go-call-pocket-tts`)
-  - [x] Subprocess generate flow already implemented (`pocket-tts generate --text - --output-path -`)
-  - [x] Executable path override already supported (`Options.ExecutablePath`)
-  - [x] Stdin/stdout piping and stderr capture already implemented
-  - [x] Typed failure modes already present (`ErrExecutableNotFound`, `ErrProcessTimeout`, `ErrNonZeroExit`)
-  - [x] Integration/golden tests already exist and skip when `pocket-tts` is unavailable
+| Graph | Inputs | Outputs | Notes |
+|-------|--------|---------|-------|
+| `text_conditioner` | `tokens [1, T] int64` | `text_embeddings [1, T, 1024] f32` | SentencePiece token IDs (vocab=4000) |
+| `flow_lm_main` | `sequence [1, T_seq, 32] f32`, `text_embeddings [1, T_text, 1024] f32` | `last_hidden [1, 1024] f32`, `eos_logits [1, 1] f32` | Stateless (no KV cache); re-processes full sequence each call |
+| `flow_lm_flow` | `condition [1, 1024] f32`, `s [1,1] f32`, `t [1,1] f32`, `x [1, 32] f32` | `flow_direction [1, 32] f32` | SimpleMLPAdaLN with AdaLN modulation |
+| `latent_to_mimi` | `latent [1, T, 32] f32` | `mimi_latent [1, 512, T] f32` | Denormalize (×std+mean) + Conv1d quantizer projection |
+| `mimi_decoder` | `latent [1, 512, T] f32` | `audio [1, 1, N_samples] f32` | Stateless; upsample → transformer → SEANet decoder |
+| `mimi_encoder` | `audio [1, 1, N_samples] f32` | `latent [1, T, 512] f32` | For voice audio encoding (Phase 21) |
 
-- [x] Task 1.2: **Integrate dependency in this repo**
-  - [x] Added module dependency on `github.com/MeKo-Christian/go-call-pocket-tts`
-  - [x] Replaced local synth execution path to call the upstream client API
-  - [x] Mapped this repo config (`flags/env/file`) into upstream options (`voice`, `config`, `executablePath`, concurrency)
-  - [x] Kept `pockettts doctor` as local preflight + model/voice file checks
+**Key constants** (variant `b6369a24`):
+- `ldim = 32` (latent dim, from `mimi.quantizer.dimension`)
+- `d_model = 1024`, `num_heads = 16`, `num_layers = 6` (transformer backbone)
+- `flow_dim = 512`, `flow_depth = 6` (flow network)
+- `sample_rate = 24000`, `frame_rate = 12.5` (≈1920 samples/frame)
+- `temperature = 0.7`, `eos_threshold = -4.0` (on raw logits, not sigmoid)
+- `lsd_decode_steps = 1` (single Euler step by default)
+- `n_bins = 4000` (SentencePiece vocabulary size)
 
-- [x] Task 1.3: **Acceptance checks after integration**
-  - [x] `pockettts synth` produces WAV via upstream library path (`/tmp/task13.wav`, RIFF header validated)
-  - [x] Non-zero subprocess exits are surfaced as actionable errors to CLI users
-  - [x] CI/unit checks continue to pass without requiring `pocket-tts` binary (`go test ./...`, `go build ./cmd/pockettts`)
+**Generation loop** (per text chunk):
+1. Tokenize text via SentencePiece → `tokens [1, T]`
+2. Run `text_conditioner(tokens)` → `text_embeddings [1, T, 1024]`
+3. If voice conditioning: `concat([voice_emb [1, T_v, 1024], text_emb], dim=1)`
+4. Init BOS: `sequence = NaN [1, 1, 32]` (graph replaces NaN with learned `bos_emb`)
+5. Loop until EOS or max_steps:
+   a. Run `flow_lm_main(sequence, text_embeddings)` → `last_hidden`, `eos_logits`
+   b. Check `eos_logits[0] > -4.0` → set EOS countdown (1–3 extra frames)
+   c. Sample noise `x ~ N(0, sqrt(temperature))` shape `[1, 32]`
+   d. Run `flow_lm_flow(last_hidden, s=0, t=1, x)` → `flow_dir`; `x += flow_dir / steps`
+   e. Reshape result to `[1, 1, 32]`, append to sequence
+6. Stack all latent frames → `[1, T_frames, 32]`
+7. Run `latent_to_mimi` → `[1, 512, T_frames]`
+8. Run `mimi_decoder` → `[1, 1, N_samples]` at 24 kHz
 
----
+**Text preprocessing** (matching reference):
+- Capitalize first letter, add period if missing punctuation
+- Pad with 8 leading spaces if < 5 words
+- Split long text at sentence boundaries into ≤50-token chunks
+- `max_frames = ceil(num_tokens/3 + 2) × 12.5`
+- `frames_after_eos`: 3 if ≤4 words, else 1
 
-## Phase 2 — Voice management
-
-- [x] Task 2.1: **Define voice representation**
-  - [x] Created `voices/manifest.json` mapping voice IDs to `.safetensors` file paths and license info
-  - [x] Defined `Voice` struct in `internal/tts/voice.go` (`ID`, `Path`, `License string`)
-  - [x] Documented license restrictions in `voices/README.md` (non-commercial voices must not be used commercially)
-
-- [x] Task 2.2: **Implement `VoiceManager`**
-  - [x] Implemented `ListVoices() []Voice` in `internal/tts/voice.go` (manifest-backed)
-  - [x] Implemented `ResolvePath(id string) (string, error)` in `internal/tts/voice.go`
-  - [x] Added voice file existence validation on resolve (`os.Stat` in `ResolvePath`)
-
-- [x] Task 2.3: **Add `export-voice` helper command**
-  - [x] Implemented `pockettts-tools export-voice --audio <file> --out <voice.safetensors>` in `cmd/pockettts-tools/export_voice.go`
-  - [x] Delegates to upstream `pocket-tts export-voice` via `go-call-pocket-tts`
-  - [x] On success, prints a suggested `manifest.json` entry
-
-- [x] Task 2.4: **Unit tests for VoiceManager**
-  - [x] Added fixture-based test for `ListVoices` in `internal/tts/voice_test.go`
-  - [x] Added unknown-ID test for `ResolvePath` in `internal/tts/voice_test.go`
-
----
-
-## Phase 3 — Model acquisition and ONNX bootstrap (`pockettts model` commands)
-
-> Download weights from Hugging Face, convert to ONNX, and wire up the ORT runtime. All steps are exposed as `pockettts model <subcommand>` so the setup is reproducible and scriptable.
-
-- [x] Task 3.1: **`pockettts model download` — fetch weights from Hugging Face**
-  - [x] Accept `--hf-repo` (default: `kyutai/pocket-tts`) and `--out-dir` (default: `models/`)
-  - [x] Authenticate via `HF_TOKEN` env var or `--hf-token` flag (required for gated repo)
-  - [x] Download required checkpoint files from a repo manifest; skip files already present (checksum-based)
-  - [x] Print download progress and verify checksums against pinned checksums or a persisted lock manifest (`models/download-manifest.lock.json`)
-
-- [x] Task 3.2: **`pockettts model export` — convert PyTorch weights to ONNX**
-  - [x] Delegates to Python helper script `scripts/export_onnx.py` via subprocess (`pockettts-tools model export`)
-  - [x] Script exports required sub-graphs: `text_conditioner`, `flow_lm_main`, `flow_lm_flow`, `mimi_encoder`, `mimi_decoder`
-  - [x] Supports `--models-dir`, `--out-dir` (default `models/onnx`), optional `--int8` quantization flag
-  - [x] Writes `models/onnx/manifest.json` with filenames, input/output names, shapes, and dtypes (inspected from exported ONNX)
-
-- [x] Task 3.3: **ORT bootstrap (`internal/onnx/runtime.go`)**
-  - [x] Initialize ORT environment once per process (`sync.Once`) via `onnx.Bootstrap`
-  - [x] Load `libonnxruntime` from path configured via `--ort-lib` / `POCKETTTS_ORT_LIB` (with `ORT_LIBRARY_PATH` compatibility)
-  - [x] Register graceful shutdown via deferred `onnx.Shutdown()` in `cmd/pockettts/main.go`
-  - [x] Document shared-library setup in `docs/INSTALL.md` (system package vs manual download)
-
-- [x] Task 3.4: **`SessionManager` (`internal/onnx/session.go`)**
-  - [x] Load all sessions defined in `manifest.json` via `NewSessionManager` and process-wide `LoadSessionsOnce`
-  - [x] Thread-safe access via `sync.RWMutex`; reload not supported in MVP (restart required)
-  - [x] Log input/output node names per session on load (`slog.Info` per graph)
-
-- [x] Task 3.5: **Tensor utility helpers (`internal/onnx/tensor.go`)**
-  - [x] `NewTensor(data []int64 | []float32, shape []int64) (*Tensor, error)`
-  - [x] `ExtractFloat32(output) ([]float32, error)` and `ExtractInt64(output) ([]int64, error)`
-  - [x] Centralise dtype/shape validation with descriptive errors
-
-- [x] Task 3.6: **`pockettts model verify` — smoke-test loaded sessions**
-  - [x] Run one dummy inference pass per session (zero-valued inputs of correct shape)
-  - [x] Report pass/fail per session; exit non-zero on any failure
-  - [x] Integrate as an additional check in `pockettts doctor`
-
-- [x] Task 3.7: **Unit and integration tests**
-  - [x] Unit test tensor helpers with table-driven shape/dtype cases
-  - [x] Integration test (build tag `integration`): `model verify` against a committed tiny identity ONNX model
+**Voice conditioning** (.safetensors pre-encoded):
+- Load first tensor from `.safetensors` file → `[T_voice, 1024]` or `[1, T_voice, 1024]`
+- Reshape to `[1, T_voice, 1024]` and prepend to `text_embeddings`
 
 ---
 
-## Phase 4 — Text preprocessing and input validation
+## Phase 16 — ORT Session Execution Foundation
 
-- [x] Task 4.1: **Implement text normalization (`internal/text/normalize.go`)**
-  - [x] Trim leading/trailing whitespace
-  - [x] Normalize line endings to `\n`
-  - [x] Reject empty string with a typed error
+> **Goal:** Integrate `onnxruntime-go` into the project. Replace the sine-wave stub engine with real ORT session execution. By the end, `Engine` can load a manifest, create ORT sessions, and run any ONNX graph with correct tensor I/O.
 
-- [x] Task 4.2: **Implement basic chunking (off by default)**
-  - [x] `ChunkBySentence(text string, maxChars int) []string` — split on `.`, `!`, `?`
-  - [ ] Honour `--chunk` / `--max-chunk-chars` flags (wired in Phase 6)
-  - [x] Keep chunk logic simple; each chunk becomes one subprocess call
+- [ ] Task 16.1: **Add `onnxruntime-go` dependency and integrate with ORT lifecycle**
+  - [ ] `go get github.com/yalue/onnxruntime_go`
+  - [ ] Wire `ort.SetSharedLibraryPath()` + `ort.InitializeEnvironment()` into existing `Bootstrap()`
+  - [ ] Wire `ort.DestroyEnvironment()` into existing `Shutdown()`
+  - [ ] Ensure `DetectRuntime()` result feeds library path to onnxruntime-go
 
-- [x] Task 4.3: **Unit tests for text package**
-  - [x] Table-driven tests for `Normalize`: whitespace, empty, unicode
-  - [x] Table-driven tests for `ChunkBySentence`: single sentence, multi-sentence, long text
+- [ ] Task 16.2: **Create `Runner` type for ONNX graph execution**
+  - [ ] `Runner` wraps `ort.AdvancedSession` — constructed from `Session` metadata (path, input/output names)
+  - [ ] `Run(inputs map[string]*Tensor) (map[string]*Tensor, error)` — creates ORT tensors, executes session, extracts outputs
+  - [ ] Handle tensor dtype dispatch (float32/int64) and shape validation
+  - [ ] `Close()` for session cleanup
 
----
+- [ ] Task 16.3: **Wire `SessionManager` + `Runner` into `Engine`**
+  - [ ] `NewEngine(manifestPath string, cfg RuntimeConfig)` — loads manifest via `SessionManager`, creates `Runner` per graph
+  - [ ] Remove sine-wave stub and `threads` field
+  - [ ] Store `map[string]*Runner` keyed by graph name
+  - [ ] `Engine.Close()` to tear down all runners
 
-## Phase 5 — WAV handling and audio post-processing
+- [ ] Task 16.4: **Add `cfg.Paths.ONNXManifest` config field**
+  - [ ] Add field to `PathsConfig`, default `"models/onnx/manifest.json"`
+  - [ ] Bind to `--onnx-manifest` flag and `POCKETTTS_ONNX_MANIFEST` env var
+  - [ ] Update `tts.NewService` to pass manifest path to `NewEngine`
+  - [ ] Update `synth` and `serve` commands accordingly
 
-- [x] Task 5.1: **Add `github.com/cwbudde/wav` and wire WAV I/O**
-  - [x] `go get github.com/cwbudde/wav`
-  - [x] Use library reader to decode WAV bytes received from subprocess stdout
-  - [x] Validate decoded format: 24000 Hz, mono, 16-bit PCM; return typed error on mismatch
-  - [x] Use library writer to encode PCM and write WAV to file path or stdout (`-`)
-
-- [x] Task 5.2: **Add `github.com/cwbudde/algo-dsp` and wire DSP chain**
-  - [x] `go get github.com/cwbudde/algo-dsp`
-  - [x] `--normalize`: peak-normalize using library primitive
-  - [x] `--dc-block`: remove DC offset using `design.Highpass` biquad filter (20 Hz cutoff)
-  - [x] `--fade-in-ms` / `--fade-out-ms`: linear amplitude ramp
-  - [x] Apply DSP chain after WAV decode, before WAV encode/write (wired in Phase 6)
-
-- [x] Task 5.3: **Unit tests for audio package**
-  - [x] Test WAV decode → validate format with a fixture WAV
-  - [x] Test WAV encode roundtrip: decode then re-encode, assert header fields match
-  - [x] Test each DSP step with synthetic PCM input
+- [ ] Task 16.5: **Tests**
+  - [ ] Unit test: mock ORT session, verify `Runner` creates correct input/output tensors
+  - [ ] Integration test (`integration` tag): load real identity ONNX graph, run round-trip tensor through `Runner`
+  - [ ] Verify `Engine` construction with test manifest
 
 ---
 
-## Phase 6 — `synth` CLI command (end-to-end)
+## Phase 17 — SentencePiece Tokenizer + Text Conditioning
 
-- [x] Task 6.1: **Wire up `pockettts synth`**
-  - [x] Accept `--text` flag or read from stdin when flag is absent
-  - [x] Accept `--voice` flag (resolved via VoiceManager from Phase 2)
-  - [x] Accept `--out` flag (`-` for stdout, default `out.wav`)
-  - [x] Pass extra `pocket-tts` flags through via `--tts-arg key=value` (forwarded verbatim)
+> **Goal:** Replace the unicode code-point preprocessor with SentencePiece tokenization via CGO, and run the `text_conditioner` ONNX graph to produce text embeddings.
 
-- [x] Task 6.2: **Handle chunked synthesis**
-  - [x] If `--chunk` is set, split text via `ChunkBySentence` from Phase 4
-  - [x] Run one subprocess call per chunk sequentially
-  - [x] Concatenate resulting PCM buffers into a single `AudioBuffer`
+- [ ] Task 17.1: **Add SentencePiece CGO binding**
+  - [ ] Evaluate and add Go SentencePiece binding (e.g. `github.com/pquerna/sentencepiece-go` or direct CGO wrapper)
+  - [ ] Create `internal/tokenizer/tokenizer.go` with `Tokenizer` interface: `Encode(text string) ([]int64, error)`
+  - [ ] Implement `SentencePieceTokenizer` that loads `tokenizer.model` file
 
-- [x] Task 6.3: **Apply DSP chain and write output**
-  - [x] Run configured DSP steps (Phase 5) on the merged PCM buffer
-  - [x] Write WAV to file or stdout
+- [ ] Task 17.2: **Add config for tokenizer model path**
+  - [ ] Add `cfg.Paths.TokenizerModel` field, default `"models/tokenizer.model"`
+  - [ ] Bind to `--tokenizer-model` flag and `POCKETTTS_TOKENIZER_MODEL` env var
+  - [ ] Wire into `Engine` or `tts.Service` construction
 
-- [x] Task 6.4: **Unit tests for `synth` command**
-  - [x] Test stdin fallback: when `--text` is absent, text is read from a mock reader
-  - [x] Test chunk path: multiple PCM buffers are correctly concatenated
-  - [x] Test DSP + write pipeline with a mock audio buffer and no subprocess involved
+- [ ] Task 17.3: **Text preprocessing matching reference implementation**
+  - [ ] Capitalize first letter of input
+  - [ ] Add trailing period if last character is alphanumeric
+  - [ ] Pad with 8 leading spaces if < 5 words
+  - [ ] Normalize whitespace (newlines → spaces, collapse doubles)
+  - [ ] Calculate `max_frames = ceil(num_tokens/3 + 2) × 12.5`
+  - [ ] Calculate `frames_after_eos`: 3 if ≤4 words, else 1
+  - [ ] Update sentence chunking to respect 50-token budget (tokenize first, then split)
 
-- [x] Task 6.5: **Integration test for `synth`** (build tag `integration`)
-  - [x] Skip gracefully if `pocket-tts` binary is not found
-  - [x] `synth --text “Hello.” --voice <fixture-voice> --out /tmp/out.wav`
-  - [x] Assert output file has valid RIFF header and non-zero duration
+- [ ] Task 17.4: **Run `text_conditioner` ONNX graph**
+  - [ ] Tokenize input text → `[]int64`
+  - [ ] Create input tensor `tokens [1, T] int64`
+  - [ ] Run `text_conditioner` via `Runner` → extract `text_embeddings [1, T, 1024] float32`
+  - [ ] Return embeddings for use in generation loop
 
-- [x] Task 6.6: **Native synthesis backend follow-up (de-Pythonize runtime path)**
-  - [x] Add backend selection (`--backend` / `POCKETTTS_BACKEND`: `native|cli`)
-  - [x] Implement `native` synthesis path as default (Go + ONNX Runtime, no `pocket-tts` subprocess)
-  - [x] Keep `cli` backend as compatibility mode during migration
-
----
-
-## Phase 7 — `serve` HTTP command
-
-- [x] Task 7.1: **Implement HTTP server (`internal/server/server.go`)**
-  - [x] `GET /health` — returns `{“status”:”ok”,”version”:”<build-version>”}`
-  - [x] `GET /voices` — returns JSON array from VoiceManager
-  - [x] `POST /tts` — JSON body `{text, voice, chunk?}`; synthesizes and returns `audio/wav`
-
-- [x] Task 7.2: **Subprocess worker pool**
-  - [x] Configurable concurrency limit via `--workers` (default 2)
-  - [x] Semaphore-based throttling; excess requests wait with context cancellation
-  - [x] Each worker runs one `pocket-tts generate` subprocess independently
-
-- [x] Task 7.3: **Graceful shutdown**
-  - [x] Handle `SIGINT` / `SIGTERM` via `signal.NotifyContext`
-  - [x] Stop accepting new connections; drain in-flight requests up to `--shutdown-timeout` (default 30s)
-
-- [x] Task 7.4: **Request validation and limits**
-  - [x] Reject empty or oversized text (`--max-text-bytes`, default 4096)
-  - [x] Per-request context timeout (`--request-timeout`, default 60s)
-  - [x] Return structured JSON errors `{“error”:”...”}` with appropriate HTTP status codes
-
-- [x] Task 7.5: **Unit tests for server package**
-  - [x] Test `/health` returns 200 with expected body
-  - [x] Test `/tts` with missing or empty body returns 400
-  - [x] Test concurrency throttling with a mock subprocess runner interface
-
-- [ ] Task 7.6: **Backend parity follow-up for `serve`**
-  - [x] Reuse same backend selection as `synth` (`native|cli`)
-  - [x] Ensure `native` mode serves TTS without Python subprocess workers
-  - [x] Keep worker-pool behavior for `cli` mode only
+- [ ] Task 17.5: **Tests**
+  - [ ] Unit test: verify SentencePiece tokenizer produces correct token IDs for known inputs
+  - [ ] Unit test: verify text preprocessing (capitalization, padding, punctuation)
+  - [ ] Integration test (`integration` tag): tokenize + run `text_conditioner`, verify output shape `[1, T, 1024]`
 
 ---
 
-## Phase 8 — Observability and operational hardening
+## Phase 18 — Autoregressive Generation Loop
 
-- [x] Task 8.1: **Structured logging**
-  - [x] Use `log/slog` (Go 1.21+) throughout; no third-party logging dependency
-  - [x] Log per-request: voice, text length, synthesis duration, exit code
-  - [x] Log level configurable via `--log-level` / `POCKETTTS_LOG_LEVEL` (default `info`)
+> **Goal:** Implement the full generation pipeline: `flow_lm_main` autoregressive loop, `flow_lm_flow` Euler ODE integration, `latent_to_mimi` + `mimi_decoder` audio decoding. `Engine.Infer()` produces real 24 kHz speech audio.
 
-- [ ] Task 8.2: **Metrics (optional, off by default)**
-  - [ ] Expose Prometheus metrics on `--metrics-addr` if flag is non-empty
-  - [ ] Counters: requests total, errors total; histogram: synthesis duration; gauge: worker queue depth
+- [ ] Task 18.1: **Implement `flow_lm_main` autoregressive loop**
+  - [ ] Initialize BOS: `sequence = NaN [1, 1, 32]` (graph handles NaN→bos_emb internally)
+  - [ ] Each step: run `flow_lm_main(sequence, text_embeddings)` → `last_hidden [1, 1024]`, `eos_logits [1, 1]`
+  - [ ] EOS detection: `eos_logits[0] > eos_threshold` (default `-4.0`, raw logits — **not** sigmoid)
+  - [ ] On first EOS: start countdown (`frames_after_eos`), continue generating
+  - [ ] After countdown expires or `max_steps` reached: stop
+  - [ ] Each step: decode `last_hidden` → latent frame via flow (Task 18.2), append `[1, 1, 32]` to sequence
+  - [ ] Note: sequence grows each step; `flow_lm_main` re-processes entire sequence (O(n²), no KV cache)
 
-- [x] Task 8.3: **`doctor` command hardening**
-  - [x] Run `pocket-tts --version` and print result; fail if binary not found or exits non-zero
-  - [x] Check Python version satisfies `>=3.10,<3.15`
-  - [x] Verify each voice file in `manifest.json` exists on disk
-  - [x] Run `pockettts model verify` as a sub-check (Phase 3.6)
-  - [x] Print colour-coded pass/fail per check; exit non-zero on any failure
+- [ ] Task 18.2: **Implement Euler flow integration (LSD decode)**
+  - [ ] Sample noise: `x ~ N(0, sqrt(temperature))` shape `[1, 32]`; `temperature` default `0.7`
+  - [ ] For `i` in `0..lsd_decode_steps` (default 1):
+    - `s = i / steps`, `t = (i+1) / steps`
+    - Create `s [1,1]`, `t [1,1]` tensors
+    - Run `flow_lm_flow(last_hidden, s, t, x)` → `flow_dir [1, 32]`
+    - `x += flow_dir / steps`
+  - [ ] Return `x` reshaped to `[1, 1, 32]`
 
-- [x] Task 8.4: **Tests for observability and `doctor`**
-  - [x] Test `doctor` with a mock environment: all-pass and one-fail scenarios
-  - [x] Test log output contains expected fields (voice, duration) using a captured `slog.Handler`
-  - [ ] Test metrics counter increments on success and error paths (skipped — metrics Task 8.2 not implemented)
+- [ ] Task 18.3: **Implement `latent_to_mimi` + `mimi_decoder` pipeline**
+  - [ ] Stack all accumulated latent frames → `latent [1, T_frames, 32]`
+  - [ ] Run `latent_to_mimi(latent)` → `mimi_latent [1, 512, T_frames]`
+  - [ ] Run `mimi_decoder(mimi_latent)` → `audio [1, 1, N_samples]`
+  - [ ] Extract and return `[]float32` PCM samples
 
-- [x] Task 8.5: **Doctor backend-awareness follow-up**
-  - [x] Make `doctor` checks conditional on selected backend
-  - [x] In `native` mode, do not require `pocket-tts` binary or Python
-  - [x] In `cli` mode, keep `pocket-tts` and Python checks
+- [ ] Task 18.4: **Wire complete pipeline into `Engine.Infer()`**
+  - [ ] Replace sine-wave stub with: tokenize → text_conditioner → AR loop → latent_to_mimi → mimi_decoder
+  - [ ] Return 24 kHz float32 PCM audio
+  - [ ] Update `audio.EncodeWAV` calls to use 24000 Hz sample rate (was 22050)
 
----
+- [ ] Task 18.5: **Add generation config fields to `TTSConfig`**
+  - [ ] `Temperature float64` (default `0.7`)
+  - [ ] `EOSThreshold float64` (default `-4.0`)
+  - [ ] `MaxSteps int` (default `256`)
+  - [ ] `LSDDecodeSteps int` (default `1`)
+  - [ ] Bind to CLI flags: `--temperature`, `--eos-threshold`, `--max-steps`, `--lsd-steps`
 
-## Phase 9 — Benchmarking
-
-- [x] Task 9.1: **Implement `pockettts bench` command**
-  - [x] Flags: `--text`, `--voice`, `--runs` (default 5), `--format json|table`
-  - [x] Treat first run as cold-start; remaining runs as warm
-  - [x] Compute per-run and aggregate: min, max, mean synthesis duration
-
-- [x] Task 9.2: **Realtime factor (RTF) calculation**
-  - [x] Parse output WAV duration from header after each run
-  - [x] RTF = synthesis_duration / audio_duration; print alongside latency
-  - [x] Optional: `--rtf-threshold` flag — exit non-zero if mean RTF exceeds threshold (CI gate)
-
-- [x] Task 9.3: **Unit tests for `bench` command**
-  - [x] Test aggregation logic (min/max/mean) with synthetic timing data
-  - [x] Test RTF calculation with known WAV duration and synthesis duration
-  - [x] Test `--rtf-threshold` gate: assert exit non-zero when threshold exceeded
-
----
-
-## Phase 10 — Packaging and release
-
-- [ ] Task 10.1: **Document runtime requirements**
-  - [ ] Update `docs/INSTALL.md`: Python 3.10–<3.15, `pip install pocket-tts`, HF model access (gated CC-BY-4.0), ORT shared library, voice license summary
-  - [ ] Document `pockettts model download` + `model export` as the canonical setup flow
-  - [ ] Note supported platforms: Linux/amd64 primary; macOS/arm64 best-effort
-
-- [ ] Task 10.2: **Release artifacts**
-  - [ ] Build Go binary for `linux/amd64` and `darwin/arm64` in CI
-  - [ ] Include `voices/manifest.json` example, sample `pockettts.yaml` config, and `scripts/export_onnx.py` in release archive
-
-- [ ] Task 10.3: **Operational README**
-  - [ ] Quick-start: `pockettts model download` → `model export` → `doctor` → `synth` → `serve`
-  - [ ] Example: `pockettts synth --text “Hello world.” --voice en-default --out hello.wav`
-  - [ ] Example: `pockettts serve --listen :8080 --workers 4`
-  - [ ] Docker example: sidecar pattern with Go binary + Python `pocket-tts` in one image
+- [ ] Task 18.6: **Tests**
+  - [ ] Unit test: mock `Runner`, verify `Engine.Infer` calls graphs in correct order with correct tensor shapes and names
+  - [ ] Unit test: verify EOS detection logic (countdown, threshold)
+  - [ ] Unit test: verify Euler integration arithmetic (single step, multi-step)
+  - [ ] Integration test (`integration` tag): `Engine.Infer("Hello.")` against real ONNX models → non-trivial audio, plausible length (~1–3s), not a sine wave
+  - [ ] CLI regression: `pockettts synth --backend native --text "Hello world." --out /tmp/native.wav` → valid 24 kHz WAV
 
 ---
 
-## Phase 11 — Runtime de-Pythonization and dependency cleanup
+## Phase 19 — Voice Conditioning (.safetensors)
 
-- [x] Task 11.1: **Classify Python usage by scope**
-  - [x] Runtime path: target Python-free (`synth`, `serve`, `doctor` in `native` mode)
-  - [x] Tooling path: allow Python (`model export`, optional `export-voice`)
-  - [x] Document boundary clearly in README + INSTALL
+> **Goal:** Load pre-encoded voice embeddings from `.safetensors` files and inject them as conditioning prefix into the generation loop. Supports the predefined Kyutai voice embeddings.
 
-- [x] Task 11.2: **Isolate tooling commands**
-  - [x] Keep `model export` as Python-required helper command
-  - [x] Mark `export-voice` as optional tooling command (not runtime requirement)
-  - [x] Add explicit error messages when tooling prerequisites are missing
+- [ ] Task 19.1: **Implement safetensors reader**
+  - [ ] Create `internal/safetensors/reader.go`
+  - [ ] Parse safetensors format: 8-byte LE header length → JSON header → raw tensor data
+  - [ ] Extract first tensor: name, dtype (float32), shape, raw bytes → `[]float32`
+  - [ ] Handle both `[T, 1024]` and `[1, T, 1024]` shapes (reshape 2D → 3D)
 
-- [x] Task 11.3: **Remove runtime dependency on `go-call-pocket-tts`**
-  - [x] Remove usage from `synth` and `doctor` runtime path
-  - [x] Keep only for tooling compatibility (if still needed), or remove entirely
-  - [x] Add CI job proving runtime commands pass in environment without Python
+- [ ] Task 19.2: **Inject voice embeddings into generation loop**
+  - [ ] Extend `Engine.Infer` signature: `Infer(text string, opts ...InferOption)` with `WithVoice(path string)`
+  - [ ] Load voice embedding via safetensors reader → `[1, T_voice, 1024]`
+  - [ ] Prepend to `text_embeddings`: `concat([voice_emb, text_emb], dim=1)` before passing to `flow_lm_main`
 
-- [x] Task 11.4: **Packaging profiles**
-  - [x] Add `runtime-native` profile (no Python installed)
-  - [x] Add `tooling` profile (Python + pocket-tts + export dependencies)
-  - [x] Validate both profiles in CI
+- [ ] Task 19.3: **Wire voice into `tts.Service` and CLI**
+  - [ ] `Service.Synthesize()` resolves voice ID → path via `VoiceManager`, passes to `Engine.Infer`
+  - [ ] `synth --voice <id>` and `serve` `/tts?voice=<id>` pass voice to native backend
+  - [ ] Graceful fallback: if no voice specified, generate without conditioning prefix
 
----
-
-## Phase 12 — Browser/WebAssembly runtime
-
-- [x] Task 12.1: **Build browser kernel from Go**
-  - [x] Added `cmd/pockettts-wasm` (`js/wasm` target) exposing `PocketTTSKernel` to JS
-  - [x] Reused Go text/audio code for normalize/tokenize/demo WAV generation in wasm
-  - [x] Added static web app shell in `web/` consuming the wasm kernel
-
-- [x] Task 12.2: **Web artifact CI workflow**
-  - [x] Added `.github/workflows/web-wasm-app.yml`
-  - [x] Workflow compiles wasm kernel (`GOOS=js GOARCH=wasm`)
-  - [x] Workflow copies Go runtime shim (`wasm_exec.js`) into web artifact
-  - [x] Workflow uploads ready-to-serve static artifact
-
-- [x] Task 12.3: **Bundle exported ONNX models for browser smoke checks**
-  - [x] Added optional model pipeline in web workflow (`include-models`)
-  - [x] Reused `pockettts model download` + `pockettts-tools model export` in CI
-  - [x] Bundles `models/onnx/*.onnx` + `manifest.json` into `web/dist/models/`
-  - [x] Web app runs manifest-based browser smoke inference via `onnxruntime-web`
-
-- [ ] Task 12.4: **Implement full browser TTS inference loop**
-  - [x] Added experimental browser autoregressive loop scaffold in `web/main.js` using `flow_lm_main` + `flow_lm_flow`
-  - [x] Added `latent_to_mimi` export graph (`scripts/export_onnx.py`) to match upstream latent denorm + quantizer projection path
-  - [x] Integrated `text_conditioner` + decoder graph orchestration in browser runtime
-  - [x] Produces WAV waveform from model outputs in-browser (experimental quality)
-  - [ ] Replace remaining heuristic/state assumptions with architecture-accurate KV-cache/state handling parity
-  - [ ] Add browser voice-conditioning parity (audio prompt / safetensors state path)
-
-- [ ] Task 12.5: **Browser performance and compatibility hardening**
-  - [ ] Add WebGPU/WebAssembly execution provider selection strategy + fallback
-  - [ ] Add chunked model loading/progress UI and memory guardrails
-  - [ ] Add browser integration tests (Playwright) for smoke inference
+- [ ] Task 19.4: **Tests**
+  - [ ] Unit test: safetensors reader with synthetic test data (known shape + values)
+  - [ ] Unit test: verify voice embedding is correctly prepended to text_embeddings
+  - [ ] Integration test (`integration` tag): generate with and without voice, verify outputs differ
+  - [ ] CLI: `pockettts synth --backend native --voice alba --text "Hello" --out /tmp/voice.wav`
 
 ---
 
-## Phase 13 — Go-first web runtime (de-JS orchestration)
+## Future Phases (planned)
 
-- [x] Task 13.1: **Move browser autoregressive orchestration into Go wasm**
-  - [x] Added `PocketTTSKernel.synthesizeModel(...)` in `cmd/pockettts-wasm/main_wasm.go`
-  - [x] Moved graph orchestration loop (`text_conditioner` -> `flow_lm_main` -> `flow_lm_flow` -> `latent_to_mimi` -> `mimi_decoder`) into Go wasm
-  - [x] Kept JS as thin host bridge (`PocketTTSBridge.runGraph`) for ORT Web session execution
-  - [x] Model WAV output now returned from Go wasm (base64)
+### Phase 20 — Pure Go SentencePiece (drop CGO tokenizer dependency)
 
-- [x] Task 13.2: **Narrow JS to pure host/runtime glue**
-  - [x] Moved bridge/runtime responsibilities out of UI script into `web/bridge.js`
-  - [x] Kept `web/main.js` focused on UI wiring, capability checks, progress, and audio playback
-  - [x] Added stricter bridge contract validation in `web/bridge_contract.js`
-  - [x] Added bridge contract tests in `web/bridge_contract.test.mjs`
+> Replace CGO SentencePiece binding with a pure Go implementation. Parse the `tokenizer.model` protobuf, implement BPE merge algorithm natively. Eliminates `libsentencepiece` build dependency.
 
-- [x] Task 13.3: **Add Go-native ONNX bundle acquisition command**
-  - [x] Implemented `pockettts-tools model download-onnx` for prebuilt ONNX bundles (zip/tar.gz)
-  - [x] Added lock-file support for pinned URLs/checksums (`bundles/onnx-bundles.lock.json`)
-  - [x] Added checksum verification + manifest/required-graph validation after extraction
-  - [x] Integrated optional prebuilt-bundle path into web workflows (`onnx-bundle-url`, `onnx-bundle-sha256`)
+### Phase 21 — Voice encoding from audio (mimi_encoder + speaker_proj)
 
-- [ ] Task 13.4: **Runtime parity and quality hardening**
-  - [ ] Align Go wasm prompt/token behavior with upstream sentencepiece/tokenizer path
-  - [ ] Improve EOS/stopping and long-text chunking parity vs upstream generation
-  - [ ] Add deterministic regression test vectors for web synth outputs
+> Support encoding raw audio files into voice embeddings via the `mimi_encoder` ONNX graph + `speaker_proj_weight` linear projection. Enables creating voice embeddings from any audio without external tooling.
 
----
+### Phase 22 — Pure Go safetensors (drop CGO if any, optimize)
 
-## Phase 14 — Comprehensive integration tests
+> Harden the safetensors reader: support all dtypes, multiple tensors, large files via mmap. If any CGO dependency was introduced, replace with pure Go.
 
-> **Goal:** Establish a reproducible, CI-gated integration test suite that validates the full synthesis pipeline end-to-end across both backends, covering the HTTP server, CLI commands, and audio output correctness. Integration tests use the `integration` build tag and skip gracefully when required dependencies (`pocket-tts` binary, ONNX runtime, voice files) are unavailable.
+### Phase 23 — Streaming audio generation
 
-- [x] Task 14.1: **Test infrastructure and fixtures**
-  - [x] Add `testdata/` directory under `cmd/pockettts/` with a minimal fixture WAV (silence, ~0.1 s at 24 kHz mono) for use as a voice-conditioning prompt
-  - [x] Add a shared `internal/testutil` package with helpers: `RequirePocketTTS(t)`, `RequireONNXRuntime(t)`, `RequireVoiceFile(t, id)` — each calls `t.Skip` with a clear reason when the prerequisite is absent
-  - [x] Add an integration test matrix in CI (`.github/workflows/test-integration.yml`) using a self-hosted or large runner that has `pocket-tts` and models available; gate the job on the `integration` tag being passed to `go test`
+> Generate and decode latent frames concurrently (producer/consumer pattern matching Rust/Python threading model). Enable real-time audio streaming from the HTTP server.
 
-- [x] Task 14.2: **CLI `synth` integration tests (both backends)**
-  - [x] `TestSynthCLI_ShortText`: synthesize ≤ 50 chars via `--backend cli`, assert RIFF header, non-zero PCM samples, and 24 kHz sample rate
-  - [x] `TestSynthCLI_Chunked`: synthesize multi-sentence text with `--chunk`, assert concatenated output is longer than any single chunk
-  - [x] `TestSynthCLI_DSPChain`: add `--normalize --dc-block --fade-in-ms 10 --fade-out-ms 10`, assert output is still valid WAV with equal sample count
-  - [x] `TestSynthCLI_Stdout`: use `--out -`, capture stdout, assert RIFF bytes
-  - [x] `TestSynthNative_ShortText`: same assertions as `TestSynthCLI_ShortText` for `--backend native`; skip when ONNX runtime or model is absent
-  - [x] `TestSynthNative_Chunked`: chunked synthesis via native backend; assert PCM sample count grows with chunk count
+### Phase 24 — KV-cache ONNX graphs for O(n) inference
 
-- [x] Task 14.3: **HTTP server (`serve`) integration tests**
-  - [x] `TestServe_HealthEndpoint`: start server on a random free port with `httptest.NewServer` or a live `net.Listen`, `GET /healthz`, assert `{"status":"ok"}` and 200
-  - [x] `TestServe_VoicesEndpoint`: `GET /voices`, assert JSON array contains at least the fixture voice ID
-  - [x] `TestServe_TTSEndpoint_CLI`: `POST /tts` `{"text":"Hello.","voice":"<fixture>"}` via `cli` backend; assert response `Content-Type: audio/wav` and valid RIFF body
-  - [x] `TestServe_TTSEndpoint_Native`: same for `native` backend; skip when ONNX runtime absent
-  - [x] `TestServe_TTSEndpoint_EmptyText`: assert 400 status and `{"error":...}` body
-  - [x] `TestServe_TTSEndpoint_OversizedText`: send text exceeding `--max-text-bytes`; assert 400
-  - [x] `TestServe_ConcurrentRequests`: fire N concurrent `POST /tts` requests up to the worker limit; assert all succeed and durations are bounded
-
-- [x] Task 14.4: **`doctor` integration tests**
-  - [x] `TestDoctorPasses_CLI`: run `pockettts doctor` against a valid environment (pocket-tts binary + voices + model files); assert exit 0 and `doctor checks passed` in stdout
-  - [x] `TestDoctorPasses_Native`: same in native mode (no pocket-tts required); assert exit 0
-  - [x] `TestDoctorFails_MissingVoiceFile`: point manifest at a non-existent voice file; assert exit non-zero and failure message in stderr
-  - [x] `TestDoctorFails_BadPocketTTS`: provide a fake `pocket-tts` that exits 1; assert failure surfaced
-
-- [x] Task 14.5: **`model verify` integration tests**
-  - [x] `TestModelVerify_PassesWithValidONNX`: run `model verify` against the committed tiny identity ONNX from Phase 3.7; assert exit 0
-  - [x] `TestModelVerify_FailsWithMissingManifest`: point `--manifest` at a non-existent path; assert structured error returned
-  - [x] `TestModelVerify_FailsWithCorruptONNX`: write a truncated `.onnx` file; assert exit non-zero with actionable error message
-
-- [ ] Task 14.6: **Audio output correctness assertions**
-  - [x] Extract a shared `AssertValidWAV(t, data []byte)` helper that checks: RIFF header, PCM sub-chunk, 24000 Hz sample rate, 16-bit depth, non-zero sample count
-  - [x] Add `AssertWAVDurationApprox(t, data []byte, minSec, maxSec float64)` to sanity-check synthesis output is plausibly speech-length
-  - [ ] Apply both helpers consistently across Task 14.2 and 14.3 test assertions
-
-- [x] Task 14.7: **CI integration test job**
-  - [x] Add `.github/workflows/test-integration.yml` triggered on `workflow_dispatch` and `schedule` (nightly)
-  - [x] Job installs `pocket-tts`, downloads model subset, runs `go test -tags integration ./...`
-  - [x] Upload test output and any generated WAV artifacts for post-run inspection
-  - [ ] Gate merges: add integration job as an optional status check (required on `main` only after models are stable)
+> Re-export `flow_lm_main` with stateful KV cache inputs/outputs. Each autoregressive step processes only the new frame instead of the full sequence, reducing inference from O(n²) to O(n).
