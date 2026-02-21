@@ -153,7 +153,9 @@ func TestFileSHA256_KnownContent(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "f.bin")
 	content := []byte("test content")
-	os.WriteFile(p, content, 0o644)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	h := sha256.Sum256(content)
 	want := hex.EncodeToString(h[:])
@@ -177,7 +179,9 @@ func TestFileSHA256_MissingFile(t *testing.T) {
 func TestFileSHA256_EmptyFile(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "empty.bin")
-	os.WriteFile(p, []byte{}, 0o644)
+	if err := os.WriteFile(p, []byte{}, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	h := sha256.Sum256([]byte{})
 	want := hex.EncodeToString(h[:])
