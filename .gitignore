@@ -4,8 +4,10 @@
 *.dll
 *.so
 *.dylib
-# Main binary
+# Built binaries
 /pockettts
+/pockettts-tools
+/pockettts-wasm
 
 # Test binary, built with `go test -c`
 *.test
