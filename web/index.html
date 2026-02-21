@@ -69,6 +69,11 @@
       .hint {
         margin-top: 1rem;
       }
+      progress {
+        width: 100%;
+        height: 14px;
+        margin-top: 0.75rem;
+      }
     </style>
   </head>
   <body>
@@ -85,6 +90,8 @@
           <button id="synthesize-model" type="button" disabled>Synthesize via ONNX (Exp)</button>
           <a id="download" download="hello.wav">Download</a>
         </div>
+        <progress id="synth-progress" value="0" max="100"></progress>
+        <div id="synth-progress-text" class="muted">Idle</div>
         <audio id="player" controls style="margin-top: 0.75rem; width: 100%"></audio>
         <pre id="log" class="muted">Loading wasm kernel...</pre>
         <p class="hint muted">
