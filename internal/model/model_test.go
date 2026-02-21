@@ -129,7 +129,9 @@ func TestExistingMatches_ChecksumMatch(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "f.bin")
 	content := []byte("hello world")
-	os.WriteFile(p, content, 0o644)
+	if err := os.WriteFile(p, content, 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	h := sha256.Sum256(content)
 	checksum := hex.EncodeToString(h[:])
