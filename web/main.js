@@ -10,6 +10,15 @@ const download = document.getElementById("download");
 
 let manifestCache = null;
 const sessionCache = new Map();
+const requiredModelGraphs = ["text_conditioner", "flow_lm_main", "flow_lm_flow", "mimi_decoder"];
+
+const capabilities = {
+  kernelReady: false,
+  modelManifestReady: false,
+  modelGraphsReady: false,
+  modelReady: false,
+  reasons: [],
+};
 
 function decodeBase64ToBytes(base64) {
   const bin = atob(base64);
@@ -38,6 +47,11 @@ async function loadManifest() {
   }
   manifestCache = await res.json();
   return manifestCache;
+}
+
+function hasRequiredGraphs(manifest) {
+  const names = new Set((manifest.graphs || []).map((g) => g.name));
+  return requiredModelGraphs.every((name) => names.has(name));
 }
 
 async function getGraph(graphName) {
@@ -166,6 +180,9 @@ async function bootKernel() {
 }
 
 runBtn.addEventListener("click", async () => {
+  if (runBtn.disabled) {
+    return;
+  }
   const input = textArea.value;
   const out = globalThis.PocketTTSKernel.synthesizeWav(input);
   if (!out.ok) {
@@ -179,6 +196,9 @@ runBtn.addEventListener("click", async () => {
 });
 
 verifyBtn.addEventListener("click", async () => {
+  if (verifyBtn.disabled) {
+    return;
+  }
   try {
     log.textContent = "Loading ONNX manifest...";
     const manifest = await loadManifest();
@@ -201,6 +221,9 @@ verifyBtn.addEventListener("click", async () => {
 });
 
 modelSynthBtn.addEventListener("click", async () => {
+  if (modelSynthBtn.disabled) {
+    return;
+  }
   try {
     modelSynthBtn.disabled = true;
     log.textContent = "Running Go wasm model synthesis...";
@@ -224,6 +247,86 @@ modelSynthBtn.addEventListener("click", async () => {
   }
 });
 
-bootKernel().catch((err) => {
-  log.textContent = `Kernel boot failed: ${err.message}`;
+function setCapabilityButtons() {
+  runBtn.disabled = !capabilities.kernelReady;
+  verifyBtn.disabled = !capabilities.modelReady;
+  modelSynthBtn.disabled = !capabilities.modelReady;
+}
+
+async function detectCapabilities() {
+  capabilities.reasons = [];
+
+  try {
+    await bootKernel();
+    const selfTest = globalThis.PocketTTSKernel.synthesizeWav("hello");
+    if (!selfTest?.ok) {
+      throw new Error(selfTest?.error || "kernel self-test failed");
+    }
+    capabilities.kernelReady = true;
+  } catch (err) {
+    capabilities.kernelReady = false;
+    capabilities.reasons.push(`kernel unavailable: ${err.message}`);
+  }
+
+  try {
+    const manifest = await loadManifest();
+    capabilities.modelManifestReady = true;
+    if (!hasRequiredGraphs(manifest)) {
+      capabilities.modelGraphsReady = false;
+      capabilities.reasons.push(
+        `manifest missing required graphs: ${requiredModelGraphs.join(", ")}`
+      );
+    } else {
+      capabilities.modelGraphsReady = true;
+    }
+  } catch (err) {
+    capabilities.modelManifestReady = false;
+    capabilities.modelGraphsReady = false;
+    capabilities.reasons.push(`model bundle unavailable: ${err.message}`);
+  }
+
+  capabilities.modelReady = capabilities.kernelReady && capabilities.modelManifestReady && capabilities.modelGraphsReady;
+  setCapabilityButtons();
+}
+
+function renderCapabilityStatus() {
+  const lines = [];
+  lines.push(`Kernel: ${capabilities.kernelReady ? "READY" : "UNAVAILABLE"}`);
+  lines.push(`Model manifest: ${capabilities.modelManifestReady ? "READY" : "UNAVAILABLE"}`);
+  lines.push(`Required model graphs: ${capabilities.modelGraphsReady ? "READY" : "UNAVAILABLE"}`);
+  lines.push(`Model synth: ${capabilities.modelReady ? "ENABLED" : "DISABLED"}`);
+
+  if (capabilities.reasons.length > 0) {
+    lines.push("");
+    lines.push("Details:");
+    for (const reason of capabilities.reasons) {
+      lines.push(`- ${reason}`);
+    }
+  }
+
+  lines.push("");
+  lines.push("Enabled actions:");
+  if (!runBtn.disabled) {
+    lines.push("- Generate Fallback Tone WAV");
+  }
+  if (!verifyBtn.disabled) {
+    lines.push("- Verify ONNX Models");
+  }
+  if (!modelSynthBtn.disabled) {
+    lines.push("- Synthesize via ONNX (Exp)");
+  }
+  if (runBtn.disabled && verifyBtn.disabled && modelSynthBtn.disabled) {
+    lines.push("- none");
+  }
+
+  log.textContent = lines.join("\n");
+}
+
+async function initApp() {
+  await detectCapabilities();
+  renderCapabilityStatus();
+}
+
+initApp().catch((err) => {
+  log.textContent = `Startup checks failed: ${err.message}`;
 });

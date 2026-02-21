@@ -224,10 +224,12 @@ Run the workflow:
 The uploaded artifact (`pockettts-web-wasm-<run_id>`) can be served as static files.
 It provides:
 
-- `Generate Demo WAV`: wasm-only demo audio generation.
+- `Generate Fallback Tone WAV`: wasm-only fallback tone generation (sanity path, not model speech quality).
 - `Verify ONNX Models`: browser-side ONNX smoke inference over bundled graphs via `onnxruntime-web`.
 - `Synthesize via ONNX (Exp)`: experimental browser autoregressive graph orchestration, now executed in Go wasm (`PocketTTSKernel.synthesizeModel`) via a thin JS ORT bridge.
   - Uses exported `latent_to_mimi` graph when present for upstream-aligned latent denorm + quantizer projection.
+
+At startup the app now runs capability checks and only enables actions that are currently available (kernel, manifest, required model graphs).
 
 Current gap for full browser PocketTTS inference:
 
