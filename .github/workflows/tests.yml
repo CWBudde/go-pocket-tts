@@ -33,3 +33,5 @@ jobs:
   web-wasm:
     name: Web WASM App
     uses: ./.github/workflows/web-wasm-app.yml
+    with:
+      include-models: false
