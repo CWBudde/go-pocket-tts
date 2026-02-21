@@ -47,9 +47,7 @@ func TestWithShutdownTimeout_Chaining(t *testing.T) {
 func TestStaticVoiceLister_Empty(t *testing.T) {
 	vl := staticVoiceLister{}
 	voices := vl.ListVoices()
-	if voices == nil {
-		// nil slice is fine; just verify no panic
-	}
+	// nil slice is fine; just verify no panic
 	if len(voices) != 0 {
 		t.Errorf("ListVoices() = %v; want empty", voices)
 	}
