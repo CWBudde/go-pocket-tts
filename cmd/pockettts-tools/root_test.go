@@ -6,17 +6,6 @@ import (
 	"testing"
 )
 
-// executeCmd runs the root command with the given args and returns combined output.
-func executeCmd(args ...string) (string, error) {
-	buf := new(bytes.Buffer)
-	cmd := NewRootCmd()
-	cmd.SetOut(buf)
-	cmd.SetErr(buf)
-	cmd.SetArgs(args)
-	err := cmd.Execute()
-	return buf.String(), err
-}
-
 // --- NewRootCmd ---
 
 func TestNewRootCmd_Use(t *testing.T) {

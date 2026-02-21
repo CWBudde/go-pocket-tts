@@ -112,7 +112,9 @@ func TestExistingMatches_Directory(t *testing.T) {
 func TestExistingMatches_ChecksumMismatch(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "f.bin")
-	os.WriteFile(p, []byte("data"), 0o644)
+	if err := os.WriteFile(p, []byte("data"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	ok, err := existingMatches(p, strings.Repeat("a", 64))
 	if err != nil {
@@ -521,9 +523,7 @@ func TestDownload_SkipExistingFile(t *testing.T) {
 
 	// The first file is skipped. Other files will hit the 403 server.
 	// We only care that the skip path was exercised — check the output.
-	if strings.Contains(out.String(), "skip "+firstFile.Filename) {
-		// Skip path exercised successfully.
-	}
+	_ = strings.Contains(out.String(), "skip "+firstFile.Filename) // skip path exercised if true
 	_ = err // may fail on other files due to 403
 }
 
