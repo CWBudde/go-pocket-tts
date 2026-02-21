@@ -7,6 +7,8 @@ const verifyBtn = document.getElementById("verify-models");
 const modelSynthBtn = document.getElementById("synthesize-model");
 const player = document.getElementById("player");
 const download = document.getElementById("download");
+const synthProgress = document.getElementById("synth-progress");
+const synthProgressText = document.getElementById("synth-progress-text");
 
 let manifestCache = null;
 const sessionCache = new Map();
@@ -52,6 +54,21 @@ function setAudioBlob(wavBytes) {
   player.src = url;
   download.href = url;
   download.textContent = "Download hello.wav";
+}
+
+function resetProgress() {
+  synthProgress.value = 0;
+  synthProgressText.textContent = "Idle";
+}
+
+function updateProgress(evt) {
+  const percent = Number(evt?.percent || 0);
+  synthProgress.value = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+  const stage = evt?.stage || "working";
+  const detail = evt?.detail || "";
+  const current = evt?.current ?? 0;
+  const total = evt?.total ?? 0;
+  synthProgressText.textContent = `${Math.round(synthProgress.value)}% - ${stage}${detail ? ` - ${detail}` : ""}${total ? ` (${current}/${total})` : ""}`;
 }
 
 async function loadManifest() {
@@ -243,10 +260,13 @@ modelSynthBtn.addEventListener("click", async () => {
   }
   try {
     modelSynthBtn.disabled = true;
+    resetProgress();
     log.textContent = "Running Go wasm model synthesis...";
 
     const t0 = performance.now();
-    const out = await globalThis.PocketTTSKernel.synthesizeModel(textArea.value);
+    const out = await globalThis.PocketTTSKernel.synthesizeModel(textArea.value, (evt) => {
+      updateProgress(evt);
+    });
     const dtMs = (performance.now() - t0).toFixed(1);
 
     if (!out.ok) {
@@ -255,9 +275,12 @@ modelSynthBtn.addEventListener("click", async () => {
 
     const wavBytes = decodeBase64ToBytes(out.wav_base64);
     setAudioBlob(wavBytes);
+    synthProgress.value = 100;
+    synthProgressText.textContent = "100% - done";
 
     log.textContent = `Model synth (Go wasm) complete\nNormalized: ${out.text}\nTokens: ${out.token_count}\nFrames: ${out.frames}\nWAV bytes: ${wavBytes.length}\nElapsed: ${dtMs} ms`;
   } catch (err) {
+    synthProgressText.textContent = `Failed: ${formatError(err)}`;
     log.textContent = `Model synth failed: ${formatError(err)}`;
   } finally {
     modelSynthBtn.disabled = false;
@@ -340,6 +363,7 @@ function renderCapabilityStatus() {
 }
 
 async function initApp() {
+  resetProgress();
   await detectCapabilities();
   renderCapabilityStatus();
 }

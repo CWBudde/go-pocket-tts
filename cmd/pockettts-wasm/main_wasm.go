@@ -33,6 +33,37 @@ type tensorPayload struct {
 	I64   []int64   `json:"i64,omitempty"`
 }
 
+type progressReporter struct {
+	cb js.Value
+}
+
+func (p *progressReporter) Emit(stage string, current, total int, detail string) {
+	if p == nil || p.cb.IsUndefined() || p.cb.IsNull() {
+		return
+	}
+	percent := 0.0
+	if total > 0 {
+		percent = (float64(current) / float64(total)) * 100.0
+		if percent < 0 {
+			percent = 0
+		}
+		if percent > 100 {
+			percent = 100
+		}
+	}
+	payload := map[string]any{
+		"stage":   stage,
+		"current": current,
+		"total":   total,
+		"percent": percent,
+		"detail":  detail,
+	}
+	defer func() {
+		_ = recover()
+	}()
+	p.cb.Invoke(js.ValueOf(payload))
+}
+
 var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 func main() {
@@ -129,12 +160,16 @@ func synthesizeModelAsync(_ js.Value, args []js.Value) any {
 		reject := pArgs[1]
 
 		textArg := ""
+		var progress progressReporter
 		if len(args) > 0 {
 			textArg = args[0].String()
 		}
+		if len(args) > 1 && args[1].Type() == js.TypeFunction {
+			progress.cb = args[1]
+		}
 
 		go func() {
-			res, err := synthesizeModel(textArg)
+			res, err := synthesizeModel(textArg, &progress)
 			if err != nil {
 				reject.Invoke(err.Error())
 				return
@@ -147,7 +182,8 @@ func synthesizeModelAsync(_ js.Value, args []js.Value) any {
 	return promiseCtor.New(handler)
 }
 
-func synthesizeModel(input string) (map[string]any, error) {
+func synthesizeModel(input string, progress *progressReporter) (map[string]any, error) {
+	progress.Emit("prepare", 0, 100, "normalizing and tokenizing input")
 	normalized := normalizePromptForModel(input)
 	if normalized == "" {
 		return nil, fmt.Errorf("text is empty")
@@ -158,7 +194,9 @@ func synthesizeModel(input string) (map[string]any, error) {
 	if len(tokens) == 0 {
 		return nil, fmt.Errorf("no tokens produced after preprocessing")
 	}
+	progress.Emit("prepare", 5, 100, fmt.Sprintf("tokenized %d units", len(tokens)))
 
+	progress.Emit("text_conditioner", 10, 100, "running text conditioner")
 	textCondOutputs, err := runGraph("text_conditioner", map[string]tensorPayload{
 		"tokens": {
 			DType: "int64",
@@ -173,6 +211,7 @@ func synthesizeModel(input string) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("text_conditioner output: %w", err)
 	}
+	progress.Emit("text_conditioner", 15, 100, "text embeddings ready")
 
 	latentDim := int64(32)
 	condDim := int64(1024)
@@ -195,8 +234,17 @@ func synthesizeModel(input string) (map[string]any, error) {
 	if maxSteps > flowMaxSteps {
 		maxSteps = flowMaxSteps
 	}
+	progress.Emit("autoregressive", 20, 100, fmt.Sprintf("starting generation loop (%d max steps)", maxSteps))
 
 	for step := 0; step < maxSteps; step++ {
+		if step == 0 || step%2 == 0 {
+			progress.Emit(
+				"autoregressive",
+				20+int((float64(step)/float64(maxSteps))*60.0),
+				100,
+				fmt.Sprintf("step %d/%d", step+1, maxSteps),
+			)
+		}
 		seqFlat := flattenFrames(sequenceFrames, int(latentDim))
 
 		mainOutputs, err := runGraph("flow_lm_main", map[string]tensorPayload{
@@ -277,6 +325,12 @@ func synthesizeModel(input string) (map[string]any, error) {
 			eosStep = step
 		}
 		if eosStep >= 0 && step >= eosStep+flowFramesAfterEOS && step+1 >= flowMinSteps {
+			progress.Emit(
+				"autoregressive",
+				80,
+				100,
+				fmt.Sprintf("stopped at step %d (EOS+tail)", step+1),
+			)
 			break
 		}
 	}
@@ -287,6 +341,7 @@ func synthesizeModel(input string) (map[string]any, error) {
 
 	steps := int64(len(generated))
 	latentSeq := flattenFrames(generated, int(latentDim))
+	progress.Emit("latent_to_mimi", 85, 100, "projecting latent for Mimi decoder")
 
 	var mimiInput tensorPayload
 	latentToMimiOutputs, err := runGraph("latent_to_mimi", map[string]tensorPayload{
@@ -331,19 +386,22 @@ func synthesizeModel(input string) (map[string]any, error) {
 	if len(audioOut.F32) == 0 {
 		return nil, fmt.Errorf("decoder returned empty audio")
 	}
+	progress.Emit("mimi_decoder", 95, 100, "encoding WAV")
 
 	wav, err := audio.EncodeWAVPCM16(audioOut.F32, modelSampleRate)
 	if err != nil {
 		return nil, fmt.Errorf("encode wav: %w", err)
 	}
 
-	return okResult(map[string]any{
+	res := okResult(map[string]any{
 		"text":        normalized,
 		"token_count": len(tokens),
 		"frames":      len(generated),
 		"sample_rate": modelSampleRate,
 		"wav_base64":  base64.StdEncoding.EncodeToString(wav),
-	}), nil
+	})
+	progress.Emit("done", 100, 100, "synthesis complete")
+	return res, nil
 }
 
 func runGraph(graphName string, feeds map[string]tensorPayload) (map[string]tensorPayload, error) {
