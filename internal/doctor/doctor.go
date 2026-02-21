@@ -68,17 +68,17 @@ func Run(cfg Config, w io.Writer) Result {
 
 	// ---- Python version ---------------------------------------------------
 	if cfg.SkipPython {
-		fmt.Fprintf(w, "%s python version: skipped\n", PassMark)
+		_, _ = fmt.Fprintf(w, "%s python version: skipped\n", PassMark)
 	} else {
 		pyVer, err := cfg.PythonVersion()
 		if err != nil {
 			res.fail(fmt.Sprintf("python version: %v", err))
-			fmt.Fprintf(w, "%s python version: not found (%v)\n", FailMark, err)
+			_, _ = fmt.Fprintf(w, "%s python version: not found (%v)\n", FailMark, err)
 		} else if pyErr := checkPythonVersion(pyVer); pyErr != nil {
 			res.fail(fmt.Sprintf("python version: %v", pyErr))
-			fmt.Fprintf(w, "%s python version %s: %v\n", FailMark, pyVer, pyErr)
+			_, _ = fmt.Fprintf(w, "%s python version %s: %v\n", FailMark, pyVer, pyErr)
 		} else {
-			fmt.Fprintf(w, "%s python version: %s\n", PassMark, pyVer)
+			_, _ = fmt.Fprintf(w, "%s python version: %s\n", PassMark, pyVer)
 		}
 	}
 
