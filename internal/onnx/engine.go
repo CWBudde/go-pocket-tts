@@ -2,35 +2,53 @@ package onnx
 
 import (
 	"fmt"
-	"math"
-
-	"github.com/example/go-pocket-tts/internal/config"
+	"log/slog"
 )
 
+// Engine manages ONNX graph runners loaded from a manifest.
 type Engine struct {
-	threads int
+	runners map[string]*Runner
+	sm      *SessionManager
 }
 
-func NewEngine(cfg config.RuntimeConfig) (*Engine, error) {
-	if cfg.Threads < 1 {
-		return nil, fmt.Errorf("runtime threads must be >= 1")
+// NewEngine loads the ONNX manifest and creates a Runner for each graph.
+func NewEngine(manifestPath string, cfg RunnerConfig) (*Engine, error) {
+	sm, err := NewSessionManager(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("load manifest: %w", err)
 	}
-	if _, err := Bootstrap(cfg); err != nil {
-		return nil, fmt.Errorf("bootstrap onnx runtime: %w", err)
+
+	runners := make(map[string]*Runner, len(sm.Sessions()))
+	for _, sess := range sm.Sessions() {
+		runner, err := NewRunner(sess, cfg)
+		if err != nil {
+			for _, r := range runners {
+				r.Close()
+			}
+			return nil, fmt.Errorf("create runner %q: %w", sess.Name, err)
+		}
+		runners[sess.Name] = runner
+		slog.Info("created ONNX runner", "graph", sess.Name)
 	}
-	return &Engine{threads: cfg.Threads}, nil
+
+	return &Engine{runners: runners, sm: sm}, nil
 }
 
+// Runner returns the named graph runner, if it exists.
+func (e *Engine) Runner(name string) (*Runner, bool) {
+	r, ok := e.runners[name]
+	return r, ok
+}
+
+// Close releases all ORT resources.
+func (e *Engine) Close() {
+	for _, r := range e.runners {
+		r.Close()
+	}
+}
+
+// Infer is a temporary compatibility shim.
+// It will be replaced in Phase 18 with the full generation pipeline.
 func (e *Engine) Infer(tokens []int) ([]float32, error) {
-	if len(tokens) == 0 {
-		return nil, fmt.Errorf("empty token list")
-	}
-
-	sampleCount := len(tokens) * 512
-	out := make([]float32, sampleCount)
-	for i := range out {
-		t := float64(i) / 22050.0
-		out[i] = float32(0.2 * math.Sin(2*math.Pi*220*t))
-	}
-	return out, nil
+	return nil, fmt.Errorf("Engine.Infer not yet implemented; generation pipeline is Phase 18")
 }
