@@ -3,6 +3,7 @@ package testutil_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/example/go-pocket-tts/internal/testutil"
@@ -10,7 +11,6 @@ import (
 
 func TestSilenceWAVPath_FileExists(t *testing.T) {
 	// Walk up from internal/testutil to the repo root and check the fixture.
-	// When tests run, cwd is the package directory; go up two levels.
 	root := filepath.Join("..", "..")
 	p := filepath.Join(root, testutil.SilenceWAVPath())
 	if _, err := os.Stat(p); err != nil {
@@ -19,37 +19,23 @@ func TestSilenceWAVPath_FileExists(t *testing.T) {
 }
 
 func TestRequirePocketTTS_SkipsWhenAbsent(t *testing.T) {
-	// Temporarily point the binary lookup at something that cannot exist.
-	orig := os.Getenv("POCKETTTS_TTS_CLI_PATH")
 	t.Setenv("POCKETTTS_TTS_CLI_PATH", "/nonexistent/pocket-tts-binary")
-	defer func() {
-		if orig == "" {
-			os.Unsetenv("POCKETTTS_TTS_CLI_PATH")
-		}
-	}()
 
-	skipped := false
-	fakeT := &skipTracker{TB: t, onSkip: func() { skipped = true }}
-	testutil.RequirePocketTTS(fakeT)
-	if !skipped {
+	if !captureSkip(func(tb testing.TB) { testutil.RequirePocketTTS(tb) }) {
 		t.Error("expected RequirePocketTTS to skip when binary is absent")
 	}
 }
 
 func TestRequireONNXRuntime_SkipsWhenAbsent(t *testing.T) {
-	// Ensure env vars point nowhere.
 	t.Setenv("ORT_LIBRARY_PATH", "/nonexistent/libonnxruntime.so")
+	t.Setenv("POCKETTTS_ORT_LIB", "")
 
-	skipped := false
-	fakeT := &skipTracker{TB: t, onSkip: func() { skipped = true }}
-	testutil.RequireONNXRuntime(fakeT)
-	if !skipped {
+	if !captureSkip(func(tb testing.TB) { testutil.RequireONNXRuntime(tb) }) {
 		t.Error("expected RequireONNXRuntime to skip when library is absent")
 	}
 }
 
 func TestRequireVoiceFile_SkipsWhenManifestAbsent(t *testing.T) {
-	// Run from a temp dir that has no voices/manifest.json.
 	orig, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
@@ -59,23 +45,48 @@ func TestRequireVoiceFile_SkipsWhenManifestAbsent(t *testing.T) {
 		t.Fatalf("Chdir: %v", err)
 	}
 
-	skipped := false
-	fakeT := &skipTracker{TB: t, onSkip: func() { skipped = true }}
-	testutil.RequireVoiceFile(fakeT, "any-voice")
-	if !skipped {
+	if !captureSkip(func(tb testing.TB) { testutil.RequireVoiceFile(tb, "any-voice") }) {
 		t.Error("expected RequireVoiceFile to skip when manifest is absent")
 	}
 }
 
-// skipTracker is a minimal testing.TB implementation that intercepts Skip calls.
-type skipTracker struct {
-	testing.TB
-	onSkip func()
+// captureSkip runs fn in a fresh goroutine with a stub TB and returns true if
+// the function called Skip/Skipf. Because the real testing.T.Skipf calls
+// runtime.Goexit(), we run fn in an isolated goroutine so Goexit only
+// terminates that goroutine and does not propagate to the parent test.
+func captureSkip(fn func(testing.TB)) (skipped bool) {
+	stub := &stubTB{}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		fn(stub)
+	}()
+	<-done
+	return stub.skipped
 }
 
-func (s *skipTracker) Helper() {}
+// stubTB is a minimal testing.TB that records Skip calls and terminates the
+// calling goroutine (via runtime.Goexit) exactly as the real testing.T does.
+type stubTB struct {
+	testing.TB // intentionally nil — only Skip methods are called
+	skipped    bool
+}
 
-func (s *skipTracker) Skipf(_ string, _ ...any) {
-	s.onSkip()
-	// Do NOT call s.TB.Skip — that would actually skip the outer test.
+func (s *stubTB) Helper() {}
+func (s *stubTB) Log(_ ...any) {}
+func (s *stubTB) Logf(_ string, _ ...any) {}
+
+func (s *stubTB) Skip(_ ...any) {
+	s.skipped = true
+	runtime.Goexit()
+}
+
+func (s *stubTB) Skipf(_ string, _ ...any) {
+	s.skipped = true
+	runtime.Goexit()
+}
+
+func (s *stubTB) SkipNow() {
+	s.skipped = true
+	runtime.Goexit()
 }

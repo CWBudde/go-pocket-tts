@@ -1,0 +1,70 @@
+name: Integration Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      pocket-tts-version:
+        description: "pip install pocket-tts==<version> (empty = latest)"
+        required: false
+        default: ""
+  schedule:
+    # Nightly at 02:00 UTC on the main branch.
+    - cron: "0 2 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  integration:
+    name: Integration (Go ${{ matrix.go-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go-version: ["1.25.x"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install pocket-tts
+        run: |
+          VERSION="${{ github.event.inputs.pocket-tts-version }}"
+          if [ -n "$VERSION" ]; then
+            pip install "pocket-tts==$VERSION"
+          else
+            pip install pocket-tts
+          fi
+          pocket-tts --version
+
+      - name: Verify pocket-tts binary is on PATH
+        run: which pocket-tts
+
+      - name: Run integration tests
+        run: go test -tags integration -v -timeout 10m ./...
+        env:
+          # Set to a built-in voice that ships with pocket-tts so tests can
+          # synthesize without a custom voice file. Override via repository
+          # secret if a different voice is preferred.
+          POCKETTTS_TEST_VOICE: ${{ secrets.POCKETTTS_TEST_VOICE || 'mimi' }}
+
+      - name: Upload WAV artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-wav-go${{ matrix.go-version }}
+          path: |
+            **/*.wav
+            !cmd/pockettts/testdata/**
+          if-no-files-found: ignore
+          retention-days: 7
