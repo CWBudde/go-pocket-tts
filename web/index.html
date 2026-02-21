@@ -80,9 +80,9 @@
         </p>
         <textarea id="text" placeholder="Type text here">Hello World from PocketTTS wasm.</textarea>
         <div class="row">
-          <button id="run" type="button">Generate Demo WAV</button>
-          <button id="verify-models" type="button">Verify ONNX Models</button>
-          <button id="synthesize-model" type="button">Synthesize via ONNX (Exp)</button>
+          <button id="run" type="button" disabled>Generate Fallback Tone WAV</button>
+          <button id="verify-models" type="button" disabled>Verify ONNX Models</button>
+          <button id="synthesize-model" type="button" disabled>Synthesize via ONNX (Exp)</button>
           <a id="download" download="hello.wav">Download</a>
         </div>
         <audio id="player" controls style="margin-top: 0.75rem; width: 100%"></audio>
