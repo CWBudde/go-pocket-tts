@@ -41,6 +41,12 @@ test-coverage:
 # Run all checks (formatting, linting, tests, tidiness)
 ci: check-formatted test lint check-tidy
 
+# Build all command line tools
+build:
+    go build -o pockettts ./cmd/pockettts
+    go build -o pockettts-tools ./cmd/pockettts-tools
+    go build -o pockettts-wasm ./cmd/pockettts-wasm
+
 # Clean build artifacts
 clean:
-    rm -f coverage.out coverage.html
+    rm -f coverage.out coverage.html pockettts pockettts-tools pockettts-wasm
