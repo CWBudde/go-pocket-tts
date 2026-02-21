@@ -20,6 +20,23 @@ const capabilities = {
   reasons: [],
 };
 
+function formatError(err) {
+  if (!err) {
+    return "unknown error";
+  }
+  if (typeof err === "string") {
+    return err;
+  }
+  if (err.message) {
+    return err.message;
+  }
+  try {
+    return JSON.stringify(err);
+  } catch (_) {
+    return String(err);
+  }
+}
+
 function decodeBase64ToBytes(base64) {
   const bin = atob(base64);
   const bytes = new Uint8Array(bin.length);
@@ -216,7 +233,7 @@ verifyBtn.addEventListener("click", async () => {
     }
     log.textContent = `ONNX smoke verify passed (${graphs.length} graphs)\n${lines.join("\n")}`;
   } catch (err) {
-    log.textContent = `ONNX smoke verify failed: ${err.message}`;
+    log.textContent = `ONNX smoke verify failed: ${formatError(err)}`;
   }
 });
 
@@ -241,7 +258,7 @@ modelSynthBtn.addEventListener("click", async () => {
 
     log.textContent = `Model synth (Go wasm) complete\nNormalized: ${out.text}\nTokens: ${out.token_count}\nFrames: ${out.frames}\nWAV bytes: ${wavBytes.length}\nElapsed: ${dtMs} ms`;
   } catch (err) {
-    log.textContent = `Model synth failed: ${err.message}`;
+    log.textContent = `Model synth failed: ${formatError(err)}`;
   } finally {
     modelSynthBtn.disabled = false;
   }
@@ -328,5 +345,5 @@ async function initApp() {
 }
 
 initApp().catch((err) => {
-  log.textContent = `Startup checks failed: ${err.message}`;
+  log.textContent = `Startup checks failed: ${formatError(err)}`;
 });
