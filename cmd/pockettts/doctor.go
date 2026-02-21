@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/example/go-pocket-tts/internal/config"
@@ -107,7 +108,9 @@ func probePythonVersion() (string, error) {
 	return "", fmt.Errorf("python3/python not found on PATH")
 }
 
-// collectVoiceFiles returns voice file paths from the manifest (ignores errors).
+// collectVoiceFiles returns resolved absolute voice file paths from the
+// manifest. Paths are resolved relative to the manifest directory, not to the
+// working directory, so doctor checks are correct regardless of CWD.
 func collectVoiceFiles() []string {
 	vm, err := tts.NewVoiceManager("voices/manifest.json")
 	if err != nil {
@@ -116,7 +119,18 @@ func collectVoiceFiles() []string {
 	voices := vm.ListVoices()
 	paths := make([]string, 0, len(voices))
 	for _, v := range voices {
-		paths = append(paths, v.Path)
+		resolved, err := vm.ResolvePath(v.ID)
+		if err != nil {
+			// Voice file missing or unresolvable — include the raw path so the
+			// doctor check can report the failure with a useful message.
+			paths = append(paths, v.Path)
+			continue
+		}
+		// Make the path absolute so the doctor stat check is CWD-independent.
+		if abs, err := filepath.Abs(resolved); err == nil {
+			resolved = abs
+		}
+		paths = append(paths, resolved)
 	}
 	return paths
 }
