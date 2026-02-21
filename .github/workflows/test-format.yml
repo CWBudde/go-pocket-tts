@@ -19,6 +19,24 @@ jobs:
         with:
           go-version: "1.25.x"
 
+      - name: Install Go formatters
+        run: |
+          go install mvdan.cc/gofumpt@latest
+          go install github.com/daixiang0/gci@latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install prettier
+        run: npm install -g prettier
+
+      - name: Install shell formatters
+        run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
+          go install mvdan.cc/sh/v3/cmd/shfmt@latest
+
       - name: Run treefmt
         uses: isbecker/treefmt-action@v2
         with:

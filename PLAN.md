@@ -356,3 +356,28 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [ ] Add WebGPU/WebAssembly execution provider selection strategy + fallback
   - [ ] Add chunked model loading/progress UI and memory guardrails
   - [ ] Add browser integration tests (Playwright) for smoke inference
+
+---
+
+## Phase 13 — Go-first web runtime (de-JS orchestration)
+
+- [x] Task 13.1: **Move browser autoregressive orchestration into Go wasm**
+  - [x] Added `PocketTTSKernel.synthesizeModel(...)` in `cmd/pockettts-wasm/main_wasm.go`
+  - [x] Moved graph orchestration loop (`text_conditioner` -> `flow_lm_main` -> `flow_lm_flow` -> `latent_to_mimi` -> `mimi_decoder`) into Go wasm
+  - [x] Kept JS as thin host bridge (`PocketTTSBridge.runGraph`) for ORT Web session execution
+  - [x] Model WAV output now returned from Go wasm (base64)
+
+- [ ] Task 13.2: **Narrow JS to pure host/runtime glue**
+  - [ ] Remove remaining model-shape/serialization logic from JS where practical
+  - [ ] Keep JS responsible only for ORT execution provider, file loading, and audio playback
+  - [ ] Add stricter bridge contract tests (input/output tensor schema)
+
+- [ ] Task 13.3: **Add Go-native ONNX bundle acquisition command**
+  - [ ] Implement `pockettts model download-onnx` for prebuilt ONNX bundles
+  - [ ] Pin bundle manifests and checksums (similar to model download lockfile)
+  - [ ] Integrate with web workflow so browser path requires no Python for end users
+
+- [ ] Task 13.4: **Runtime parity and quality hardening**
+  - [ ] Align Go wasm prompt/token behavior with upstream sentencepiece/tokenizer path
+  - [ ] Improve EOS/stopping and long-text chunking parity vs upstream generation
+  - [ ] Add deterministic regression test vectors for web synth outputs

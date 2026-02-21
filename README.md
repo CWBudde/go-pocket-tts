@@ -225,7 +225,7 @@ It provides:
 
 - `Generate Demo WAV`: wasm-only demo audio generation.
 - `Verify ONNX Models`: browser-side ONNX smoke inference over bundled graphs via `onnxruntime-web`.
-- `Synthesize via ONNX (Exp)`: experimental browser autoregressive graph orchestration (`text_conditioner` -> `flow_lm_main` -> `flow_lm_flow` -> `mimi_decoder`).
+- `Synthesize via ONNX (Exp)`: experimental browser autoregressive graph orchestration, now executed in Go wasm (`PocketTTSKernel.synthesizeModel`) via a thin JS ORT bridge.
   - Uses exported `latent_to_mimi` graph when present for upstream-aligned latent denorm + quantizer projection.
 
 Current gap for full browser PocketTTS inference:
