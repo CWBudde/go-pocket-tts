@@ -32,6 +32,16 @@ except Exception as exc:  # pragma: no cover - runtime dependency
         "Install it in the selected python environment."
     ) from exc
 
+# Disable beartype claw instrumentation during export/tracing.
+# pocket_tts enables beartype at package import time, which can break ONNX tracing
+# when symbolic tensor shapes flow through functions expecting plain ints.
+try:  # pragma: no cover - best effort compatibility shim
+    import beartype.claw as _beartype_claw
+
+    _beartype_claw.beartype_this_package = lambda *args, **kwargs: None
+except Exception:
+    pass
+
 from pocket_tts.conditioners.base import TokenizedText
 from pocket_tts.models.tts_model import TTSModel
 from pocket_tts.modules.stateful_module import init_states
