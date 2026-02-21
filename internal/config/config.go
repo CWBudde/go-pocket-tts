@@ -17,8 +17,9 @@ type Config struct {
 }
 
 type PathsConfig struct {
-	ModelPath string `mapstructure:"model_path"`
-	VoicePath string `mapstructure:"voice_path"`
+	ModelPath    string `mapstructure:"model_path"`
+	VoicePath    string `mapstructure:"voice_path"`
+	ONNXManifest string `mapstructure:"onnx_manifest"`
 }
 
 type RuntimeConfig struct {
@@ -59,8 +60,9 @@ type flagBinder interface {
 func DefaultConfig() Config {
 	return Config{
 		Paths: PathsConfig{
-			ModelPath: "models/model.onnx",
-			VoicePath: "models/voice.bin",
+			ModelPath:    "models/model.onnx",
+			VoicePath:    "models/voice.bin",
+			ONNXManifest: "models/onnx/manifest.json",
 		},
 		Runtime: RuntimeConfig{
 			Threads:        4,
@@ -91,6 +93,7 @@ func DefaultConfig() Config {
 func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.String("paths-model-path", defaults.Paths.ModelPath, "Path to ONNX model")
 	fs.String("paths-voice-path", defaults.Paths.VoicePath, "Path to voice/profile asset")
+	fs.String("paths-onnx-manifest", defaults.Paths.ONNXManifest, "Path to ONNX model manifest JSON")
 	fs.Int("runtime-threads", defaults.Runtime.Threads, "ONNX Runtime intra-op thread count")
 	fs.Int("runtime-inter-op-threads", defaults.Runtime.InterOpThreads, "ONNX Runtime inter-op thread count")
 	fs.String("runtime-ort-library-path", defaults.Runtime.ORTLibraryPath, "Path to ONNX Runtime shared library")
@@ -156,6 +159,7 @@ func Load(opts LoadOptions) (Config, error) {
 func setDefaults(v *viper.Viper, c Config) {
 	v.SetDefault("paths.model_path", c.Paths.ModelPath)
 	v.SetDefault("paths.voice_path", c.Paths.VoicePath)
+	v.SetDefault("paths.onnx_manifest", c.Paths.ONNXManifest)
 	v.SetDefault("runtime.threads", c.Runtime.Threads)
 	v.SetDefault("runtime.inter_op_threads", c.Runtime.InterOpThreads)
 	v.SetDefault("runtime.ort_library_path", c.Runtime.ORTLibraryPath)
@@ -178,6 +182,7 @@ func setDefaults(v *viper.Viper, c Config) {
 func registerAliases(v *viper.Viper) {
 	v.RegisterAlias("paths.model_path", "paths-model-path")
 	v.RegisterAlias("paths.voice_path", "paths-voice-path")
+	v.RegisterAlias("paths.onnx_manifest", "paths-onnx-manifest")
 	v.RegisterAlias("runtime.threads", "runtime-threads")
 	v.RegisterAlias("runtime.inter_op_threads", "runtime-inter-op-threads")
 	v.RegisterAlias("runtime.ort_library_path", "runtime-ort-library-path")
