@@ -179,8 +179,10 @@ func synthesizeModel(input string) (map[string]any, error) {
 
 	sequenceFrames := make([][]float32, 0, 256)
 	bos := make([]float32, latentDim)
+	// Keep seed finite because feeds are serialized through JSON for the JS ORT bridge.
+	// NaN is not representable in JSON and would fail marshaling.
 	for i := range bos {
-		bos[i] = float32(math.NaN())
+		bos[i] = 0
 	}
 	sequenceFrames = append(sequenceFrames, bos)
 
