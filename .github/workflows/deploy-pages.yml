@@ -57,7 +57,6 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.include-models == true }}
         run: |
           ls -la cmd
-          go build -o pockettts ./cmd/pockettts
           go build -o pockettts-tools ./cmd/pockettts-tools
 
       - name: Setup Python
@@ -83,7 +82,7 @@ jobs:
       - name: Download ungated PocketTTS model files
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.include-models == true }}
         run: |
-          ./pockettts model download \
+          ./pockettts-tools model download \
             --hf-repo "${{ inputs.hf-repo || 'kyutai/pocket-tts-without-voice-cloning' }}" \
             --out-dir models
 

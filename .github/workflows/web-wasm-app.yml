@@ -54,7 +54,6 @@ jobs:
         if: ${{ inputs.include-models }}
         run: |
           ls -la cmd
-          go build -o pockettts ./cmd/pockettts
           go build -o pockettts-tools ./cmd/pockettts-tools
 
       - name: Setup Python
@@ -78,7 +77,7 @@ jobs:
       - name: Download ungated PocketTTS model files
         if: ${{ inputs.include-models }}
         run: |
-          ./pockettts model download \
+          ./pockettts-tools model download \
             --hf-repo "${{ inputs.hf-repo || 'kyutai/pocket-tts-without-voice-cloning' }}" \
             --out-dir models
 
