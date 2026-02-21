@@ -5,7 +5,7 @@
 *.so
 *.dylib
 # Main binary
-pockettts
+/pockettts
 
 # Test binary, built with `go test -c`
 *.test

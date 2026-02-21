@@ -412,11 +412,11 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] `TestServe_TTSEndpoint_OversizedText`: send text exceeding `--max-text-bytes`; assert 400
   - [x] `TestServe_ConcurrentRequests`: fire N concurrent `POST /tts` requests up to the worker limit; assert all succeed and durations are bounded
 
-- [ ] Task 14.4: **`doctor` integration tests**
-  - [ ] `TestDoctorPasses_CLI`: run `pockettts doctor` against a valid environment (pocket-tts binary + voices + model files); assert exit 0 and `doctor checks passed` in stdout
-  - [ ] `TestDoctorPasses_Native`: same in native mode (no pocket-tts required); assert exit 0
-  - [ ] `TestDoctorFails_MissingVoiceFile`: point manifest at a non-existent voice file; assert exit non-zero and failure message in stderr
-  - [ ] `TestDoctorFails_BadPocketTTS`: provide a fake `pocket-tts` that exits 1; assert failure surfaced
+- [x] Task 14.4: **`doctor` integration tests**
+  - [x] `TestDoctorPasses_CLI`: run `pockettts doctor` against a valid environment (pocket-tts binary + voices + model files); assert exit 0 and `doctor checks passed` in stdout
+  - [x] `TestDoctorPasses_Native`: same in native mode (no pocket-tts required); assert exit 0
+  - [x] `TestDoctorFails_MissingVoiceFile`: point manifest at a non-existent voice file; assert exit non-zero and failure message in stderr
+  - [x] `TestDoctorFails_BadPocketTTS`: provide a fake `pocket-tts` that exits 1; assert failure surfaced
 
 - [ ] Task 14.5: **`model verify` integration tests**
   - [ ] `TestModelVerify_PassesWithValidONNX`: run `model verify` against the committed tiny identity ONNX from Phase 3.7; assert exit 0
