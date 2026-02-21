@@ -439,7 +439,7 @@ func TestDownload_SkipsExistingFileWithMatchingChecksum(t *testing.T) {
 	// which exercises the checksum-mismatch error path.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("wrong content"))
+		_, _ = w.Write([]byte("wrong content"))
 	}))
 	defer srv.Close()
 	withHFTransport(t, srv.URL)
@@ -555,7 +555,7 @@ func TestDownload_FullDownloadAndLockWrite(t *testing.T) {
 		}
 		// GET: serve the file content
 		w.WriteHeader(http.StatusOK)
-		w.Write(fileContent)
+		_, _ = w.Write(fileContent)
 	}))
 	defer srv.Close()
 	withHFTransport(t, srv.URL)
@@ -597,7 +597,7 @@ func TestDownloadWithProgress_Success(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write(content)
+		_, _ = w.Write(content)
 	}))
 	defer srv.Close()
 
@@ -843,7 +843,7 @@ func TestResolveScriptPath_ExistsInCwd(t *testing.T) {
 	if err := os.WriteFile(scriptPath, []byte("# test"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	t.Cleanup(func() { os.Remove(scriptPath) })
+	t.Cleanup(func() { _ = os.Remove(scriptPath) })
 
 	got, err := resolveScriptPath(scriptName)
 	if err != nil {

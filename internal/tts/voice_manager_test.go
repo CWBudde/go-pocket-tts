@@ -146,11 +146,15 @@ func TestResolvePath_MissingVoiceFile(t *testing.T) {
 func TestListVoices_ReturnsCopy(t *testing.T) {
 	tmp := t.TempDir()
 	voiceFile := filepath.Join(tmp, "v.bin")
-	os.WriteFile(voiceFile, []byte("data"), 0o644)
+	if err := os.WriteFile(voiceFile, []byte("data"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	manifestPath := filepath.Join(tmp, "manifest.json")
 	manifest := `{"voices":[{"id":"v1","path":"v.bin","license":"MIT"}]}`
-	os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	mgr, _ := NewVoiceManager(manifestPath)
 	first := mgr.ListVoices()
