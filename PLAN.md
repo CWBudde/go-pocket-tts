@@ -395,22 +395,22 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] Add a shared `internal/testutil` package with helpers: `RequirePocketTTS(t)`, `RequireONNXRuntime(t)`, `RequireVoiceFile(t, id)` — each calls `t.Skip` with a clear reason when the prerequisite is absent
   - [x] Add an integration test matrix in CI (`.github/workflows/test-integration.yml`) using a self-hosted or large runner that has `pocket-tts` and models available; gate the job on the `integration` tag being passed to `go test`
 
-- [ ] Task 14.2: **CLI `synth` integration tests (both backends)**
-  - [ ] `TestSynthCLI_ShortText`: synthesize ≤ 50 chars via `--backend cli`, assert RIFF header, non-zero PCM samples, and 24 kHz sample rate
-  - [ ] `TestSynthCLI_Chunked`: synthesize multi-sentence text with `--chunk`, assert concatenated output is longer than any single chunk
-  - [ ] `TestSynthCLI_DSPChain`: add `--normalize --dc-block --fade-in-ms 10 --fade-out-ms 10`, assert output is still valid WAV with equal sample count
-  - [ ] `TestSynthCLI_Stdout`: use `--out -`, capture stdout, assert RIFF bytes
-  - [ ] `TestSynthNative_ShortText`: same assertions as `TestSynthCLI_ShortText` for `--backend native`; skip when ONNX runtime or model is absent
-  - [ ] `TestSynthNative_Chunked`: chunked synthesis via native backend; assert PCM sample count grows with chunk count
+- [x] Task 14.2: **CLI `synth` integration tests (both backends)**
+  - [x] `TestSynthCLI_ShortText`: synthesize ≤ 50 chars via `--backend cli`, assert RIFF header, non-zero PCM samples, and 24 kHz sample rate
+  - [x] `TestSynthCLI_Chunked`: synthesize multi-sentence text with `--chunk`, assert concatenated output is longer than any single chunk
+  - [x] `TestSynthCLI_DSPChain`: add `--normalize --dc-block --fade-in-ms 10 --fade-out-ms 10`, assert output is still valid WAV with equal sample count
+  - [x] `TestSynthCLI_Stdout`: use `--out -`, capture stdout, assert RIFF bytes
+  - [x] `TestSynthNative_ShortText`: same assertions as `TestSynthCLI_ShortText` for `--backend native`; skip when ONNX runtime or model is absent
+  - [x] `TestSynthNative_Chunked`: chunked synthesis via native backend; assert PCM sample count grows with chunk count
 
-- [ ] Task 14.3: **HTTP server (`serve`) integration tests**
-  - [ ] `TestServe_HealthEndpoint`: start server on a random free port with `httptest.NewServer` or a live `net.Listen`, `GET /healthz`, assert `{"status":"ok"}` and 200
-  - [ ] `TestServe_VoicesEndpoint`: `GET /voices`, assert JSON array contains at least the fixture voice ID
-  - [ ] `TestServe_TTSEndpoint_CLI`: `POST /tts` `{"text":"Hello.","voice":"<fixture>"}` via `cli` backend; assert response `Content-Type: audio/wav` and valid RIFF body
-  - [ ] `TestServe_TTSEndpoint_Native`: same for `native` backend; skip when ONNX runtime absent
-  - [ ] `TestServe_TTSEndpoint_EmptyText`: assert 400 status and `{"error":...}` body
-  - [ ] `TestServe_TTSEndpoint_OversizedText`: send text exceeding `--max-text-bytes`; assert 400
-  - [ ] `TestServe_ConcurrentRequests`: fire N concurrent `POST /tts` requests up to the worker limit; assert all succeed and durations are bounded
+- [x] Task 14.3: **HTTP server (`serve`) integration tests**
+  - [x] `TestServe_HealthEndpoint`: start server on a random free port with `httptest.NewServer` or a live `net.Listen`, `GET /healthz`, assert `{"status":"ok"}` and 200
+  - [x] `TestServe_VoicesEndpoint`: `GET /voices`, assert JSON array contains at least the fixture voice ID
+  - [x] `TestServe_TTSEndpoint_CLI`: `POST /tts` `{"text":"Hello.","voice":"<fixture>"}` via `cli` backend; assert response `Content-Type: audio/wav` and valid RIFF body
+  - [x] `TestServe_TTSEndpoint_Native`: same for `native` backend; skip when ONNX runtime absent
+  - [x] `TestServe_TTSEndpoint_EmptyText`: assert 400 status and `{"error":...}` body
+  - [x] `TestServe_TTSEndpoint_OversizedText`: send text exceeding `--max-text-bytes`; assert 400
+  - [x] `TestServe_ConcurrentRequests`: fire N concurrent `POST /tts` requests up to the worker limit; assert all succeed and durations are bounded
 
 - [ ] Task 14.4: **`doctor` integration tests**
   - [ ] `TestDoctorPasses_CLI`: run `pockettts doctor` against a valid environment (pocket-tts binary + voices + model files); assert exit 0 and `doctor checks passed` in stdout
@@ -424,8 +424,8 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [ ] `TestModelVerify_FailsWithCorruptONNX`: write a truncated `.onnx` file; assert exit non-zero with actionable error message
 
 - [ ] Task 14.6: **Audio output correctness assertions**
-  - [ ] Extract a shared `assertValidWAV(t, data []byte)` helper that checks: RIFF header, PCM sub-chunk, 24000 Hz sample rate, 16-bit depth, non-zero sample count
-  - [ ] Add `assertWAVDurationApprox(t, data []byte, minSec, maxSec float64)` to sanity-check synthesis output is plausibly speech-length
+  - [x] Extract a shared `AssertValidWAV(t, data []byte)` helper that checks: RIFF header, PCM sub-chunk, 24000 Hz sample rate, 16-bit depth, non-zero sample count
+  - [x] Add `AssertWAVDurationApprox(t, data []byte, minSec, maxSec float64)` to sanity-check synthesis output is plausibly speech-length
   - [ ] Apply both helpers consistently across Task 14.2 and 14.3 test assertions
 
 - [x] Task 14.7: **CI integration test job**

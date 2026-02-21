@@ -232,18 +232,15 @@ This repo now includes a GitHub Action that builds a browser app artifact with:
 - Static app: `web/dist/index.html`, `web/dist/main.js`
 - Optional ONNX bundle: `web/dist/models/*.onnx` + `web/dist/models/manifest.json`
 
-Run the workflow:
+Run/deploy workflow:
 
-- GitHub Actions -> `Web WASM App` -> `Run workflow`
-- Keep `include-models=true` to bundle exported ONNX models into the artifact.
-  - Optional: pass `onnx-bundle-url` (+ `onnx-bundle-sha256`) to use prebuilt ONNX bundles and skip Python export.
-- GitHub Pages deployment is automated via `.github/workflows/deploy-pages.yml` on pushes to `main`.
-  - Pages build on `main` always includes ONNX model export/bundle so model actions are enabled.
-  - Optional manual input `onnx-bundle-url` allows Python-free bundle acquisition in the deploy workflow.
-  - Manual runs can still disable model bundling via `include-models=false`.
+- GitHub Actions -> `Deploy Web App to GitHub Pages` -> `Run workflow`
+- Deployment is handled by `.github/workflows/deploy-pages.yml`.
+  - Pushes to `main` build and deploy automatically.
+  - Manual runs support `include-models`, `onnx-bundle-url`, and `onnx-bundle-sha256`.
+  - `main` builds include ONNX model export/bundle by default so model actions are enabled.
 
-The uploaded artifact (`pockettts-web-wasm-<run_id>`) can be served as static files.
-It provides:
+The deployed page provides:
 
 - `Generate Fallback Tone WAV`: wasm-only fallback tone generation (sanity path, not model speech quality).
 - `Verify ONNX Models`: browser-side ONNX smoke inference over bundled graphs via `onnxruntime-web`.
