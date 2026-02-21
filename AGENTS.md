@@ -54,16 +54,16 @@ pockettts
 
 ### Internal Packages
 
-| Package | Purpose |
-|---------|---------|
-| `config` | Unified config struct loaded via Viper (flags → env → file → defaults). Env prefix: `POCKETTTS_` |
-| `audio` | WAV encode/decode using `cwbudde/wav`, DSP chain (normalize, DC-block, fade) using `cwbudde/algo-dsp` |
-| `text` | Text normalization and sentence-based chunking for synthesis |
-| `tts` | Service orchestration, voice manifest management (VoiceManager) |
-| `onnx` | ONNX Runtime bootstrap (`sync.Once` singleton), session management, tensor utilities |
-| `model` | Model download (HF with checksum), ONNX export (Python script), verification |
-| `server` | HTTP handlers with functional options pattern, semaphore-based worker pool, graceful shutdown |
-| `doctor` | System health checks with dependency-injected validators |
+| Package  | Purpose                                                                                               |
+| -------- | ----------------------------------------------------------------------------------------------------- |
+| `config` | Unified config struct loaded via Viper (flags → env → file → defaults). Env prefix: `POCKETTTS_`      |
+| `audio`  | WAV encode/decode using `cwbudde/wav`, DSP chain (normalize, DC-block, fade) using `cwbudde/algo-dsp` |
+| `text`   | Text normalization and sentence-based chunking for synthesis                                          |
+| `tts`    | Service orchestration, voice manifest management (VoiceManager)                                       |
+| `onnx`   | ONNX Runtime bootstrap (`sync.Once` singleton), session management, tensor utilities                  |
+| `model`  | Model download (HF with checksum), ONNX export (Python script), verification                          |
+| `server` | HTTP handlers with functional options pattern, semaphore-based worker pool, graceful shutdown         |
+| `doctor` | System health checks with dependency-injected validators                                              |
 
 ### Key Patterns
 

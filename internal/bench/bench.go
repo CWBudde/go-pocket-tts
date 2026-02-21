@@ -178,16 +178,16 @@ func FormatTable(runs []RunResult, stats Stats, w io.Writer) {
 
 // jsonReport is the top-level JSON structure emitted by FormatJSON.
 type jsonReport struct {
-	Runs  []jsonRun  `json:"runs"`
-	Stats jsonStats  `json:"stats"`
+	Runs  []jsonRun `json:"runs"`
+	Stats jsonStats `json:"stats"`
 }
 
 type jsonRun struct {
-	Index       int     `json:"index"`
-	Cold        bool    `json:"cold"`
-	DurationMS  float64 `json:"duration_ms"`
-	AudioMS     float64 `json:"audio_ms"`
-	RTF         float64 `json:"rtf"`
+	Index      int     `json:"index"`
+	Cold       bool    `json:"cold"`
+	DurationMS float64 `json:"duration_ms"`
+	AudioMS    float64 `json:"audio_ms"`
+	RTF        float64 `json:"rtf"`
 }
 
 type jsonStats struct {

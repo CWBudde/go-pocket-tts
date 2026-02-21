@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -344,8 +345,8 @@ func TestIsSHA256Hex(t *testing.T) {
 		{strings.Repeat("a", 64), true},
 		{strings.Repeat("A", 64), true},
 		{"58aa704a88faad35f22c34ea1cb55c4c5629de8b8e035c6e4936e2673dc07617", true},
-		{strings.Repeat("a", 63), false},  // too short
-		{strings.Repeat("a", 65), false},  // too long
+		{strings.Repeat("a", 63), false}, // too short
+		{strings.Repeat("a", 65), false}, // too long
 		{"", false},
 		{strings.Repeat("g", 64), false}, // invalid hex char
 	}
