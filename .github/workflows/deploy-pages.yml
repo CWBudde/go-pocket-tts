@@ -53,6 +53,13 @@ jobs:
         with:
           go-version: '1.25.x'
 
+      - name: Build PocketTTS CLIs
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.include-models == true }}
+        run: |
+          ls -la cmd
+          go build -o pockettts ./cmd/pockettts
+          go build -o pockettts-tools ./cmd/pockettts-tools
+
       - name: Setup Python
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.include-models == true }}
         uses: actions/setup-python@v5
@@ -76,7 +83,7 @@ jobs:
       - name: Download ungated PocketTTS model files
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.include-models == true }}
         run: |
-          go run ./cmd/pockettts model download \
+          ./pockettts model download \
             --hf-repo "${{ inputs.hf-repo || 'kyutai/pocket-tts-without-voice-cloning' }}" \
             --out-dir models
 
@@ -88,7 +95,7 @@ jobs:
             EXTRA_FLAGS="--int8"
           fi
 
-          go run ./cmd/pockettts-tools model export \
+          ./pockettts-tools model export \
             --models-dir models \
             --out-dir models/onnx \
             --variant "${{ inputs.model-variant || 'b6369a24' }}" \

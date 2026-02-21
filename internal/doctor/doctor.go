@@ -86,9 +86,9 @@ func Run(cfg Config, w io.Writer) Result {
 	for _, path := range cfg.VoiceFiles {
 		if _, err := os.Stat(path); err != nil {
 			res.fail(fmt.Sprintf("voice file %q: %v", path, err))
-			fmt.Fprintf(w, "%s voice file %s: not found\n", FailMark, path)
+			_, _ = fmt.Fprintf(w, "%s voice file %s: not found\n", FailMark, path)
 		} else {
-			fmt.Fprintf(w, "%s voice file: %s\n", PassMark, path)
+			_, _ = fmt.Fprintf(w, "%s voice file: %s\n", PassMark, path)
 		}
 	}
 
