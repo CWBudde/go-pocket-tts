@@ -211,7 +211,9 @@ func TestReadLockManifest_MissingFile(t *testing.T) {
 func TestReadLockManifest_InvalidJSON(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "lock.json")
-	os.WriteFile(p, []byte("{bad"), 0o644)
+	if err := os.WriteFile(p, []byte("{bad"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	// Invalid JSON returns empty lockManifest without error.
 	lock := readLockManifest(p)
@@ -223,7 +225,9 @@ func TestReadLockManifest_ValidFile(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "lock.json")
 	content := `{"repo":"org/repo","generated":"2026-01-01T00:00:00Z","files":{"a.bin":{"revision":"r1","sha256":"` + strings.Repeat("1", 64) + `"}}}`
-	os.WriteFile(p, []byte(content), 0o644)
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
 
 	lock := readLockManifest(p)
 	if lock.Repo != "org/repo" {
