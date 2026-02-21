@@ -72,8 +72,8 @@ type stubTB struct {
 	skipped    bool
 }
 
-func (s *stubTB) Helper() {}
-func (s *stubTB) Log(_ ...any) {}
+func (s *stubTB) Helper()                 {}
+func (s *stubTB) Log(_ ...any)            {}
 func (s *stubTB) Logf(_ string, _ ...any) {}
 
 func (s *stubTB) Skip(_ ...any) {

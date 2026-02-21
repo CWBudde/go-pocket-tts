@@ -15,17 +15,17 @@ on:
         description: Python version for model export
         required: false
         type: string
-        default: '3.10'
+        default: "3.10"
       hf-repo:
         description: Hugging Face repo to download from
         required: false
         type: string
-        default: 'kyutai/pocket-tts-without-voice-cloning'
+        default: "kyutai/pocket-tts-without-voice-cloning"
       model-variant:
         description: PocketTTS model variant/config
         required: false
         type: string
-        default: 'b6369a24'
+        default: "b6369a24"
       enable-int8:
         description: Enable ONNX INT8 quantization
         required: false
@@ -35,12 +35,12 @@ on:
         description: Prebuilt ONNX bundle URL/path (skip Python export when set)
         required: false
         type: string
-        default: ''
+        default: ""
       onnx-bundle-sha256:
         description: SHA256 for the prebuilt ONNX bundle
         required: false
         type: string
-        default: ''
+        default: ""
 
 permissions:
   contents: read
@@ -66,7 +66,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.x'
+          go-version: "1.25.x"
 
       - name: Build PocketTTS CLIs
         if: ${{ env.INCLUDE_MODELS == 'true' }}
