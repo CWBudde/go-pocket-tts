@@ -11,10 +11,13 @@ jobs:
     name: Native runtime checks (Go only)
     runs-on: ubuntu-latest
     container:
-      image: golang:1.25
+      image: golang:1.25-alpine
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: apk add --no-cache git
 
       - name: Ensure Python is absent
         run: |
