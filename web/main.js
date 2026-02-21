@@ -22,6 +22,12 @@ const capabilities = {
   reasons: [],
 };
 
+const progressState = {
+  startedAtMs: 0,
+  lastEventAtMs: 0,
+  arStartedAtMs: 0,
+};
+
 function formatError(err) {
   if (!err) {
     return "unknown error";
@@ -57,18 +63,57 @@ function setAudioBlob(wavBytes) {
 }
 
 function resetProgress() {
+  progressState.startedAtMs = performance.now();
+  progressState.lastEventAtMs = progressState.startedAtMs;
+  progressState.arStartedAtMs = 0;
   synthProgress.value = 0;
-  synthProgressText.textContent = "Idle";
+  synthProgressText.textContent = "Idle (ETA: --)";
+}
+
+function formatETA(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return "--";
+  }
+  const s = Math.round(seconds);
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  if (m > 0) {
+    return `${m}m ${rem}s`;
+  }
+  return `${rem}s`;
 }
 
 function updateProgress(evt) {
+  const now = performance.now();
+  progressState.lastEventAtMs = now;
+
   const percent = Number(evt?.percent || 0);
   synthProgress.value = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
   const stage = evt?.stage || "working";
   const detail = evt?.detail || "";
   const current = evt?.current ?? 0;
   const total = evt?.total ?? 0;
-  synthProgressText.textContent = `${Math.round(synthProgress.value)}% - ${stage}${detail ? ` - ${detail}` : ""}${total ? ` (${current}/${total})` : ""}`;
+
+  let etaSeconds = NaN;
+  const stepMatch = /step\s+(\d+)\/(\d+)/i.exec(detail);
+  if (stage === "autoregressive" && stepMatch) {
+    const stepNow = Number(stepMatch[1]);
+    const stepTotal = Number(stepMatch[2]);
+    if (progressState.arStartedAtMs === 0) {
+      progressState.arStartedAtMs = now;
+    }
+    if (stepNow > 0 && stepTotal > 0 && stepNow <= stepTotal) {
+      const elapsedAr = (now - progressState.arStartedAtMs) / 1000;
+      const secPerStep = elapsedAr / stepNow;
+      etaSeconds = secPerStep * Math.max(0, stepTotal - stepNow);
+    }
+  } else if (synthProgress.value > 1) {
+    const elapsed = (now - progressState.startedAtMs) / 1000;
+    const remainingPercent = Math.max(0, 100 - synthProgress.value);
+    etaSeconds = elapsed * (remainingPercent / synthProgress.value);
+  }
+
+  synthProgressText.textContent = `${Math.round(synthProgress.value)}% - ${stage}${detail ? ` - ${detail}` : ""}${total ? ` (${current}/${total})` : ""} | ETA: ${formatETA(etaSeconds)}`;
 }
 
 async function loadManifest() {
@@ -276,7 +321,7 @@ modelSynthBtn.addEventListener("click", async () => {
     const wavBytes = decodeBase64ToBytes(out.wav_base64);
     setAudioBlob(wavBytes);
     synthProgress.value = 100;
-    synthProgressText.textContent = "100% - done";
+    synthProgressText.textContent = "100% - done | ETA: 0s";
 
     log.textContent = `Model synth (Go wasm) complete\nNormalized: ${out.text}\nTokens: ${out.token_count}\nFrames: ${out.frames}\nWAV bytes: ${wavBytes.length}\nElapsed: ${dtMs} ms`;
   } catch (err) {
