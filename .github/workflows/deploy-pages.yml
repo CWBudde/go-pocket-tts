@@ -15,7 +15,7 @@ on:
         description: Python version for model export
         required: false
         type: string
-        default: '3.13'
+        default: '3.10'
       hf-repo:
         description: Hugging Face repo to download from
         required: false
@@ -63,7 +63,7 @@ jobs:
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.include-models == true }}
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ inputs.python-version || '3.13' }}
+          python-version: ${{ inputs.python-version || '3.10' }}
 
       - name: Setup uv
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.include-models == true }}
