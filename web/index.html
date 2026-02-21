@@ -19,7 +19,7 @@
         color: var(--text);
       }
       main {
-        max-width: 860px;
+        max-width: 920px;
         margin: 2rem auto;
         padding: 1rem;
       }
@@ -45,6 +45,7 @@
         display: flex;
         gap: 0.75rem;
         margin-top: 0.75rem;
+        flex-wrap: wrap;
       }
       button {
         background: var(--accent);
@@ -65,22 +66,30 @@
       .muted {
         color: var(--muted);
       }
+      .hint {
+        margin-top: 1rem;
+      }
     </style>
   </head>
   <body>
     <main>
       <div class="card">
-        <h1>PocketTTS WASM Demo</h1>
+        <h1>PocketTTS WASM App (Experimental)</h1>
         <p class="muted">
-          This demo runs a Go-compiled wasm kernel in the browser and emits a small WAV tone track from tokenized text.
+          Go wasm kernel handles normalization/tokenization/demo WAV generation. ONNX graphs (if bundled) are loaded in-browser via onnxruntime-web for smoke inference.
         </p>
         <textarea id="text" placeholder="Type text here">Hello World from PocketTTS wasm.</textarea>
         <div class="row">
-          <button id="run" type="button">Generate WAV</button>
+          <button id="run" type="button">Generate Demo WAV</button>
+          <button id="verify-models" type="button">Verify ONNX Models</button>
+          <button id="synthesize-model" type="button">Synthesize via ONNX (Exp)</button>
           <a id="download" download="hello.wav">Download</a>
         </div>
         <audio id="player" controls style="margin-top: 0.75rem; width: 100%"></audio>
         <pre id="log" class="muted">Loading wasm kernel...</pre>
+        <p class="hint muted">
+          Expected model bundle location: <code>./models/manifest.json</code>
+        </p>
       </div>
     </main>
 

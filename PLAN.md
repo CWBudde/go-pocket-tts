@@ -322,3 +322,37 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] Add `runtime-native` profile (no Python installed)
   - [x] Add `tooling` profile (Python + pocket-tts + export dependencies)
   - [x] Validate both profiles in CI
+
+---
+
+## Phase 12 — Browser/WebAssembly runtime
+
+- [x] Task 12.1: **Build browser kernel from Go**
+  - [x] Added `cmd/pockettts-wasm` (`js/wasm` target) exposing `PocketTTSKernel` to JS
+  - [x] Reused Go text/audio code for normalize/tokenize/demo WAV generation in wasm
+  - [x] Added static web app shell in `web/` consuming the wasm kernel
+
+- [x] Task 12.2: **Web artifact CI workflow**
+  - [x] Added `.github/workflows/web-wasm-app.yml`
+  - [x] Workflow compiles wasm kernel (`GOOS=js GOARCH=wasm`)
+  - [x] Workflow copies Go runtime shim (`wasm_exec.js`) into web artifact
+  - [x] Workflow uploads ready-to-serve static artifact
+
+- [x] Task 12.3: **Bundle exported ONNX models for browser smoke checks**
+  - [x] Added optional model pipeline in web workflow (`include-models`)
+  - [x] Reused `pockettts model download` + `pockettts-tools model export` in CI
+  - [x] Bundles `models/onnx/*.onnx` + `manifest.json` into `web/dist/models/`
+  - [x] Web app runs manifest-based browser smoke inference via `onnxruntime-web`
+
+- [ ] Task 12.4: **Implement full browser TTS inference loop**
+  - [x] Added experimental browser autoregressive loop scaffold in `web/main.js` using `flow_lm_main` + `flow_lm_flow`
+  - [x] Added `latent_to_mimi` export graph (`scripts/export_onnx.py`) to match upstream latent denorm + quantizer projection path
+  - [x] Integrated `text_conditioner` + decoder graph orchestration in browser runtime
+  - [x] Produces WAV waveform from model outputs in-browser (experimental quality)
+  - [ ] Replace remaining heuristic/state assumptions with architecture-accurate KV-cache/state handling parity
+  - [ ] Add browser voice-conditioning parity (audio prompt / safetensors state path)
+
+- [ ] Task 12.5: **Browser performance and compatibility hardening**
+  - [ ] Add WebGPU/WebAssembly execution provider selection strategy + fallback
+  - [ ] Add chunked model loading/progress UI and memory guardrails
+  - [ ] Add browser integration tests (Playwright) for smoke inference

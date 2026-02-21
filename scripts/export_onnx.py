@@ -5,6 +5,7 @@ Exports:
 - text_conditioner
 - flow_lm_main
 - flow_lm_flow
+- latent_to_mimi
 - mimi_encoder
 - mimi_decoder
 """
@@ -88,6 +89,21 @@ class FlowLMFlowWrapper(torch.nn.Module):
 
     def forward(self, condition: torch.Tensor, s: torch.Tensor, t: torch.Tensor, x: torch.Tensor) -> torch.Tensor:
         return self.flow_net(condition, s, t, x)
+
+
+class LatentToMimiWrapper(torch.nn.Module):
+    def __init__(self, model: TTSModel):
+        super().__init__()
+        self.register_buffer("emb_std", model.flow_lm.emb_std.detach().clone())
+        self.register_buffer("emb_mean", model.flow_lm.emb_mean.detach().clone())
+        self.quantizer_proj = model.mimi.quantizer.output_proj
+
+    def forward(self, latent: torch.Tensor) -> torch.Tensor:
+        # latent: [B, T, ldim]
+        # Apply flow normalization stats, then quantizer projection to Mimi decoder dim.
+        denorm = latent * self.emb_std + self.emb_mean
+        transposed = denorm.transpose(-1, -2)  # [B, ldim, T]
+        return self.quantizer_proj(transposed)  # [B, mimi_dim, T]
 
 
 class MimiEncoderWrapper(torch.nn.Module):
@@ -220,6 +236,15 @@ def build_specs(model: TTSModel) -> list[ExportSpec]:
                 torch.randn(1, 32, dtype=torch.float32),
             ),
             module=FlowLMFlowWrapper(model),
+        ),
+        ExportSpec(
+            name="latent_to_mimi",
+            filename="latent_to_mimi.onnx",
+            input_names=["latent"],
+            output_names=["mimi_latent"],
+            dynamic_axes={"latent": {1: "latent_steps"}, "mimi_latent": {2: "latent_steps"}},
+            example_inputs=(torch.randn(1, 13, 32, dtype=torch.float32),),
+            module=LatentToMimiWrapper(model),
         ),
         ExportSpec(
             name="mimi_encoder",

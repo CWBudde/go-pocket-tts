@@ -213,19 +213,26 @@ This repo now includes a GitHub Action that builds a browser app artifact with:
 - Go wasm kernel: `web/dist/pockettts-kernel.wasm`
 - Go runtime JS shim: `web/dist/wasm_exec.js`
 - Static app: `web/dist/index.html`, `web/dist/main.js`
+- Optional ONNX bundle: `web/dist/models/*.onnx` + `web/dist/models/manifest.json`
 
 Run the workflow:
 
 - GitHub Actions -> `Web WASM App` -> `Run workflow`
+- Keep `include-models=true` to bundle exported ONNX models into the artifact.
 
 The uploaded artifact (`pockettts-web-wasm-<run_id>`) can be served as static files.
-It currently demonstrates text normalization/tokenization and a wasm-generated WAV demo tone.
+It provides:
+
+- `Generate Demo WAV`: wasm-only demo audio generation.
+- `Verify ONNX Models`: browser-side ONNX smoke inference over bundled graphs via `onnxruntime-web`.
+- `Synthesize via ONNX (Exp)`: experimental browser autoregressive graph orchestration (`text_conditioner` -> `flow_lm_main` -> `flow_lm_flow` -> `mimi_decoder`).
+  - Uses exported `latent_to_mimi` graph when present for upstream-aligned latent denorm + quantizer projection.
 
 Current gap for full browser PocketTTS inference:
 
 - Native ONNX Runtime (`onnxruntime-purego`) is not available in browser wasm.
-- The action does not yet bundle an ONNX-web backend + full model execution graph in the browser.
-- Model download/export still happens outside the browser runtime.
+- Remaining gap: architecture-accurate state/KV-cache parity and voice-conditioning parity with upstream Python runtime.
+- Model download/export still happens in CI/tooling (not in-browser).
 
 ## Configuration
 

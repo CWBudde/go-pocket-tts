@@ -9,6 +9,31 @@ on:
         required: false
         type: string
         default: "1.25.x"
+      include-models:
+        description: Export and bundle ONNX models into web artifact
+        required: false
+        type: boolean
+        default: true
+      python-version:
+        description: Python version for model export
+        required: false
+        type: string
+        default: "3.13"
+      hf-repo:
+        description: Hugging Face repo to download from
+        required: false
+        type: string
+        default: "kyutai/pocket-tts-without-voice-cloning"
+      model-variant:
+        description: PocketTTS model variant/config
+        required: false
+        type: string
+        default: "b6369a24"
+      enable-int8:
+        description: Enable ONNX INT8 quantization
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -25,6 +50,45 @@ jobs:
         with:
           go-version: ${{ inputs.go-version || '1.25.x' }}
 
+      - name: Setup Python
+        if: ${{ inputs.include-models }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version || '3.13' }}
+          cache: pip
+
+      - name: Install Python dependencies
+        if: ${{ inputs.include-models }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install \
+            pocket-tts \
+            onnx \
+            onnxruntime \
+            --extra-index-url https://download.pytorch.org/whl/cpu \
+            --index-strategy unsafe-best-match
+
+      - name: Download ungated PocketTTS model files
+        if: ${{ inputs.include-models }}
+        run: |
+          go run ./cmd/pockettts model download \
+            --hf-repo "${{ inputs.hf-repo || 'kyutai/pocket-tts-without-voice-cloning' }}" \
+            --out-dir models
+
+      - name: Export ONNX models
+        if: ${{ inputs.include-models }}
+        run: |
+          EXTRA_FLAGS=""
+          if [ "${{ inputs.enable-int8 }}" = "true" ]; then
+            EXTRA_FLAGS="--int8"
+          fi
+
+          go run ./cmd/pockettts-tools model export \
+            --models-dir models \
+            --out-dir models/onnx \
+            --variant "${{ inputs.model-variant || 'b6369a24' }}" \
+            ${EXTRA_FLAGS}
+
       - name: Build Go wasm kernel
         run: |
           mkdir -p web/dist
@@ -38,6 +102,12 @@ jobs:
         run: |
           cp web/index.html web/main.js web/dist/
 
+      - name: Bundle ONNX models into web app
+        if: ${{ inputs.include-models }}
+        run: |
+          mkdir -p web/dist/models
+          cp models/onnx/*.onnx models/onnx/manifest.json web/dist/models/
+
       - name: List web artifact
         run: |
           ls -lah web/dist
@@ -45,6 +115,10 @@ jobs:
           test -f web/dist/main.js
           test -f web/dist/wasm_exec.js
           test -f web/dist/pockettts-kernel.wasm
+          if [ "${{ inputs.include-models }}" = "true" ]; then
+            ls -lah web/dist/models
+            test -f web/dist/models/manifest.json
+          fi
 
       - name: Upload web app artifact
         uses: actions/upload-artifact@v4
