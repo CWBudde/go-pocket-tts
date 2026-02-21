@@ -41,7 +41,9 @@ func TestNewRootCmd_HasSubcommands(t *testing.T) {
 
 func TestNewRootCmd_ModelHasExportSubcommand(t *testing.T) {
 	cmd := NewRootCmd()
-	var modelCmd interface{ Commands() []*interface{ Name() string } }
+	var modelCmd interface {
+		Commands() []*interface{ Name() string }
+	}
 	_ = modelCmd
 
 	for _, sub := range cmd.Commands() {
