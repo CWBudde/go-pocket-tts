@@ -220,6 +220,8 @@ Run the workflow:
 - GitHub Actions -> `Web WASM App` -> `Run workflow`
 - Keep `include-models=true` to bundle exported ONNX models into the artifact.
 - GitHub Pages deployment is automated via `.github/workflows/deploy-pages.yml` on pushes to `main`.
+  - By default Pages build includes ONNX model export/bundle so model actions are enabled.
+  - Set repository variable `POCKETTTS_PAGES_INCLUDE_MODELS=false` to publish shell+kernel only.
 
 The uploaded artifact (`pockettts-web-wasm-<run_id>`) can be served as static files.
 It provides:
