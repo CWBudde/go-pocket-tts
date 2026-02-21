@@ -318,7 +318,7 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] Keep only for tooling compatibility (if still needed), or remove entirely
   - [x] Add CI job proving runtime commands pass in environment without Python
 
-- [ ] Task 11.4: **Packaging profiles**
+- [x] Task 11.4: **Packaging profiles**
   - [x] Add `runtime-native` profile (no Python installed)
   - [x] Add `tooling` profile (Python + pocket-tts + export dependencies)
   - [x] Validate both profiles in CI
@@ -367,17 +367,69 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] Kept JS as thin host bridge (`PocketTTSBridge.runGraph`) for ORT Web session execution
   - [x] Model WAV output now returned from Go wasm (base64)
 
-- [ ] Task 13.2: **Narrow JS to pure host/runtime glue**
-  - [ ] Remove remaining model-shape/serialization logic from JS where practical
-  - [ ] Keep JS responsible only for ORT execution provider, file loading, and audio playback
-  - [ ] Add stricter bridge contract tests (input/output tensor schema)
+- [x] Task 13.2: **Narrow JS to pure host/runtime glue**
+  - [x] Moved bridge/runtime responsibilities out of UI script into `web/bridge.js`
+  - [x] Kept `web/main.js` focused on UI wiring, capability checks, progress, and audio playback
+  - [x] Added stricter bridge contract validation in `web/bridge_contract.js`
+  - [x] Added bridge contract tests in `web/bridge_contract.test.mjs`
 
-- [ ] Task 13.3: **Add Go-native ONNX bundle acquisition command**
-  - [ ] Implement `pockettts model download-onnx` for prebuilt ONNX bundles
-  - [ ] Pin bundle manifests and checksums (similar to model download lockfile)
-  - [ ] Integrate with web workflow so browser path requires no Python for end users
+- [x] Task 13.3: **Add Go-native ONNX bundle acquisition command**
+  - [x] Implemented `pockettts-tools model download-onnx` for prebuilt ONNX bundles (zip/tar.gz)
+  - [x] Added lock-file support for pinned URLs/checksums (`bundles/onnx-bundles.lock.json`)
+  - [x] Added checksum verification + manifest/required-graph validation after extraction
+  - [x] Integrated optional prebuilt-bundle path into web workflows (`onnx-bundle-url`, `onnx-bundle-sha256`)
 
 - [ ] Task 13.4: **Runtime parity and quality hardening**
   - [ ] Align Go wasm prompt/token behavior with upstream sentencepiece/tokenizer path
   - [ ] Improve EOS/stopping and long-text chunking parity vs upstream generation
   - [ ] Add deterministic regression test vectors for web synth outputs
+
+---
+
+## Phase 14 — Comprehensive integration tests
+
+> **Goal:** Establish a reproducible, CI-gated integration test suite that validates the full synthesis pipeline end-to-end across both backends, covering the HTTP server, CLI commands, and audio output correctness. Integration tests use the `integration` build tag and skip gracefully when required dependencies (`pocket-tts` binary, ONNX runtime, voice files) are unavailable.
+
+- [ ] Task 14.1: **Test infrastructure and fixtures**
+  - [ ] Add `testdata/` directory under `cmd/pockettts/` with a minimal fixture WAV (silence, ~0.1 s at 24 kHz mono) for use as a voice-conditioning prompt
+  - [ ] Add a shared `internal/testutil` package with helpers: `RequirePocketTTS(t)`, `RequireONNXRuntime(t)`, `RequireVoiceFile(t, id)` — each calls `t.Skip` with a clear reason when the prerequisite is absent
+  - [ ] Add an integration test matrix in CI (`.github/workflows/test-integration.yml`) using a self-hosted or large runner that has `pocket-tts` and models available; gate the job on the `integration` tag being passed to `go test`
+
+- [ ] Task 14.2: **CLI `synth` integration tests (both backends)**
+  - [ ] `TestSynthCLI_ShortText`: synthesize ≤ 50 chars via `--backend cli`, assert RIFF header, non-zero PCM samples, and 24 kHz sample rate
+  - [ ] `TestSynthCLI_Chunked`: synthesize multi-sentence text with `--chunk`, assert concatenated output is longer than any single chunk
+  - [ ] `TestSynthCLI_DSPChain`: add `--normalize --dc-block --fade-in-ms 10 --fade-out-ms 10`, assert output is still valid WAV with equal sample count
+  - [ ] `TestSynthCLI_Stdout`: use `--out -`, capture stdout, assert RIFF bytes
+  - [ ] `TestSynthNative_ShortText`: same assertions as `TestSynthCLI_ShortText` for `--backend native`; skip when ONNX runtime or model is absent
+  - [ ] `TestSynthNative_Chunked`: chunked synthesis via native backend; assert PCM sample count grows with chunk count
+
+- [ ] Task 14.3: **HTTP server (`serve`) integration tests**
+  - [ ] `TestServe_HealthEndpoint`: start server on a random free port with `httptest.NewServer` or a live `net.Listen`, `GET /healthz`, assert `{"status":"ok"}` and 200
+  - [ ] `TestServe_VoicesEndpoint`: `GET /voices`, assert JSON array contains at least the fixture voice ID
+  - [ ] `TestServe_TTSEndpoint_CLI`: `POST /tts` `{"text":"Hello.","voice":"<fixture>"}` via `cli` backend; assert response `Content-Type: audio/wav` and valid RIFF body
+  - [ ] `TestServe_TTSEndpoint_Native`: same for `native` backend; skip when ONNX runtime absent
+  - [ ] `TestServe_TTSEndpoint_EmptyText`: assert 400 status and `{"error":...}` body
+  - [ ] `TestServe_TTSEndpoint_OversizedText`: send text exceeding `--max-text-bytes`; assert 400
+  - [ ] `TestServe_ConcurrentRequests`: fire N concurrent `POST /tts` requests up to the worker limit; assert all succeed and durations are bounded
+
+- [ ] Task 14.4: **`doctor` integration tests**
+  - [ ] `TestDoctorPasses_CLI`: run `pockettts doctor` against a valid environment (pocket-tts binary + voices + model files); assert exit 0 and `doctor checks passed` in stdout
+  - [ ] `TestDoctorPasses_Native`: same in native mode (no pocket-tts required); assert exit 0
+  - [ ] `TestDoctorFails_MissingVoiceFile`: point manifest at a non-existent voice file; assert exit non-zero and failure message in stderr
+  - [ ] `TestDoctorFails_BadPocketTTS`: provide a fake `pocket-tts` that exits 1; assert failure surfaced
+
+- [ ] Task 14.5: **`model verify` integration tests**
+  - [ ] `TestModelVerify_PassesWithValidONNX`: run `model verify` against the committed tiny identity ONNX from Phase 3.7; assert exit 0
+  - [ ] `TestModelVerify_FailsWithMissingManifest`: point `--manifest` at a non-existent path; assert structured error returned
+  - [ ] `TestModelVerify_FailsWithCorruptONNX`: write a truncated `.onnx` file; assert exit non-zero with actionable error message
+
+- [ ] Task 14.6: **Audio output correctness assertions**
+  - [ ] Extract a shared `assertValidWAV(t, data []byte)` helper that checks: RIFF header, PCM sub-chunk, 24000 Hz sample rate, 16-bit depth, non-zero sample count
+  - [ ] Add `assertWAVDurationApprox(t, data []byte, minSec, maxSec float64)` to sanity-check synthesis output is plausibly speech-length
+  - [ ] Apply both helpers consistently across Task 14.2 and 14.3 test assertions
+
+- [ ] Task 14.7: **CI integration test job**
+  - [ ] Add `.github/workflows/test-integration.yml` triggered on `workflow_dispatch` and `schedule` (nightly)
+  - [ ] Job installs `pocket-tts`, downloads model subset, runs `go test -tags integration ./...`
+  - [ ] Upload test output and any generated WAV artifacts for post-run inspection
+  - [ ] Gate merges: add integration job as an optional status check (required on `main` only after models are stable)

@@ -31,6 +31,16 @@ on:
         required: false
         type: boolean
         default: false
+      onnx-bundle-url:
+        description: Prebuilt ONNX bundle URL/path (skip Python export when set)
+        required: false
+        type: string
+        default: ''
+      onnx-bundle-sha256:
+        description: SHA256 for the prebuilt ONNX bundle
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -44,6 +54,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ONNX_BUNDLE_URL: ${{ github.event.inputs.onnx-bundle-url || '' }}
+      ONNX_BUNDLE_SHA256: ${{ github.event.inputs.onnx-bundle-sha256 || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,17 +73,17 @@ jobs:
           go build -o pockettts-tools ./cmd/pockettts-tools
 
       - name: Setup Python
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.include-models == true }}
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.include-models == true) && env.ONNX_BUNDLE_URL == '' }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ inputs.python-version || '3.10' }}
 
       - name: Setup uv
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.include-models == true }}
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.include-models == true) && env.ONNX_BUNDLE_URL == '' }}
         uses: astral-sh/setup-uv@v5
 
       - name: Install Python dependencies
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.include-models == true }}
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.include-models == true) && env.ONNX_BUNDLE_URL == '' }}
         run: |
           uv pip install --system \
             pocket-tts \
@@ -80,14 +93,14 @@ jobs:
             --index-strategy unsafe-best-match
 
       - name: Download ungated PocketTTS model files
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.include-models == true }}
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.include-models == true) && env.ONNX_BUNDLE_URL == '' }}
         run: |
           ./pockettts-tools model download \
             --hf-repo "${{ inputs.hf-repo || 'kyutai/pocket-tts-without-voice-cloning' }}" \
             --out-dir models
 
       - name: Export ONNX models
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.include-models == true }}
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.include-models == true) && env.ONNX_BUNDLE_URL == '' }}
         run: |
           EXTRA_FLAGS=""
           if [ "${{ inputs.enable-int8 }}" = "true" ]; then
@@ -100,6 +113,14 @@ jobs:
             --variant "${{ inputs.model-variant || 'b6369a24' }}" \
             ${EXTRA_FLAGS}
 
+      - name: Download prebuilt ONNX bundle
+        if: ${{ (github.event_name != 'workflow_dispatch' || inputs.include-models == true) && env.ONNX_BUNDLE_URL != '' }}
+        run: |
+          ./pockettts-tools model download-onnx \
+            --bundle-url "${ONNX_BUNDLE_URL}" \
+            --sha256 "${ONNX_BUNDLE_SHA256}" \
+            --out-dir models/onnx
+
       - name: Build Go wasm kernel
         run: |
           mkdir -p web/dist
@@ -109,7 +130,7 @@ jobs:
         run: cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" web/dist/wasm_exec.js
 
       - name: Copy static web assets
-        run: cp web/index.html web/main.js web/dist/
+        run: cp web/index.html web/main.js web/bridge.js web/bridge_contract.js web/dist/
 
       - name: Bundle ONNX models into web app
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.include-models == true }}
