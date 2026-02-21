@@ -1,7 +1,8 @@
 package tts
 
 import (
-	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,81 +12,74 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// NewService — error paths that don't require a real ORT library
+// NewService — error paths
 // ---------------------------------------------------------------------------
 
-func TestNewService_InvalidThreadCount(t *testing.T) {
+func TestNewService_MissingORTLibrary(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.Runtime.Threads = 0 // NewEngine rejects this before Bootstrap is called
+	// Point at a nonexistent ORT library and manifest to trigger error.
+	cfg.Runtime.ORTLibraryPath = "/nonexistent/libonnxruntime.so"
+	cfg.Paths.ONNXManifest = "/nonexistent/manifest.json"
 
 	_, err := NewService(cfg)
 	if err == nil {
-		t.Error("NewService(threads=0) = nil; want error")
-	}
-}
-
-func TestNewService_NegativeThreadCount(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.Runtime.Threads = -1
-
-	_, err := NewService(cfg)
-	if err == nil {
-		t.Error("NewService(threads=-1) = nil; want error")
+		t.Error("NewService with missing ORT library should return error")
 	}
 }
 
 // ---------------------------------------------------------------------------
 // Service.Synthesize — tested via a directly-constructed Service
-// (bypassing NewService to avoid the ORT Bootstrap dependency)
+// (bypassing NewService to avoid ORT/manifest dependency)
 // ---------------------------------------------------------------------------
 
-// newTestService constructs a Service with a real Engine (using a stub
-// config) by exploiting that onnx.NewEngine only requires Threads >= 1
-// and a Bootstrap call that may fail gracefully.
-//
-// If Bootstrap fails (no ORT library present), we fall back to building
-// a minimal Service by hand so Synthesize can still be tested.
 func newTestService(t *testing.T) *Service {
 	t.Helper()
 
-	cfg := config.DefaultConfig()
-	cfg.Runtime.Threads = 1
-
-	svc, err := NewService(cfg)
-	if err == nil {
-		return svc
+	// Try real construction first.
+	libPath := os.Getenv("POCKETTTS_ORT_LIB")
+	if libPath == "" {
+		libPath = os.Getenv("ORT_LIBRARY_PATH")
+	}
+	if libPath != "" {
+		cfg := config.DefaultConfig()
+		cfg.Runtime.ORTLibraryPath = libPath
+		svc, err := NewService(cfg)
+		if err == nil {
+			return svc
+		}
 	}
 
-	// ORT runtime not available — build a Service directly with a stub engine.
-	// onnx.Engine is an exported type with an exported Infer method, so we
-	// can construct one via its package constructor using a synthetic path
-	// that will fail Bootstrap but still let us test the token-level logic.
-	// Instead: build Service directly using struct literal (white-box, same package).
-	stubEngine := buildStubEngine(t)
+	// No ORT available — build a stub Service with a manifest-based engine.
+	// Create a temp dir with identity model + manifest.
+	tmp := t.TempDir()
+	src := filepath.Join("..", "onnx", "..", "model", "testdata", "identity_float32.onnx")
+	data, err := os.ReadFile(src)
+	if err != nil {
+		t.Skipf("identity model unavailable: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "identity.onnx"), data, 0o644); err != nil {
+		t.Fatalf("write identity model: %v", err)
+	}
+	manifest := `{"graphs":[{"name":"identity","filename":"identity.onnx","inputs":[{"name":"input","dtype":"float","shape":[1,3]}],"outputs":[{"name":"output","dtype":"float","shape":[1,3]}]}]}`
+	if err := os.WriteFile(filepath.Join(tmp, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	if libPath == "" {
+		t.Skipf("no ORT library available; set POCKETTTS_ORT_LIB")
+	}
+
+	engine, err := onnx.NewEngine(filepath.Join(tmp, "manifest.json"), onnx.RunnerConfig{
+		LibraryPath: libPath,
+		APIVersion:  23,
+	})
+	if err != nil {
+		t.Skipf("cannot create engine: %v", err)
+	}
 	return &Service{
-		engine:       stubEngine,
+		engine:       engine,
 		preprocessor: text.NewPreprocessor(),
 	}
-}
-
-// buildStubEngine creates a minimal *onnx.Engine for tests.
-// We use the exported NewEngine path with a fake-but-syntactically-valid
-// library path so Bootstrap returns an error, then fall back to a direct
-// struct construction via the onnx package's exported surface.
-//
-// Since onnx.Engine is unexported beyond its package boundary (it's an
-// exported type but its fields are unexported), the only way to get a
-// valid *onnx.Engine is through onnx.NewEngine. We accept that if ORT
-// is absent, Engine-based tests will be skipped.
-func buildStubEngine(t *testing.T) *onnx.Engine {
-	t.Helper()
-	cfg := config.DefaultConfig()
-	cfg.Runtime.Threads = 1
-	engine, err := onnx.NewEngine(cfg.Runtime)
-	if err != nil {
-		t.Skipf("onnx.NewEngine unavailable (no ORT library): %v", err)
-	}
-	return engine
 }
 
 func TestSynthesize_EmptyInput(t *testing.T) {
@@ -109,51 +103,17 @@ func TestSynthesize_WhitespaceOnly(t *testing.T) {
 	}
 }
 
-func TestSynthesize_ValidInput(t *testing.T) {
+func TestSynthesize_ValidInput_ReturnsErrorUntilPhase18(t *testing.T) {
 	svc := newTestService(t)
 
-	samples, err := svc.Synthesize("hello world")
-	if err != nil {
-		t.Fatalf("Synthesize(\"hello world\") error = %v", err)
+	// Engine.Infer is a temporary shim that returns an error.
+	// This test documents that behavior — it will be updated in Phase 18
+	// when the real generation pipeline is implemented.
+	_, err := svc.Synthesize("hello world")
+	if err == nil {
+		t.Fatal("Synthesize should return error (Infer not yet implemented)")
 	}
-	if len(samples) == 0 {
-		t.Error("Synthesize returned empty samples")
-	}
-	// Samples should be finite float32 values.
-	for i, s := range samples {
-		if math.IsNaN(float64(s)) || math.IsInf(float64(s), 0) {
-			t.Errorf("sample[%d] = %v; want finite value", i, s)
-			break
-		}
-	}
-}
-
-func TestSynthesize_OutputLength(t *testing.T) {
-	svc := newTestService(t)
-
-	// The Engine stub generates 512 samples per token.
-	// "hi" has 2 non-space characters → 2 tokens → 1024 samples.
-	samples, err := svc.Synthesize("hi")
-	if err != nil {
-		t.Fatalf("Synthesize(\"hi\") error = %v", err)
-	}
-	// Token count = len("hi") = 2; expected samples = 2 * 512 = 1024.
-	wantSamples := 2 * 512
-	if len(samples) != wantSamples {
-		t.Errorf("sample count = %d; want %d", len(samples), wantSamples)
-	}
-}
-
-func TestSynthesize_PunctuationTokenized(t *testing.T) {
-	svc := newTestService(t)
-
-	// Punctuation is not whitespace, so "a!" should produce 2 tokens.
-	samples, err := svc.Synthesize("a!")
-	if err != nil {
-		t.Fatalf("Synthesize(\"a!\") error = %v", err)
-	}
-	wantSamples := 2 * 512
-	if len(samples) != wantSamples {
-		t.Errorf("sample count = %d; want %d", len(samples), wantSamples)
+	if !strings.Contains(err.Error(), "not yet implemented") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
