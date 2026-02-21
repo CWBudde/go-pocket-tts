@@ -418,10 +418,10 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [x] `TestDoctorFails_MissingVoiceFile`: point manifest at a non-existent voice file; assert exit non-zero and failure message in stderr
   - [x] `TestDoctorFails_BadPocketTTS`: provide a fake `pocket-tts` that exits 1; assert failure surfaced
 
-- [ ] Task 14.5: **`model verify` integration tests**
-  - [ ] `TestModelVerify_PassesWithValidONNX`: run `model verify` against the committed tiny identity ONNX from Phase 3.7; assert exit 0
-  - [ ] `TestModelVerify_FailsWithMissingManifest`: point `--manifest` at a non-existent path; assert structured error returned
-  - [ ] `TestModelVerify_FailsWithCorruptONNX`: write a truncated `.onnx` file; assert exit non-zero with actionable error message
+- [x] Task 14.5: **`model verify` integration tests**
+  - [x] `TestModelVerify_PassesWithValidONNX`: run `model verify` against the committed tiny identity ONNX from Phase 3.7; assert exit 0
+  - [x] `TestModelVerify_FailsWithMissingManifest`: point `--manifest` at a non-existent path; assert structured error returned
+  - [x] `TestModelVerify_FailsWithCorruptONNX`: write a truncated `.onnx` file; assert exit non-zero with actionable error message
 
 - [ ] Task 14.6: **Audio output correctness assertions**
   - [x] Extract a shared `AssertValidWAV(t, data []byte)` helper that checks: RIFF header, PCM sub-chunk, 24000 Hz sample rate, 16-bit depth, non-zero sample count

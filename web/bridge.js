@@ -92,10 +92,16 @@ export class ONNXBridge {
 
   async runGraph(graphName, feedsJSON) {
     const feeds = parseAndValidateFeedsJSON(feedsJSON);
+    const outputs = await this.runGraphPayload(graphName, feeds);
+    return JSON.stringify(outputs);
+  }
+
+  async runGraphPayload(graphName, feeds) {
     const { session } = await this.getSession(graphName);
 
     const ortFeeds = {};
     for (const [name, payload] of Object.entries(feeds)) {
+      validateTensorPayload(payload, `feed ${name}`);
       ortFeeds[name] = ortTensorFromPayload(payload);
     }
 
@@ -106,7 +112,13 @@ export class ONNXBridge {
       validateTensorPayload(serialized[name], `output ${name}`);
     }
 
-    return JSON.stringify(serialized);
+    return serialized;
+  }
+
+  async preloadGraphs(graphNames) {
+    for (const name of graphNames) {
+      await this.getSession(name);
+    }
   }
 
   async verifyGraph(graph) {

@@ -3,101 +3,173 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>PocketTTS WASM Demo</title>
+    <title>PocketTTS Web Demo</title>
     <style>
       :root {
-        --bg: #0f172a;
-        --panel: #111827;
-        --text: #e5e7eb;
-        --muted: #94a3b8;
-        --accent: #22c55e;
+        --bg: #0b1220;
+        --bg-soft: #101a2e;
+        --panel: #13203a;
+        --line: #2e4368;
+        --text: #dfe8f6;
+        --muted: #98abc9;
+        --accent: #4cb2ff;
+        --accent-ink: #00101f;
       }
+
+      * {
+        box-sizing: border-box;
+      }
+
       body {
         margin: 0;
-        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-        background: radial-gradient(circle at top right, #1f2937, var(--bg) 60%);
+        font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+        background:
+          radial-gradient(1000px 500px at 90% -10%, #17305a55, transparent),
+          radial-gradient(900px 400px at -10% 120%, #214c7a44, transparent),
+          var(--bg);
         color: var(--text);
       }
+
       main {
-        max-width: 920px;
-        margin: 2rem auto;
+        max-width: 900px;
+        margin: 1.2rem auto;
         padding: 1rem;
       }
-      .card {
-        background: color-mix(in oklab, var(--panel), black 10%);
-        border: 1px solid #334155;
+
+      .panel {
+        background: linear-gradient(180deg, #162645cc, #111d33dd);
+        border: 1px solid var(--line);
         border-radius: 12px;
         padding: 1rem;
       }
+
       h1 {
-        margin-top: 0;
+        margin: 0;
+        font-size: 1.6rem;
       }
-      textarea {
-        width: 100%;
-        min-height: 100px;
-        background: #020617;
-        color: var(--text);
-        border: 1px solid #334155;
-        border-radius: 10px;
-        padding: 0.75rem;
-      }
-      .row {
-        display: flex;
-        gap: 0.75rem;
-        margin-top: 0.75rem;
-        flex-wrap: wrap;
-      }
-      button {
-        background: var(--accent);
-        color: #052e16;
-        border: none;
-        border-radius: 10px;
-        padding: 0.6rem 1rem;
-        font-weight: 700;
-        cursor: pointer;
-      }
-      pre {
-        background: #020617;
-        border: 1px solid #334155;
-        border-radius: 10px;
-        padding: 0.75rem;
-        white-space: pre-wrap;
-      }
-      .muted {
+
+      .subtitle {
+        margin: 0.35rem 0 0;
         color: var(--muted);
       }
-      .hint {
-        margin-top: 1rem;
+
+      .row {
+        display: flex;
+        gap: 0.7rem;
+        flex-wrap: wrap;
+        align-items: center;
       }
-      progress {
+
+      .row + .row {
+        margin-top: 0.7rem;
+      }
+
+      .grow {
+        flex: 1;
+      }
+
+      textarea {
         width: 100%;
-        height: 14px;
-        margin-top: 0.75rem;
+        min-height: 110px;
+        margin-top: 0.7rem;
+        background: #0a1428;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        color: var(--text);
+        padding: 0.75rem;
+        font: inherit;
+      }
+
+      button,
+      select {
+        background: #0d1a30;
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 0.55rem 0.8rem;
+        font: inherit;
+      }
+
+      button.primary {
+        background: var(--accent);
+        color: var(--accent-ink);
+        border-color: #82c9ff;
+        font-weight: 700;
+      }
+
+      button[disabled] {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .icon-btn {
+        min-width: 2.25rem;
+        padding: 0.48rem 0.6rem;
+        text-align: center;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .info,
+      pre {
+        margin: 0.7rem 0 0;
+        background: #081122;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.65rem;
+        color: var(--muted);
+        white-space: pre-wrap;
+      }
+
+      progress {
+        margin-top: 0.7rem;
+        width: 100%;
+        height: 12px;
+      }
+
+      audio {
+        width: 100%;
+        margin-top: 0.7rem;
+      }
+
+      .muted {
+        color: var(--muted);
       }
     </style>
   </head>
   <body>
     <main>
-      <div class="card">
-        <h1>PocketTTS WASM App (Experimental)</h1>
-        <p class="muted">
-          Go wasm kernel handles normalization/tokenization/demo WAV generation. ONNX graphs (if bundled) are loaded in-browser via onnxruntime-web for smoke inference.
-        </p>
-        <textarea id="text" placeholder="Type text here">Hello World from PocketTTS wasm.</textarea>
+      <section class="panel">
+        <h1>PocketTTS Web Demo</h1>
+        <p class="subtitle">Run model inference in-browser with JavaScript or Go WASM orchestration.</p>
+
+        <div id="startup-info" class="info">Starting...</div>
+
         <div class="row">
-          <button id="run" type="button" disabled>Generate Fallback Tone WAV</button>
-          <button id="verify-models" type="button" disabled>Verify ONNX Models</button>
-          <button id="synthesize-model" type="button" disabled>Synthesize via ONNX (Exp)</button>
-          <a id="download" download="hello.wav">Download</a>
+          <button id="load-model" type="button">Load Model</button>
+          <label class="muted" for="engine">Inference Engine</label>
+          <select id="engine">
+            <option value="js">JavaScript</option>
+            <option value="go">Go WASM</option>
+          </select>
+          <span id="model-state" class="muted">Model: not loaded</span>
         </div>
+
+        <textarea id="text" placeholder="Type text here">Hello from PocketTTS in the browser.</textarea>
+
+        <div class="row">
+          <button id="synthesize" class="primary grow" type="button" disabled>Synthesize</button>
+          <a id="download" class="icon-btn" href="#" download="pockettts.wav" title="Download WAV" aria-label="Download WAV">⬇</a>
+        </div>
+
         <progress id="synth-progress" value="0" max="100"></progress>
         <div id="synth-progress-text" class="muted">Idle</div>
-        <audio id="player" controls style="margin-top: 0.75rem; width: 100%"></audio>
-        <pre id="log" class="muted">Loading wasm kernel...</pre>
-        <p class="hint muted">
-          Expected model bundle location: <code>./models/manifest.json</code>
-        </p>
-      </div>
+
+        <audio id="player" controls></audio>
+        <pre id="log">Ready.</pre>
+      </section>
     </main>
 
     <script src="./wasm_exec.js"></script>
