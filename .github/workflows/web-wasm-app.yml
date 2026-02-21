@@ -34,6 +34,16 @@ on:
         required: false
         type: boolean
         default: false
+      onnx-bundle-url:
+        description: Prebuilt ONNX bundle URL/path (skip Python export when set)
+        required: false
+        type: string
+        default: ""
+      onnx-bundle-sha256:
+        description: SHA256 for the prebuilt ONNX bundle
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -57,17 +67,17 @@ jobs:
           go build -o pockettts-tools ./cmd/pockettts-tools
 
       - name: Setup Python
-        if: ${{ inputs.include-models }}
+        if: ${{ inputs.include-models && (inputs.onnx-bundle-url || '') == '' }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ inputs.python-version || '3.10' }}
 
       - name: Setup uv
-        if: ${{ inputs.include-models }}
+        if: ${{ inputs.include-models && (inputs.onnx-bundle-url || '') == '' }}
         uses: astral-sh/setup-uv@v5
 
       - name: Install Python dependencies
-        if: ${{ inputs.include-models }}
+        if: ${{ inputs.include-models && (inputs.onnx-bundle-url || '') == '' }}
         run: |
           uv pip install --system \
             pocket-tts \
@@ -77,14 +87,14 @@ jobs:
             --index-strategy unsafe-best-match
 
       - name: Download ungated PocketTTS model files
-        if: ${{ inputs.include-models }}
+        if: ${{ inputs.include-models && (inputs.onnx-bundle-url || '') == '' }}
         run: |
           ./pockettts-tools model download \
             --hf-repo "${{ inputs.hf-repo || 'kyutai/pocket-tts-without-voice-cloning' }}" \
             --out-dir models
 
       - name: Export ONNX models
-        if: ${{ inputs.include-models }}
+        if: ${{ inputs.include-models && (inputs.onnx-bundle-url || '') == '' }}
         run: |
           EXTRA_FLAGS=""
           if [ "${{ inputs.enable-int8 }}" = "true" ]; then
@@ -97,6 +107,14 @@ jobs:
             --variant "${{ inputs.model-variant || 'b6369a24' }}" \
             ${EXTRA_FLAGS}
 
+      - name: Download prebuilt ONNX bundle
+        if: ${{ inputs.include-models && (inputs.onnx-bundle-url || '') != '' }}
+        run: |
+          ./pockettts-tools model download-onnx \
+            --bundle-url "${{ inputs.onnx-bundle-url }}" \
+            --sha256 "${{ inputs.onnx-bundle-sha256 || '' }}" \
+            --out-dir models/onnx
+
       - name: Build Go wasm kernel
         run: |
           mkdir -p web/dist
@@ -108,7 +126,7 @@ jobs:
 
       - name: Copy web app assets
         run: |
-          cp web/index.html web/main.js web/dist/
+          cp web/index.html web/main.js web/bridge.js web/bridge_contract.js web/dist/
 
       - name: Bundle ONNX models into web app
         if: ${{ inputs.include-models }}
@@ -121,6 +139,8 @@ jobs:
           ls -lah web/dist
           test -f web/dist/index.html
           test -f web/dist/main.js
+          test -f web/dist/bridge.js
+          test -f web/dist/bridge_contract.js
           test -f web/dist/wasm_exec.js
           test -f web/dist/pockettts-kernel.wasm
           if [ "${{ inputs.include-models }}" = "true" ]; then

@@ -158,6 +158,23 @@ Optional INT8 quantization:
 ./pockettts-tools model export --models-dir models --out-dir models/onnx --int8
 ```
 
+### Download prebuilt ONNX bundle (no Python)
+
+Download and verify a prebuilt ONNX archive directly:
+
+```bash
+./pockettts-tools model download-onnx \
+  --bundle-url https://example.com/pockettts-onnx-b6369a24.tar.gz \
+  --sha256 <sha256> \
+  --out-dir models/onnx
+```
+
+Or resolve a pinned bundle from lock file (`bundles/onnx-bundles.lock.json`):
+
+```bash
+./pockettts-tools model download-onnx --variant b6369a24 --out-dir models/onnx
+```
+
 ### Verify
 
 Runs a native Go smoke inference for each graph in the exported `manifest.json`
@@ -219,8 +236,10 @@ Run the workflow:
 
 - GitHub Actions -> `Web WASM App` -> `Run workflow`
 - Keep `include-models=true` to bundle exported ONNX models into the artifact.
+  - Optional: pass `onnx-bundle-url` (+ `onnx-bundle-sha256`) to use prebuilt ONNX bundles and skip Python export.
 - GitHub Pages deployment is automated via `.github/workflows/deploy-pages.yml` on pushes to `main`.
   - Pages build on `main` always includes ONNX model export/bundle so model actions are enabled.
+  - Optional manual input `onnx-bundle-url` allows Python-free bundle acquisition in the deploy workflow.
   - Manual runs can still disable model bundling via `include-models=false`.
 
 The uploaded artifact (`pockettts-web-wasm-<run_id>`) can be served as static files.
