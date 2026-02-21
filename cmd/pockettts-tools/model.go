@@ -8,6 +8,7 @@ func newModelCmd() *cobra.Command {
 		Short: "Model tooling commands",
 	}
 
+	cmd.AddCommand(newModelDownloadCmd())
 	cmd.AddCommand(newModelExportCmd())
 	return cmd
 }

@@ -101,12 +101,12 @@ func Download(opts DownloadOptions) error {
 		if ok, err := existingMatches(localPath, expected); err != nil {
 			return err
 		} else if ok {
-			fmt.Fprintf(opts.Stdout, "skip %s (checksum match)\n", f.Filename)
+			_, _ = fmt.Fprintf(opts.Stdout, "skip %s (checksum match)\n", f.Filename)
 			lock.Files[f.Filename] = lockRecord{Revision: f.Revision, SHA256: expected}
 			continue
 		}
 
-		fmt.Fprintf(opts.Stdout, "download %s@%s -> %s\n", f.Filename, f.Revision, localPath)
+		_, _ = fmt.Fprintf(opts.Stdout, "download %s@%s -> %s\n", f.Filename, f.Revision, localPath)
 		actual, err := downloadWithProgress(client, manifest.Repo, f, opts.HFToken, localPath, opts.Stdout)
 		if err != nil {
 			return err
@@ -114,14 +114,14 @@ func Download(opts DownloadOptions) error {
 		if actual != expected {
 			return fmt.Errorf("checksum mismatch for %s: expected %s got %s", f.Filename, expected, actual)
 		}
-		fmt.Fprintf(opts.Stdout, "verified %s (sha256=%s)\n", f.Filename, actual)
+		_, _ = fmt.Fprintf(opts.Stdout, "verified %s (sha256=%s)\n", f.Filename, actual)
 		lock.Files[f.Filename] = lockRecord{Revision: f.Revision, SHA256: expected}
 	}
 
 	if err := writeLockManifest(lockPath, lock); err != nil {
 		return err
 	}
-	fmt.Fprintf(opts.Stdout, "wrote lock manifest: %s\n", lockPath)
+	_, _ = fmt.Fprintf(opts.Stdout, "wrote lock manifest: %s\n", lockPath)
 	return nil
 }
 
@@ -193,9 +193,9 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 			if time.Since(lastPrint) > 700*time.Millisecond {
 				if total > 0 {
 					pct := float64(written) * 100 / float64(total)
-					fmt.Fprintf(stdout, "  progress: %.1f%% (%d/%d bytes)\n", pct, written, total)
+					_, _ = fmt.Fprintf(stdout, "  progress: %.1f%% (%d/%d bytes)\n", pct, written, total)
 				} else {
-					fmt.Fprintf(stdout, "  progress: %d bytes\n", written)
+					_, _ = fmt.Fprintf(stdout, "  progress: %d bytes\n", written)
 				}
 				lastPrint = time.Now()
 			}
