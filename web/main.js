@@ -1,30 +1,41 @@
 import { ONNXBridge } from "./bridge.js";
 
+const startupInfo = document.getElementById("startup-info");
 const log = document.getElementById("log");
 const textArea = document.getElementById("text");
-const runBtn = document.getElementById("run");
-const verifyBtn = document.getElementById("verify-models");
-const modelSynthBtn = document.getElementById("synthesize-model");
+const loadModelBtn = document.getElementById("load-model");
+const engineSelect = document.getElementById("engine");
+const modelState = document.getElementById("model-state");
+const synthBtn = document.getElementById("synthesize");
 const player = document.getElementById("player");
 const download = document.getElementById("download");
 const synthProgress = document.getElementById("synth-progress");
 const synthProgressText = document.getElementById("synth-progress-text");
 
 const onnxBridge = new ONNXBridge({ manifestPath: "./models/manifest.json" });
-const requiredModelGraphs = ["text_conditioner", "flow_lm_main", "flow_lm_flow", "mimi_decoder"];
+const requiredGraphs = ["text_conditioner", "flow_lm_main", "flow_lm_flow", "mimi_decoder"];
+const optionalGraphs = ["latent_to_mimi"];
 
-const capabilities = {
+const state = {
   kernelReady: false,
-  modelManifestReady: false,
-  modelGraphsReady: false,
-  modelReady: false,
-  reasons: [],
+  kernelVersion: "",
+  manifestReady: false,
+  manifest: null,
+  modelLoaded: false,
+  activeAudioURL: "",
 };
 
-const progressState = {
-  startedAtMs: 0,
-  lastEventAtMs: 0,
-  arStartedAtMs: 0,
+const modelConfig = {
+  sampleRate: 24000,
+  flowTemperature: 0.7,
+  flowDecodeSteps: 1,
+  flowEOSThreshold: -4.0,
+  flowFramesAfterEOS: 2,
+  flowMinSteps: 16,
+  flowMaxSteps: 256,
+  latentDim: 32,
+  condDim: 1024,
+  mimiDimFallback: 512,
 };
 
 function formatError(err) {
@@ -53,242 +64,513 @@ function decodeBase64ToBytes(base64) {
   return bytes;
 }
 
+function encodeWavPCM16(samples, sampleRate) {
+  const n = samples.length;
+  const buffer = new ArrayBuffer(44 + n * 2);
+  const view = new DataView(buffer);
+
+  function writeASCII(offset, text) {
+    for (let i = 0; i < text.length; i += 1) {
+      view.setUint8(offset + i, text.charCodeAt(i));
+    }
+  }
+
+  writeASCII(0, "RIFF");
+  view.setUint32(4, 36 + n * 2, true);
+  writeASCII(8, "WAVE");
+  writeASCII(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeASCII(36, "data");
+  view.setUint32(40, n * 2, true);
+
+  for (let i = 0; i < n; i += 1) {
+    const x = Math.max(-1, Math.min(1, Number(samples[i] || 0)));
+    const q = x < 0 ? Math.round(x * 0x8000) : Math.round(x * 0x7fff);
+    view.setInt16(44 + i * 2, q, true);
+  }
+
+  return new Uint8Array(buffer);
+}
+
 function setAudioBlob(wavBytes) {
+  if (state.activeAudioURL) {
+    URL.revokeObjectURL(state.activeAudioURL);
+  }
+
   const blob = new Blob([wavBytes], { type: "audio/wav" });
   const url = URL.createObjectURL(blob);
+  state.activeAudioURL = url;
+
   player.src = url;
   download.href = url;
-  download.textContent = "Download hello.wav";
 }
 
 function resetProgress() {
-  progressState.startedAtMs = performance.now();
-  progressState.lastEventAtMs = progressState.startedAtMs;
-  progressState.arStartedAtMs = 0;
   synthProgress.value = 0;
-  synthProgressText.textContent = "Idle (ETA: --)";
-}
-
-function formatETA(seconds) {
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    return "--";
-  }
-  const s = Math.round(seconds);
-  const m = Math.floor(s / 60);
-  const rem = s % 60;
-  if (m > 0) {
-    return `${m}m ${rem}s`;
-  }
-  return `${rem}s`;
+  synthProgressText.textContent = "Idle";
 }
 
 function updateProgress(evt) {
-  const now = performance.now();
-  progressState.lastEventAtMs = now;
-
-  const percent = Number(evt?.percent || 0);
-  synthProgress.value = Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+  const percent = Math.max(0, Math.min(100, Number(evt?.percent || 0)));
   const stage = evt?.stage || "working";
-  const detail = evt?.detail || "";
-  const current = evt?.current ?? 0;
-  const total = evt?.total ?? 0;
+  const detail = evt?.detail ? ` - ${evt.detail}` : "";
+  synthProgress.value = percent;
+  synthProgressText.textContent = `${Math.round(percent)}% - ${stage}${detail}`;
+}
 
-  let etaSeconds = Number.NaN;
-  const stepMatch = /step\s+(\d+)\/(\d+)/i.exec(detail);
-  if (stage === "autoregressive" && stepMatch) {
-    const stepNow = Number(stepMatch[1]);
-    const stepTotal = Number(stepMatch[2]);
-    if (progressState.arStartedAtMs === 0) {
-      progressState.arStartedAtMs = now;
-    }
-    if (stepNow > 0 && stepTotal > 0 && stepNow <= stepTotal) {
-      const elapsedAr = (now - progressState.arStartedAtMs) / 1000;
-      const secPerStep = elapsedAr / stepNow;
-      etaSeconds = secPerStep * Math.max(0, stepTotal - stepNow);
-    }
-  } else if (synthProgress.value > 1) {
-    const elapsed = (now - progressState.startedAtMs) / 1000;
-    const remainingPercent = Math.max(0, 100 - synthProgress.value);
-    etaSeconds = elapsed * (remainingPercent / synthProgress.value);
+function normalizePromptForModel(s) {
+  s = String(s || "").trim();
+  if (!s) {
+    return "";
   }
+  s = s.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n/g, " ");
+  s = s.split(/\s+/).filter(Boolean).join(" ");
+  if (!s) {
+    return "";
+  }
+  if (!/[.!?]$/.test(s)) {
+    s += ".";
+  }
+  return s;
+}
 
-  synthProgressText.textContent = `${Math.round(synthProgress.value)}% - ${stage}${detail ? ` - ${detail}` : ""}${total ? ` (${current}/${total})` : ""} | ETA: ${formatETA(etaSeconds)}`;
+function copyOrTile(src, n) {
+  const out = new Float32Array(n);
+  if (!src || src.length === 0) {
+    return out;
+  }
+  for (let i = 0; i < n; i += 1) {
+    out[i] = Number(src[i % src.length] || 0);
+  }
+  return out;
+}
+
+function flattenFrames(frames, frameDim) {
+  const out = new Float32Array(frames.length * frameDim);
+  let w = 0;
+  for (const frame of frames) {
+    const row = copyOrTile(frame, frameDim);
+    out.set(row, w);
+    w += frameDim;
+  }
+  return out;
+}
+
+function randomNormal() {
+  let u = 0;
+  let v = 0;
+  while (u === 0) {
+    u = Math.random();
+  }
+  while (v === 0) {
+    v = Math.random();
+  }
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+function pickOutput(outputs, preferred) {
+  if (preferred && outputs[preferred]) {
+    return outputs[preferred];
+  }
+  const first = Object.values(outputs)[0];
+  if (!first) {
+    throw new Error("graph returned no outputs");
+  }
+  return first;
 }
 
 function hasRequiredGraphs(manifest) {
-  const names = new Set((manifest.graphs || []).map((g) => g.name));
-  return requiredModelGraphs.every((name) => names.has(name));
+  const names = new Set((manifest?.graphs || []).map((g) => g.name));
+  return requiredGraphs.every((name) => names.has(name));
 }
 
-globalThis.PocketTTSBridge = {
-  runGraph: (graphName, feedsJSON) => onnxBridge.runGraph(graphName, feedsJSON),
-};
+function graphExists(name) {
+  return (state.manifest?.graphs || []).some((g) => g.name === name);
+}
 
 async function bootKernel() {
   const go = new Go();
   const wasm = await WebAssembly.instantiateStreaming(fetch("./pockettts-kernel.wasm"), go.importObject);
   go.run(wasm.instance);
 
-  if (!globalThis.PocketTTSKernel) {
+  const kernel = globalThis.PocketTTSKernel;
+  if (!kernel) {
     throw new Error("PocketTTSKernel not found after wasm startup");
   }
 
-  log.textContent = `Kernel ready: ${globalThis.PocketTTSKernel.version}`;
+  state.kernelReady = true;
+  state.kernelVersion = String(kernel.version || "unknown");
 }
 
-runBtn.addEventListener("click", async () => {
-  if (runBtn.disabled) {
-    return;
-  }
-  const input = textArea.value;
-  const out = globalThis.PocketTTSKernel.synthesizeWav(input);
-  if (!out.ok) {
-    log.textContent = `Error: ${out.error}`;
-    return;
+async function detectManifest() {
+  const manifest = await onnxBridge.loadManifest();
+  state.manifest = manifest;
+  state.manifestReady = true;
+}
+
+function renderStartupInfo() {
+  const engine = engineSelect.value === "go" ? "Go WASM" : "JavaScript";
+  const graphNames = (state.manifest?.graphs || []).map((g) => g.name);
+
+  const lines = [
+    `Kernel: ${state.kernelReady ? `ready (${state.kernelVersion})` : "unavailable"}`,
+    `Manifest: ${state.manifestReady ? "found" : "not found"}`,
+    `Required graphs: ${state.manifestReady && hasRequiredGraphs(state.manifest) ? "ready" : "missing"}`,
+    `Loaded: ${state.modelLoaded ? "yes" : "no"}`,
+    `Engine: ${engine}`,
+    `Runtime: onnxruntime-web (WASM provider)`,
+  ];
+
+  if (graphNames.length > 0) {
+    lines.push(`Graphs: ${graphNames.join(", ")}`);
   }
 
-  const wavBytes = decodeBase64ToBytes(out.wav_base64);
-  setAudioBlob(wavBytes);
-  log.textContent = `Demo synth complete\nNormalized: ${out.text}\nWAV bytes: ${wavBytes.length}`;
-});
+  startupInfo.textContent = lines.join("\n");
+}
 
-verifyBtn.addEventListener("click", async () => {
-  if (verifyBtn.disabled) {
-    return;
+function renderModelState() {
+  modelState.textContent = state.modelLoaded ? "Model: loaded" : "Model: not loaded";
+}
+
+function setSynthesizeEnabled() {
+  const engine = engineSelect.value;
+  const kernelOk = state.kernelReady;
+  const modelOk = state.modelLoaded;
+  const enabled = engine === "go" ? kernelOk && modelOk : kernelOk && modelOk;
+  synthBtn.disabled = !enabled;
+}
+
+async function runGraph(name, feeds) {
+  return onnxBridge.runGraphPayload(name, feeds);
+}
+
+async function tokenizeForModel(inputText) {
+  if (!state.kernelReady) {
+    throw new Error("Go WASM kernel not ready (needed for tokenizer)");
   }
+
+  const prepared = normalizePromptForModel(inputText);
+  if (!prepared) {
+    throw new Error("text is empty");
+  }
+
+  const tokenized = globalThis.PocketTTSKernel.tokenize(prepared);
+  if (!tokenized?.ok) {
+    throw new Error(tokenized?.error || "tokenization failed");
+  }
+
+  const tokens = Array.isArray(tokenized.tokens)
+    ? tokenized.tokens.map((v) => Number(v)).filter((v) => Number.isSafeInteger(v))
+    : [];
+
+  if (tokens.length === 0) {
+    throw new Error("no tokens produced after preprocessing");
+  }
+
+  return {
+    normalized: String(tokenized.text || prepared),
+    tokens,
+  };
+}
+
+async function synthesizeModelJS(inputText, onProgress) {
+  const cfg = modelConfig;
+  const emit = (stage, current, total, detail) => {
+    const percent = total > 0 ? (current / total) * 100 : 0;
+    onProgress({ stage, current, total, percent, detail });
+  };
+
+  emit("prepare", 0, 100, "normalizing and tokenizing input");
+  const prep = await tokenizeForModel(inputText);
+  emit("prepare", 5, 100, `tokenized ${prep.tokens.length} units`);
+
+  emit("text_conditioner", 10, 100, "running text conditioner");
+  const textCondOutputs = await runGraph("text_conditioner", {
+    tokens: {
+      dtype: "int64",
+      shape: [1, prep.tokens.length],
+      i64: prep.tokens,
+    },
+  });
+  const textEmb = pickOutput(textCondOutputs, "text_embeddings");
+  emit("text_conditioner", 15, 100, "text embeddings ready");
+
+  const sequenceFrames = [new Float32Array(cfg.latentDim)];
+  const generated = [];
+
+  let eosStep = -1;
+  let maxSteps = cfg.flowMaxSteps;
+  if (maxSteps < prep.tokens.length * 5) {
+    maxSteps = prep.tokens.length * 5;
+  }
+  if (maxSteps > cfg.flowMaxSteps) {
+    maxSteps = cfg.flowMaxSteps;
+  }
+
+  emit("autoregressive", 20, 100, `starting generation loop (${maxSteps} max steps)`);
+
+  for (let step = 0; step < maxSteps; step += 1) {
+    if (step === 0 || step % 2 === 0) {
+      emit("autoregressive", 20 + Math.floor((step / maxSteps) * 60), 100, `step ${step + 1}/${maxSteps}`);
+    }
+
+    const seqFlat = flattenFrames(sequenceFrames, cfg.latentDim);
+    const mainOutputs = await runGraph("flow_lm_main", {
+      sequence: {
+        dtype: "float32",
+        shape: [1, sequenceFrames.length, cfg.latentDim],
+        f32: Array.from(seqFlat),
+      },
+      text_embeddings: textEmb,
+    });
+
+    const hidden = pickOutput(mainOutputs, "last_hidden");
+    const eos = pickOutput(mainOutputs, "eos_logits");
+
+    const condition = copyOrTile(hidden.f32 || [], cfg.condDim);
+    const x = new Float32Array(cfg.latentDim);
+    for (let i = 0; i < x.length; i += 1) {
+      x[i] = randomNormal() * Math.sqrt(cfg.flowTemperature);
+    }
+
+    for (let k = 0; k < cfg.flowDecodeSteps; k += 1) {
+      const s = k / cfg.flowDecodeSteps;
+      const t = (k + 1) / cfg.flowDecodeSteps;
+
+      const flowOut = await runGraph("flow_lm_flow", {
+        condition: {
+          dtype: "float32",
+          shape: [1, cfg.condDim],
+          f32: Array.from(condition),
+        },
+        s: {
+          dtype: "float32",
+          shape: [1, 1],
+          f32: [s],
+        },
+        t: {
+          dtype: "float32",
+          shape: [1, 1],
+          f32: [t],
+        },
+        x: {
+          dtype: "float32",
+          shape: [1, cfg.latentDim],
+          f32: Array.from(x),
+        },
+      });
+
+      const dir = pickOutput(flowOut, "flow_direction");
+      const dirF32 = dir.f32 || [];
+      const dt = 1.0 / cfg.flowDecodeSteps;
+      for (let i = 0; i < x.length; i += 1) {
+        x[i] += Number(dirF32[i % dirF32.length] || 0) * dt;
+      }
+    }
+
+    sequenceFrames.push(x.slice(0));
+    generated.push(x.slice(0));
+
+    const eosVal = Array.isArray(eos.f32) && eos.f32.length > 0 ? Number(eos.f32[0]) : -10;
+    if (eosVal > cfg.flowEOSThreshold && eosStep < 0) {
+      eosStep = step;
+    }
+    if (eosStep >= 0 && step >= eosStep + cfg.flowFramesAfterEOS && step + 1 >= cfg.flowMinSteps) {
+      emit("autoregressive", 80, 100, `stopped at step ${step + 1} (EOS+tail)`);
+      break;
+    }
+  }
+
+  if (generated.length === 0) {
+    throw new Error("model loop produced no latents");
+  }
+
+  const steps = generated.length;
+  const latentSeq = flattenFrames(generated, cfg.latentDim);
+  emit("latent_to_mimi", 85, 100, "projecting latent for Mimi decoder");
+
+  let mimiInput;
+  if (graphExists("latent_to_mimi")) {
+    const latentToMimi = await runGraph("latent_to_mimi", {
+      latent: {
+        dtype: "float32",
+        shape: [1, steps, cfg.latentDim],
+        f32: Array.from(latentSeq),
+      },
+    });
+    mimiInput = pickOutput(latentToMimi, "mimi_latent");
+  } else {
+    const fallback = new Float32Array(cfg.mimiDimFallback * steps);
+    for (let t = 0; t < steps; t += 1) {
+      const src = generated[t];
+      for (let c = 0; c < cfg.mimiDimFallback; c += 1) {
+        fallback[c * steps + t] = Number(src[c % src.length] || 0);
+      }
+    }
+    mimiInput = {
+      dtype: "float32",
+      shape: [1, cfg.mimiDimFallback, steps],
+      f32: Array.from(fallback),
+    };
+  }
+
+  const mimiOutputs = await runGraph("mimi_decoder", {
+    latent: mimiInput,
+  });
+  const audioOut = pickOutput(mimiOutputs, "audio");
+
+  if (!Array.isArray(audioOut.f32) || audioOut.f32.length === 0) {
+    throw new Error("decoder returned empty audio");
+  }
+
+  emit("mimi_decoder", 95, 100, "encoding WAV");
+  const wavBytes = encodeWavPCM16(audioOut.f32, cfg.sampleRate);
+  emit("done", 100, 100, "synthesis complete");
+
+  return {
+    ok: true,
+    text: prep.normalized,
+    token_count: prep.tokens.length,
+    frames: generated.length,
+    sample_rate: cfg.sampleRate,
+    wav_bytes: wavBytes,
+  };
+}
+
+async function synthesizeWithGo(inputText) {
+  if (!state.kernelReady) {
+    throw new Error("Go WASM kernel not ready");
+  }
+
+  const out = await globalThis.PocketTTSKernel.synthesizeModel(inputText, (evt) => {
+    updateProgress(evt);
+  });
+
+  if (!out?.ok) {
+    throw new Error(out?.error || "synthesis failed");
+  }
+
+  return {
+    ...out,
+    wav_bytes: decodeBase64ToBytes(out.wav_base64 || ""),
+  };
+}
+
+async function handleLoadModel() {
   try {
-    log.textContent = "Loading ONNX manifest...";
-    const manifest = await onnxBridge.loadManifest();
-    const graphs = manifest.graphs || [];
-    if (graphs.length === 0) {
-      throw new Error("manifest has no graphs");
+    loadModelBtn.disabled = true;
+    modelState.textContent = "Model: loading...";
+
+    if (!state.manifestReady) {
+      await detectManifest();
     }
 
-    const lines = [];
-    for (const graph of graphs) {
-      const t0 = performance.now();
-      await onnxBridge.verifyGraph(graph);
-      const dtMs = (performance.now() - t0).toFixed(1);
-      lines.push(`PASS ${graph.name} (${dtMs} ms)`);
+    if (!hasRequiredGraphs(state.manifest)) {
+      throw new Error(`manifest missing required graphs: ${requiredGraphs.join(", ")}`);
     }
-    log.textContent = `ONNX smoke verify passed (${graphs.length} graphs)\n${lines.join("\n")}`;
+
+    const toPreload = [...requiredGraphs, ...optionalGraphs.filter((name) => graphExists(name))];
+    await onnxBridge.preloadGraphs(toPreload);
+
+    state.modelLoaded = true;
+    renderModelState();
+    setSynthesizeEnabled();
+    renderStartupInfo();
+    log.textContent = `Model loaded (${toPreload.length} graph sessions).`;
   } catch (err) {
-    log.textContent = `ONNX smoke verify failed: ${formatError(err)}`;
+    state.modelLoaded = false;
+    renderModelState();
+    setSynthesizeEnabled();
+    renderStartupInfo();
+    log.textContent = `Load model failed: ${formatError(err)}`;
+  } finally {
+    loadModelBtn.disabled = false;
   }
-});
+}
 
-modelSynthBtn.addEventListener("click", async () => {
-  if (modelSynthBtn.disabled) {
+async function handleSynthesize() {
+  if (synthBtn.disabled) {
     return;
   }
+
+  const engine = engineSelect.value;
   try {
-    modelSynthBtn.disabled = true;
+    synthBtn.disabled = true;
     resetProgress();
-    log.textContent = "Running Go wasm model synthesis...";
+    log.textContent = `Synthesis started (${engine === "go" ? "Go WASM" : "JavaScript"} engine)...`;
 
     const t0 = performance.now();
-    const out = await globalThis.PocketTTSKernel.synthesizeModel(textArea.value, (evt) => {
-      updateProgress(evt);
-    });
-    const dtMs = (performance.now() - t0).toFixed(1);
+    const result =
+      engine === "go"
+        ? await synthesizeWithGo(textArea.value)
+        : await synthesizeModelJS(textArea.value, (evt) => updateProgress(evt));
+    const elapsedMs = (performance.now() - t0).toFixed(1);
 
-    if (!out.ok) {
-      throw new Error(out.error || "unknown synthesis error");
-    }
-
-    const wavBytes = decodeBase64ToBytes(out.wav_base64);
-    setAudioBlob(wavBytes);
+    setAudioBlob(result.wav_bytes);
     synthProgress.value = 100;
-    synthProgressText.textContent = "100% - done | ETA: 0s";
+    synthProgressText.textContent = "100% - done";
 
-    log.textContent = `Model synth (Go wasm) complete\nNormalized: ${out.text}\nTokens: ${out.token_count}\nFrames: ${out.frames}\nWAV bytes: ${wavBytes.length}\nElapsed: ${dtMs} ms`;
+    log.textContent = [
+      `Synthesis complete (${engine === "go" ? "Go WASM" : "JavaScript"} engine)`,
+      `Normalized: ${result.text}`,
+      `Tokens: ${result.token_count}`,
+      `Frames: ${result.frames}`,
+      `Sample rate: ${result.sample_rate}`,
+      `WAV bytes: ${result.wav_bytes.length}`,
+      `Elapsed: ${elapsedMs} ms`,
+    ].join("\n");
   } catch (err) {
     synthProgressText.textContent = `Failed: ${formatError(err)}`;
-    log.textContent = `Model synth failed: ${formatError(err)}`;
+    log.textContent = `Synthesis failed: ${formatError(err)}`;
   } finally {
-    modelSynthBtn.disabled = false;
+    setSynthesizeEnabled();
   }
-});
-
-function setCapabilityButtons() {
-  runBtn.disabled = !capabilities.kernelReady;
-  verifyBtn.disabled = !capabilities.modelReady;
-  modelSynthBtn.disabled = !capabilities.modelReady;
 }
 
-async function detectCapabilities() {
-  capabilities.reasons = [];
-
-  try {
-    await bootKernel();
-    const selfTest = globalThis.PocketTTSKernel.synthesizeWav("hello");
-    if (!selfTest?.ok) {
-      throw new Error(selfTest?.error || "kernel self-test failed");
-    }
-    capabilities.kernelReady = true;
-  } catch (err) {
-    capabilities.kernelReady = false;
-    capabilities.reasons.push(`kernel unavailable: ${formatError(err)}`);
-  }
-
-  try {
-    const manifest = await onnxBridge.loadManifest();
-    capabilities.modelManifestReady = true;
-    if (!hasRequiredGraphs(manifest)) {
-      capabilities.modelGraphsReady = false;
-      capabilities.reasons.push(`manifest missing required graphs: ${requiredModelGraphs.join(", ")}`);
-    } else {
-      capabilities.modelGraphsReady = true;
-    }
-  } catch (err) {
-    capabilities.modelManifestReady = false;
-    capabilities.modelGraphsReady = false;
-    capabilities.reasons.push(`model bundle unavailable: ${formatError(err)}`);
-  }
-
-  capabilities.modelReady = capabilities.kernelReady && capabilities.modelManifestReady && capabilities.modelGraphsReady;
-  setCapabilityButtons();
-}
-
-function renderCapabilityStatus() {
-  const lines = [];
-  lines.push(`Kernel: ${capabilities.kernelReady ? "READY" : "UNAVAILABLE"}`);
-  lines.push(`Model manifest: ${capabilities.modelManifestReady ? "READY" : "UNAVAILABLE"}`);
-  lines.push(`Required model graphs: ${capabilities.modelGraphsReady ? "READY" : "UNAVAILABLE"}`);
-  lines.push(`Model synth: ${capabilities.modelReady ? "ENABLED" : "DISABLED"}`);
-
-  if (capabilities.reasons.length > 0) {
-    lines.push("");
-    lines.push("Details:");
-    for (const reason of capabilities.reasons) {
-      lines.push(`- ${reason}`);
-    }
-  }
-
-  lines.push("");
-  lines.push("Enabled actions:");
-  if (!runBtn.disabled) {
-    lines.push("- Generate Fallback Tone WAV");
-  }
-  if (!verifyBtn.disabled) {
-    lines.push("- Verify ONNX Models");
-  }
-  if (!modelSynthBtn.disabled) {
-    lines.push("- Synthesize via ONNX (Exp)");
-  }
-  if (runBtn.disabled && verifyBtn.disabled && modelSynthBtn.disabled) {
-    lines.push("- none");
-  }
-
-  log.textContent = lines.join("\n");
+function setupBridge() {
+  globalThis.PocketTTSBridge = {
+    runGraph: (graphName, feedsJSON) => onnxBridge.runGraph(graphName, feedsJSON),
+  };
 }
 
 async function initApp() {
+  setupBridge();
   resetProgress();
-  await detectCapabilities();
-  renderCapabilityStatus();
+  renderModelState();
+  setSynthesizeEnabled();
+  renderStartupInfo();
+
+  try {
+    await bootKernel();
+  } catch (err) {
+    state.kernelReady = false;
+    log.textContent = `Kernel startup failed: ${formatError(err)}`;
+  }
+
+  try {
+    await detectManifest();
+  } catch (err) {
+    state.manifestReady = false;
+    log.textContent = `Manifest check: ${formatError(err)}`;
+  }
+
+  renderStartupInfo();
+  setSynthesizeEnabled();
 }
 
+loadModelBtn.addEventListener("click", handleLoadModel);
+synthBtn.addEventListener("click", handleSynthesize);
+engineSelect.addEventListener("change", () => {
+  setSynthesizeEnabled();
+  renderStartupInfo();
+});
+
 initApp().catch((err) => {
-  log.textContent = `Startup checks failed: ${formatError(err)}`;
+  log.textContent = `Startup failed: ${formatError(err)}`;
 });
