@@ -390,10 +390,10 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
 
 > **Goal:** Establish a reproducible, CI-gated integration test suite that validates the full synthesis pipeline end-to-end across both backends, covering the HTTP server, CLI commands, and audio output correctness. Integration tests use the `integration` build tag and skip gracefully when required dependencies (`pocket-tts` binary, ONNX runtime, voice files) are unavailable.
 
-- [ ] Task 14.1: **Test infrastructure and fixtures**
-  - [ ] Add `testdata/` directory under `cmd/pockettts/` with a minimal fixture WAV (silence, ~0.1 s at 24 kHz mono) for use as a voice-conditioning prompt
-  - [ ] Add a shared `internal/testutil` package with helpers: `RequirePocketTTS(t)`, `RequireONNXRuntime(t)`, `RequireVoiceFile(t, id)` — each calls `t.Skip` with a clear reason when the prerequisite is absent
-  - [ ] Add an integration test matrix in CI (`.github/workflows/test-integration.yml`) using a self-hosted or large runner that has `pocket-tts` and models available; gate the job on the `integration` tag being passed to `go test`
+- [x] Task 14.1: **Test infrastructure and fixtures**
+  - [x] Add `testdata/` directory under `cmd/pockettts/` with a minimal fixture WAV (silence, ~0.1 s at 24 kHz mono) for use as a voice-conditioning prompt
+  - [x] Add a shared `internal/testutil` package with helpers: `RequirePocketTTS(t)`, `RequireONNXRuntime(t)`, `RequireVoiceFile(t, id)` — each calls `t.Skip` with a clear reason when the prerequisite is absent
+  - [x] Add an integration test matrix in CI (`.github/workflows/test-integration.yml`) using a self-hosted or large runner that has `pocket-tts` and models available; gate the job on the `integration` tag being passed to `go test`
 
 - [ ] Task 14.2: **CLI `synth` integration tests (both backends)**
   - [ ] `TestSynthCLI_ShortText`: synthesize ≤ 50 chars via `--backend cli`, assert RIFF header, non-zero PCM samples, and 24 kHz sample rate
@@ -428,8 +428,8 @@ Decision: Phase 1 wrapper work is replaced by adopting `github.com/MeKo-Christia
   - [ ] Add `assertWAVDurationApprox(t, data []byte, minSec, maxSec float64)` to sanity-check synthesis output is plausibly speech-length
   - [ ] Apply both helpers consistently across Task 14.2 and 14.3 test assertions
 
-- [ ] Task 14.7: **CI integration test job**
-  - [ ] Add `.github/workflows/test-integration.yml` triggered on `workflow_dispatch` and `schedule` (nightly)
-  - [ ] Job installs `pocket-tts`, downloads model subset, runs `go test -tags integration ./...`
-  - [ ] Upload test output and any generated WAV artifacts for post-run inspection
+- [x] Task 14.7: **CI integration test job**
+  - [x] Add `.github/workflows/test-integration.yml` triggered on `workflow_dispatch` and `schedule` (nightly)
+  - [x] Job installs `pocket-tts`, downloads model subset, runs `go test -tags integration ./...`
+  - [x] Upload test output and any generated WAV artifacts for post-run inspection
   - [ ] Gate merges: add integration job as an optional status check (required on `main` only after models are stable)

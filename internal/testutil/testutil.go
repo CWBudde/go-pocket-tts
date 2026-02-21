@@ -24,7 +24,7 @@ import (
 
 // RequirePocketTTS skips the test if the pocket-tts binary is not found in
 // PATH or the path given by the POCKETTTS_TTS_CLI_PATH environment variable.
-func RequirePocketTTS(t *testing.T) {
+func RequirePocketTTS(t testing.TB) {
 	t.Helper()
 	exe := os.Getenv("POCKETTTS_TTS_CLI_PATH")
 	if exe == "" {
@@ -38,7 +38,7 @@ func RequirePocketTTS(t *testing.T) {
 // RequireONNXRuntime skips the test if no ONNX Runtime shared library can be
 // located. It checks (in order): the ORT_LIBRARY_PATH env var, then the
 // POCKETTTS_ORT_LIB env var, then common system library paths.
-func RequireONNXRuntime(t *testing.T) {
+func RequireONNXRuntime(t testing.TB) {
 	t.Helper()
 	for _, env := range []string{"ORT_LIBRARY_PATH", "POCKETTTS_ORT_LIB"} {
 		if p := os.Getenv(env); p != "" {
@@ -64,7 +64,7 @@ func RequireONNXRuntime(t *testing.T) {
 
 // RequireVoiceFile skips the test if the voice identified by id cannot be
 // resolved from voices/manifest.json relative to the current working directory.
-func RequireVoiceFile(t *testing.T, id string) {
+func RequireVoiceFile(t testing.TB, id string) {
 	t.Helper()
 	manifestPath := filepath.Join("voices", "manifest.json")
 	vm, err := tts.NewVoiceManager(manifestPath)
