@@ -58,7 +58,7 @@ func runNativeVerifyImpl(sessions []onnx.Session, opts VerifyOptions) error {
 	if err != nil {
 		return fmt.Errorf("initialize ONNX Runtime (lib=%q api=%d): %w", opts.ORTLibrary, opts.ORTAPIVersion, err)
 	}
-	defer runtime.Close()
+	defer func() { _ = runtime.Close() }()
 
 	env, err := runtime.NewEnv("pockettts-model-verify", ort.LoggingLevelWarning)
 	if err != nil {

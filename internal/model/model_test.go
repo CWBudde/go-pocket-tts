@@ -524,7 +524,7 @@ func TestDownload_SkipExistingFile(t *testing.T) {
 	// The first file is skipped. Other files will hit the 403 server.
 	// We only care that the skip path was exercised — check the output.
 	_ = strings.Contains(out.String(), "skip "+firstFile.Filename) // skip path exercised if true
-	_ = err // may fail on other files due to 403
+	_ = err                                                        // may fail on other files due to 403
 }
 
 func TestDownload_FullDownloadAndLockWrite(t *testing.T) {
