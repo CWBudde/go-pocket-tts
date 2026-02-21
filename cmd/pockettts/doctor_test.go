@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-
 func TestProbePocketTTSVersion_MissingExecutable(t *testing.T) {
 	_, err := probePocketTTSVersion("/nonexistent/pocket-tts-binary")
 	if err == nil {

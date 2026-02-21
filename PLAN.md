@@ -14,7 +14,7 @@
 - **7** HTTP server (`/health`, `/voices`, `/tts`), worker pool, graceful shutdown, request limits
 - **8** Structured logging (`log/slog`), `doctor` backend-awareness (native skips Python checks)
 - **9** `bench` command with RTF calculation and CI gate flag
-- **10** Packaging/release: INSTALL docs, release artifacts, operational README *(partially done)*
+- **10** Packaging/release: INSTALL docs, release artifacts, operational README _(partially done)_
 - **11** Runtime de-Pythonization: `native` mode needs no Python; `cli` mode kept for compatibility
 - **12** Browser/WASM kernel (`cmd/pockettts-wasm`), static web app, ONNX bundle CI pipeline
 - **13** Go-first WASM orchestration, JS narrowed to host bridge, `download-onnx` bundle command
@@ -27,16 +27,17 @@
 
 The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — includes `mimi_encoder` for voice audio encoding):
 
-| Graph | Inputs | Outputs | Notes |
-|-------|--------|---------|-------|
-| `text_conditioner` | `tokens [1, T] int64` | `text_embeddings [1, T, 1024] f32` | SentencePiece token IDs (vocab=4000) |
-| `flow_lm_main` | `sequence [1, T_seq, 32] f32`, `text_embeddings [1, T_text, 1024] f32` | `last_hidden [1, 1024] f32`, `eos_logits [1, 1] f32` | Stateless (no KV cache); re-processes full sequence each call |
-| `flow_lm_flow` | `condition [1, 1024] f32`, `s [1,1] f32`, `t [1,1] f32`, `x [1, 32] f32` | `flow_direction [1, 32] f32` | SimpleMLPAdaLN with AdaLN modulation |
-| `latent_to_mimi` | `latent [1, T, 32] f32` | `mimi_latent [1, 512, T] f32` | Denormalize (×std+mean) + Conv1d quantizer projection |
-| `mimi_decoder` | `latent [1, 512, T] f32` | `audio [1, 1, N_samples] f32` | Stateless; upsample → transformer → SEANet decoder |
-| `mimi_encoder` | `audio [1, 1, N_samples] f32` | `latent [1, T, 512] f32` | For voice audio encoding (Phase 21) |
+| Graph              | Inputs                                                                   | Outputs                                              | Notes                                                         |
+| ------------------ | ------------------------------------------------------------------------ | ---------------------------------------------------- | ------------------------------------------------------------- |
+| `text_conditioner` | `tokens [1, T] int64`                                                    | `text_embeddings [1, T, 1024] f32`                   | SentencePiece token IDs (vocab=4000)                          |
+| `flow_lm_main`     | `sequence [1, T_seq, 32] f32`, `text_embeddings [1, T_text, 1024] f32`   | `last_hidden [1, 1024] f32`, `eos_logits [1, 1] f32` | Stateless (no KV cache); re-processes full sequence each call |
+| `flow_lm_flow`     | `condition [1, 1024] f32`, `s [1,1] f32`, `t [1,1] f32`, `x [1, 32] f32` | `flow_direction [1, 32] f32`                         | SimpleMLPAdaLN with AdaLN modulation                          |
+| `latent_to_mimi`   | `latent [1, T, 32] f32`                                                  | `mimi_latent [1, 512, T] f32`                        | Denormalize (×std+mean) + Conv1d quantizer projection         |
+| `mimi_decoder`     | `latent [1, 512, T] f32`                                                 | `audio [1, 1, N_samples] f32`                        | Stateless; upsample → transformer → SEANet decoder            |
+| `mimi_encoder`     | `audio [1, 1, N_samples] f32`                                            | `latent [1, T, 512] f32`                             | For voice audio encoding (Phase 21)                           |
 
 **Key constants** (variant `b6369a24`):
+
 - `ldim = 32` (latent dim, from `mimi.quantizer.dimension`)
 - `d_model = 1024`, `num_heads = 16`, `num_layers = 6` (transformer backbone)
 - `flow_dim = 512`, `flow_depth = 6` (flow network)
@@ -46,6 +47,7 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
 - `n_bins = 4000` (SentencePiece vocabulary size)
 
 **Generation loop** (per text chunk):
+
 1. Tokenize text via SentencePiece → `tokens [1, T]`
 2. Run `text_conditioner(tokens)` → `text_embeddings [1, T, 1024]`
 3. If voice conditioning: `concat([voice_emb [1, T_v, 1024], text_emb], dim=1)`
@@ -61,6 +63,7 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
 8. Run `mimi_decoder` → `[1, 1, N_samples]` at 24 kHz
 
 **Text preprocessing** (matching reference):
+
 - Capitalize first letter, add period if missing punctuation
 - Pad with 8 leading spaces if < 5 words
 - Split long text at sentence boundaries into ≤50-token chunks
@@ -68,6 +71,7 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
 - `frames_after_eos`: 3 if ≤4 words, else 1
 
 **Voice conditioning** (.safetensors pre-encoded):
+
 - Load first tensor from `.safetensors` file → `[T_voice, 1024]` or `[1, T_voice, 1024]`
 - Reshape to `[1, T_voice, 1024]` and prepend to `text_embeddings`
 
@@ -75,36 +79,36 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
 
 ## Phase 16 — ORT Session Execution Foundation
 
-> **Goal:** Integrate `onnxruntime-go` into the project. Replace the sine-wave stub engine with real ORT session execution. By the end, `Engine` can load a manifest, create ORT sessions, and run any ONNX graph with correct tensor I/O.
+> **Goal:** Wire `onnxruntime-purego` (already in go.mod, used by `model/verify.go`) into a reusable `Runner` type. Replace the sine-wave stub `Engine` with manifest-based runner management. By the end, `Engine` can load a manifest, create ORT sessions, and run any ONNX graph with correct tensor I/O.
 
-- [ ] Task 16.1: **Add `onnxruntime-go` dependency and integrate with ORT lifecycle**
-  - [ ] `go get github.com/yalue/onnxruntime_go`
-  - [ ] Wire `ort.SetSharedLibraryPath()` + `ort.InitializeEnvironment()` into existing `Bootstrap()`
-  - [ ] Wire `ort.DestroyEnvironment()` into existing `Shutdown()`
-  - [ ] Ensure `DetectRuntime()` result feeds library path to onnxruntime-go
+- [ ] Task 16.1: **Create `Runner` type for ONNX graph execution**
+  - [ ] `internal/onnx/runner.go`: `Runner` wraps `ort.Runtime` + `ort.Env` + `ort.Session` per graph
+  - [ ] `Run(ctx, inputs map[string]*Tensor) (map[string]*Tensor, error)` — converts to/from ORT tensors
+  - [ ] Handle float32/int64 dtype dispatch via `ort.NewTensorValue` and `ort.GetTensorData`
+  - [ ] `Close()` for session cleanup (idempotent)
+  - [ ] Tests: round-trip with `identity_float32.onnx` from `model/testdata/`
 
-- [ ] Task 16.2: **Create `Runner` type for ONNX graph execution**
-  - [ ] `Runner` wraps `ort.AdvancedSession` — constructed from `Session` metadata (path, input/output names)
-  - [ ] `Run(inputs map[string]*Tensor) (map[string]*Tensor, error)` — creates ORT tensors, executes session, extracts outputs
-  - [ ] Handle tensor dtype dispatch (float32/int64) and shape validation
-  - [ ] `Close()` for session cleanup
+- [ ] Task 16.2: **Add `cfg.Paths.ONNXManifest` config field**
+  - [ ] Add `ONNXManifest string` to `PathsConfig`, default `"models/onnx/manifest.json"`
+  - [ ] Register flag `--paths-onnx-manifest`, env `POCKETTTS_ONNX_MANIFEST`
+  - [ ] Wire defaults, aliases
 
-- [ ] Task 16.3: **Wire `SessionManager` + `Runner` into `Engine`**
-  - [ ] `NewEngine(manifestPath string, cfg RuntimeConfig)` — loads manifest via `SessionManager`, creates `Runner` per graph
+- [ ] Task 16.3: **Refactor `Engine` to use `SessionManager` + `Runner`**
+  - [ ] `NewEngine(manifestPath string, cfg RunnerConfig)` — loads manifest, creates `Runner` per graph
   - [ ] Remove sine-wave stub and `threads` field
-  - [ ] Store `map[string]*Runner` keyed by graph name
+  - [ ] `Engine.Runner(name) (*Runner, bool)` accessor
   - [ ] `Engine.Close()` to tear down all runners
+  - [ ] Temporary `Infer()` shim returns error (real pipeline in Phase 18)
 
-- [ ] Task 16.4: **Add `cfg.Paths.ONNXManifest` config field**
-  - [ ] Add field to `PathsConfig`, default `"models/onnx/manifest.json"`
-  - [ ] Bind to `--onnx-manifest` flag and `POCKETTTS_ONNX_MANIFEST` env var
-  - [ ] Update `tts.NewService` to pass manifest path to `NewEngine`
-  - [ ] Update `synth` and `serve` commands accordingly
+- [ ] Task 16.4: **Update `tts.Service` and CLI callers**
+  - [ ] `NewService(cfg)` uses `DetectRuntime()` + `NewEngine(cfg.Paths.ONNXManifest, rcfg)`
+  - [ ] Add `Service.Close()` to clean up engine
+  - [ ] Verify `synth` and `serve` commands still compile and work
 
-- [ ] Task 16.5: **Tests**
-  - [ ] Unit test: mock ORT session, verify `Runner` creates correct input/output tensors
-  - [ ] Integration test (`integration` tag): load real identity ONNX graph, run round-trip tensor through `Runner`
-  - [ ] Verify `Engine` construction with test manifest
+- [ ] Task 16.5: **Full test sweep**
+  - [ ] `go test ./...` — all existing tests pass
+  - [ ] `golangci-lint run ./...` — no new warnings
+  - [ ] Integration tests with identity ONNX model via `Runner`
 
 ---
 
