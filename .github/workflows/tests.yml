@@ -29,9 +29,3 @@ jobs:
   tooling:
     name: Tooling Profile
     uses: ./.github/workflows/test-tooling.yml
-
-  web-wasm:
-    name: Web WASM App
-    uses: ./.github/workflows/web-wasm-app.yml
-    with:
-      include-models: false
