@@ -354,3 +354,92 @@ func TestLoadVoiceEmbedding_4D_ReturnsError(t *testing.T) {
 		t.Fatal("expected error for 4D tensor")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Task 19.4 additional tests
+// ---------------------------------------------------------------------------
+
+// TestLoadVoiceEmbedding_DataValuesPreserved verifies that the exact float32
+// values survive the safetensors round-trip without corruption.
+func TestLoadVoiceEmbedding_DataValuesPreserved(t *testing.T) {
+	// Use a small [2, 4] tensor with recognisable, non-trivial values.
+	vals := []float32{1.5, -0.25, 3.14159, 0.0, -1.0, 42.0, 0.001, -999.9}
+	blob := buildSafetensors(t, map[string]struct {
+		dtype string
+		shape []int64
+		data  []byte
+	}{
+		"voice": {dtype: "F32", shape: []int64{2, 4}, data: float32Bytes(vals)},
+	})
+
+	path := writeTempSafetensors(t, blob)
+	data, shape, err := LoadVoiceEmbedding(path)
+	if err != nil {
+		t.Fatalf("LoadVoiceEmbedding: %v", err)
+	}
+
+	// Shape should be reshaped from [2, 4] → [1, 2, 4].
+	if len(shape) != 3 || shape[0] != 1 || shape[1] != 2 || shape[2] != 4 {
+		t.Errorf("shape = %v, want [1 2 4]", shape)
+	}
+
+	// Each value must be bit-exact.
+	if len(data) != len(vals) {
+		t.Fatalf("data length = %d, want %d", len(data), len(vals))
+	}
+	for i, want := range vals {
+		if data[i] != want {
+			t.Errorf("data[%d] = %v, want %v", i, data[i], want)
+		}
+	}
+}
+
+// TestLoadFirstTensor_MetadataKeyIgnored verifies that the special
+// __metadata__ entry in the safetensors header is stripped and does not
+// prevent loading the real tensor.
+func TestLoadFirstTensor_MetadataKeyIgnored(t *testing.T) {
+	vals := []float32{1.0, 2.0, 3.0}
+	// Build raw tensor data.
+	rawData := float32Bytes(vals)
+
+	// Build header JSON manually so we can include the __metadata__ key
+	// alongside the real tensor.
+	headerMap := map[string]any{
+		"__metadata__": map[string]any{
+			"format": "pt",
+		},
+		"voice_emb": map[string]any{
+			"dtype":        "F32",
+			"shape":        []int{1, 3},
+			"data_offsets": []int{0, len(rawData)},
+		},
+	}
+	headerJSON, err := json.Marshal(headerMap)
+	if err != nil {
+		t.Fatalf("marshal header: %v", err)
+	}
+
+	lenBuf := make([]byte, 8)
+	binary.LittleEndian.PutUint64(lenBuf, uint64(len(headerJSON)))
+	var buf []byte
+	buf = append(buf, lenBuf...)
+	buf = append(buf, headerJSON...)
+	buf = append(buf, rawData...)
+
+	path := writeTempSafetensors(t, buf)
+	tensor, err := LoadFirstTensor(path)
+	if err != nil {
+		t.Fatalf("LoadFirstTensor with __metadata__: %v", err)
+	}
+	if tensor.Name != "voice_emb" {
+		t.Errorf("tensor name = %q, want %q", tensor.Name, "voice_emb")
+	}
+	if len(tensor.Data) != 3 {
+		t.Fatalf("data length = %d, want 3", len(tensor.Data))
+	}
+	for i, want := range vals {
+		if tensor.Data[i] != want {
+			t.Errorf("data[%d] = %v, want %v", i, tensor.Data[i], want)
+		}
+	}
+}

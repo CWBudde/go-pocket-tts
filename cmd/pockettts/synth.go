@@ -65,7 +65,7 @@ func newSynthCmd() *cobra.Command {
 				if len(ttsArgs) > 0 {
 					return fmt.Errorf("--tts-arg is only supported with --backend cli")
 				}
-				result, err = synthesizeNative(cmd.Context(), cfg, chunks)
+				result, err = synthesizeNative(cmd.Context(), cfg, chunks, selectedVoice)
 			case "cli":
 				var resolvedVoice string
 				resolvedVoice, err = resolveVoiceOrPath(selectedVoice)
@@ -229,7 +229,7 @@ func synthesizeChunks(ctx context.Context, opts synthChunksOptions) ([]byte, err
 	return concatenateWAVChunks(results)
 }
 
-func synthesizeNative(ctx context.Context, cfg config.Config, chunks []string) ([]byte, error) {
+func synthesizeNative(ctx context.Context, cfg config.Config, chunks []string, voicePath string) ([]byte, error) {
 	svc, err := tts.NewService(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("initialize native synth service: %w", err)
@@ -240,7 +240,7 @@ func synthesizeNative(ctx context.Context, cfg config.Config, chunks []string) (
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		samples, err := svc.Synthesize(chunkText)
+		samples, err := svc.Synthesize(chunkText, voicePath)
 		if err != nil {
 			return nil, fmt.Errorf("native chunk %d synthesis failed: %w", i+1, err)
 		}

@@ -342,8 +342,8 @@ type nativeTTSSynthesizer struct {
 	svc *tts.Service
 }
 
-func (n *nativeTTSSynthesizer) Synthesize(_ context.Context, text, _ string) ([]byte, error) {
-	samples, err := n.svc.Synthesize(text)
+func (n *nativeTTSSynthesizer) Synthesize(_ context.Context, text, voice string) ([]byte, error) {
+	samples, err := n.svc.Synthesize(text, voice)
 	if err != nil {
 		return nil, err
 	}
