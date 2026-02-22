@@ -137,6 +137,12 @@
       .muted {
         color: var(--muted);
       }
+
+      input[type="range"] {
+        width: 120px;
+        accent-color: var(--accent);
+        vertical-align: middle;
+      }
     </style>
   </head>
   <body>
@@ -149,12 +155,22 @@
 
         <div class="row">
           <button id="load-model" type="button">Load Model</button>
-          <label class="muted" for="engine">Inference Engine</label>
+          <label class="muted" for="engine">Engine</label>
           <select id="engine">
             <option value="js">JavaScript</option>
             <option value="go">Go WASM</option>
           </select>
+          <label class="muted" for="voice">Voice</label>
+          <select id="voice">
+            <option value="">No voice</option>
+          </select>
           <span id="model-state" class="muted">Model: not loaded</span>
+        </div>
+
+        <div class="row">
+          <label class="muted" for="temperature">Temperature</label>
+          <input type="range" id="temperature" min="0" max="1.5" step="0.05" value="0.7" />
+          <span id="temperature-value" class="muted">0.70</span>
         </div>
 
         <textarea id="text" placeholder="Type text here">Hello from PocketTTS in the browser.</textarea>
