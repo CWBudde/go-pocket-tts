@@ -88,9 +88,3 @@ func (e *Engine) TextConditioner(ctx context.Context, tokens []int64) (*Tensor, 
 	}
 	return emb, nil
 }
-
-// Infer is a temporary compatibility shim.
-// It will be replaced in Phase 18 with the full generation pipeline.
-func (e *Engine) Infer(tokens []int) ([]float32, error) {
-	return nil, fmt.Errorf("Engine.Infer not yet implemented; generation pipeline is Phase 18")
-}
