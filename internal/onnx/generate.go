@@ -13,6 +13,7 @@ type GenerateConfig struct {
 	MaxSteps       int     // maximum AR steps before forced stop (default 256)
 	LSDDecodeSteps int     // Euler integration steps per frame (default 1)
 	FramesAfterEOS int     // extra frames to generate after first EOS
+	VoiceEmbedding *Tensor // optional voice conditioning [1, T_voice, D]; prepended to text_embeddings
 }
 
 // GenerateAudio runs the full TTS generation pipeline:
@@ -29,6 +30,15 @@ func (e *Engine) GenerateAudio(ctx context.Context, tokens []int64, cfg Generate
 	textEmb, err := e.TextConditioner(ctx, tokens)
 	if err != nil {
 		return nil, fmt.Errorf("generate: %w", err)
+	}
+
+	// Optional: prepend voice embedding to text embeddings.
+	if cfg.VoiceEmbedding != nil {
+		textEmb, err = ConcatTensorsDim1(cfg.VoiceEmbedding, textEmb)
+		if err != nil {
+			return nil, fmt.Errorf("generate: prepend voice embedding: %w", err)
+		}
+		slog.Debug("voice conditioning applied", "voice_frames", cfg.VoiceEmbedding.Shape()[1], "total_frames", textEmb.Shape()[1])
 	}
 
 	// Step 2: Autoregressive generation loop.

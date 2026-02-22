@@ -279,3 +279,36 @@ func elementCount(shape []int64) (int, error) {
 	}
 	return int(count), nil
 }
+
+// ConcatTensorsDim1 concatenates two 3D float32 tensors along dimension 1.
+// Both tensors must have shape [B, T_x, D] with matching B and D.
+// Returns a tensor with shape [B, T_a + T_b, D].
+func ConcatTensorsDim1(a, b *Tensor) (*Tensor, error) {
+	aShape := a.Shape()
+	bShape := b.Shape()
+	if len(aShape) != 3 || len(bShape) != 3 {
+		return nil, fmt.Errorf("ConcatTensorsDim1: both tensors must be 3D, got %dD and %dD", len(aShape), len(bShape))
+	}
+	if aShape[0] != bShape[0] {
+		return nil, fmt.Errorf("ConcatTensorsDim1: batch dim mismatch: %d vs %d", aShape[0], bShape[0])
+	}
+	if aShape[2] != bShape[2] {
+		return nil, fmt.Errorf("ConcatTensorsDim1: last dim mismatch: %d vs %d", aShape[2], bShape[2])
+	}
+
+	aData, err := ExtractFloat32(a)
+	if err != nil {
+		return nil, fmt.Errorf("ConcatTensorsDim1: extract a: %w", err)
+	}
+	bData, err := ExtractFloat32(b)
+	if err != nil {
+		return nil, fmt.Errorf("ConcatTensorsDim1: extract b: %w", err)
+	}
+
+	combined := make([]float32, 0, len(aData)+len(bData))
+	combined = append(combined, aData...)
+	combined = append(combined, bData...)
+
+	outShape := []int64{aShape[0], aShape[1] + bShape[1], aShape[2]}
+	return NewTensor(combined, outShape)
+}
