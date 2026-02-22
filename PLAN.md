@@ -126,25 +126,25 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
   - [x] Flag `--paths-tokenizer-model`, env `POCKETTTS_PATHS_TOKENIZER_MODEL`; alias, Viper default, `registerAliases` wired
   - [x] `tts.Service` holds `tokenizer.Tokenizer`; `NewService` initialises it from `cfg.Paths.TokenizerModel`
 
-- [ ] Task 17.3: **Text preprocessing matching reference implementation**
-  - [ ] Capitalize first letter of input
-  - [ ] Add trailing period if last character is alphanumeric
-  - [ ] Pad with 8 leading spaces if < 5 words
-  - [ ] Normalize whitespace (newlines → spaces, collapse doubles)
-  - [ ] Calculate `max_frames = ceil(num_tokens/3 + 2) × 12.5`
-  - [ ] Calculate `frames_after_eos`: 3 if ≤4 words, else 1
-  - [ ] Update sentence chunking to respect 50-token budget (tokenize first, then split)
+- [x] Task 17.3: **Text preprocessing matching reference implementation**
+  - [x] Capitalize first letter of input
+  - [x] Add trailing period if last character is alphanumeric
+  - [x] Pad with 8 leading spaces if < 5 words
+  - [x] Normalize whitespace (newlines → spaces, collapse doubles)
+  - [x] Calculate `max_frames = ceil(num_tokens/3 + 2) × 12.5` (on `ChunkMetadata`)
+  - [x] Calculate `frames_after_eos`: 3 if ≤4 words, else 1 (on `ChunkMetadata`)
+  - [x] `text.PrepareChunks(input, tok, maxTokens)` tokenizes first, then splits at sentence boundaries respecting the 50-token budget; returns `[]ChunkMetadata`
 
-- [ ] Task 17.4: **Run `text_conditioner` ONNX graph**
-  - [ ] Tokenize input text → `[]int64`
-  - [ ] Create input tensor `tokens [1, T] int64`
-  - [ ] Run `text_conditioner` via `Runner` → extract `text_embeddings [1, T, 1024] float32`
-  - [ ] Return embeddings for use in generation loop
+- [x] Task 17.4: **Run `text_conditioner` ONNX graph**
+  - [x] `Engine.TextConditioner(ctx, tokens []int64) (*Tensor, error)` — builds `[1, T] int64` tensor, runs graph, returns `text_embeddings [1, T, 1024] float32`
+  - [x] `Engine.runners` field generalised to `runnerIface` to allow unit testing without ORT
+  - [x] `Service.Synthesize` uses `PrepareChunks` + `TextConditioner` per chunk; Phase 18 stub follows
 
-- [ ] Task 17.5: **Tests**
-  - [ ] Unit test: verify SentencePiece tokenizer produces correct token IDs for known inputs
-  - [ ] Unit test: verify text preprocessing (capitalization, padding, punctuation)
-  - [ ] Integration test (`integration` tag): tokenize + run `text_conditioner`, verify output shape `[1, T, 1024]`
+- [x] Task 17.5: **Tests**
+  - [x] Unit tests: SentencePiece tokenizer produces correct token IDs (done in 17.1, 10 tests, 100% coverage)
+  - [x] Unit tests: `PrepareText` (capitalization, padding, punctuation, whitespace) + `ChunkMetadata` (MaxFrames, FramesAfterEOS) + `PrepareChunks` (splitting, metadata, error paths) — `internal/text/prepare_test.go`
+  - [x] Unit tests: `Engine.TextConditioner` error paths (missing graph, empty tokens, runner error, correct output) — `internal/onnx/text_conditioner_test.go`
+  - [x] Integration test (`integration` tag): tokenize real text + run `text_conditioner`, verify output shape `[1, T, 1024]` — `internal/onnx/text_conditioner_integration_test.go`
 
 ---
 
@@ -152,29 +152,25 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
 
 > **Goal:** Implement the full generation pipeline: `flow_lm_main` autoregressive loop, `flow_lm_flow` Euler ODE integration, `latent_to_mimi` + `mimi_decoder` audio decoding. `Engine.Infer()` produces real 24 kHz speech audio.
 
-- [ ] Task 18.1: **Implement `flow_lm_main` autoregressive loop**
-  - [ ] Initialize BOS: `sequence = NaN [1, 1, 32]` (graph handles NaN→bos_emb internally)
-  - [ ] Each step: run `flow_lm_main(sequence, text_embeddings)` → `last_hidden [1, 1024]`, `eos_logits [1, 1]`
-  - [ ] EOS detection: `eos_logits[0] > eos_threshold` (default `-4.0`, raw logits — **not** sigmoid)
-  - [ ] On first EOS: start countdown (`frames_after_eos`), continue generating
-  - [ ] After countdown expires or `max_steps` reached: stop
-  - [ ] Each step: decode `last_hidden` → latent frame via flow (Task 18.2), append `[1, 1, 32]` to sequence
-  - [ ] Note: sequence grows each step; `flow_lm_main` re-processes entire sequence (O(n²), no KV cache)
+- [x] Task 18.1: **Implement `flow_lm_main` autoregressive loop**
+  - [x] Initialize BOS: `NewBOSSequence()` → `NaN [1, 1, 32]` (graph handles NaN→bos_emb internally) — `internal/onnx/flow_lm.go`
+  - [x] Each step: `Engine.FlowLMStep(sequence, text_embeddings)` → `last_hidden [1, 1024]`, `eos_logits [1, 1]`
+  - [x] EOS detection: `EOSDetected(eosLogits, threshold)` — raw logits, strict `>` comparison
+  - [x] Sequence growth: `AppendLatentFrame(sequence, frame)` — `[1, S, 32]` + `[1, 1, 32]` → `[1, S+1, 32]`
+  - [x] Unit tests: missing graph, runner error, correct I/O keys/shapes, BOS NaN values, sequence growth, EOS threshold logic — `internal/onnx/flow_lm_test.go`
+  - [ ] EOS countdown + max_steps loop orchestration (wired in Task 18.4)
 
-- [ ] Task 18.2: **Implement Euler flow integration (LSD decode)**
-  - [ ] Sample noise: `x ~ N(0, sqrt(temperature))` shape `[1, 32]`; `temperature` default `0.7`
-  - [ ] For `i` in `0..lsd_decode_steps` (default 1):
-    - `s = i / steps`, `t = (i+1) / steps`
-    - Create `s [1,1]`, `t [1,1]` tensors
-    - Run `flow_lm_flow(last_hidden, s, t, x)` → `flow_dir [1, 32]`
-    - `x += flow_dir / steps`
-  - [ ] Return `x` reshaped to `[1, 1, 32]`
+- [x] Task 18.2: **Implement Euler flow integration (LSD decode)**
+  - [x] `Engine.FlowLMFlow(ctx, lastHidden, temperature, steps)` → latent frame `[1, 1, 32]` — `internal/onnx/flow_lm.go`
+  - [x] Sample noise `x ~ N(0, sqrt(temperature))` shape `[1, 32]`; deterministic when temp=0
+  - [x] Euler loop: `s = i/steps`, `t = (i+1)/steps`, run `flow_lm_flow(condition, s, t, x)` → `flow_direction [1, 32]`, `x += flow_dir / steps`
+  - [x] Unit tests: missing graph, runner error, single-step arithmetic (temp=0), multi-step arithmetic, missing output — `internal/onnx/flow_lm_test.go`
 
-- [ ] Task 18.3: **Implement `latent_to_mimi` + `mimi_decoder` pipeline**
-  - [ ] Stack all accumulated latent frames → `latent [1, T_frames, 32]`
-  - [ ] Run `latent_to_mimi(latent)` → `mimi_latent [1, 512, T_frames]`
-  - [ ] Run `mimi_decoder(mimi_latent)` → `audio [1, 1, N_samples]`
-  - [ ] Extract and return `[]float32` PCM samples
+- [x] Task 18.3: **Implement `latent_to_mimi` + `mimi_decoder` pipeline**
+  - [x] `StackLatentFrames(frames)` — concatenate `[1, 1, 32]` frames → `[1, T, 32]` — `internal/onnx/audio_decode.go`
+  - [x] `Engine.LatentToMimi(ctx, latent)` — input `latent [1, T, 32]` → output `mimi_latent [1, 512, T]`
+  - [x] `Engine.MimiDecode(ctx, mimiLatent)` — input `latent [1, 512, T]` → output `[]float32` PCM samples
+  - [x] Unit tests: stacking (single, multi, empty), missing graph, runner error, correct I/O, missing output — `internal/onnx/audio_decode_test.go`
 
 - [ ] Task 18.4: **Wire complete pipeline into `Engine.Infer()`**
   - [ ] Replace sine-wave stub with: tokenize → text_conditioner → AR loop → latent_to_mimi → mimi_decoder

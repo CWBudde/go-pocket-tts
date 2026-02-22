@@ -8,7 +8,6 @@ import (
 
 	"github.com/example/go-pocket-tts/internal/config"
 	"github.com/example/go-pocket-tts/internal/onnx"
-	"github.com/example/go-pocket-tts/internal/text"
 	"github.com/example/go-pocket-tts/internal/tokenizer"
 )
 
@@ -86,9 +85,8 @@ func newTestService(t *testing.T) *Service {
 		}
 	}
 	return &Service{
-		engine:       engine,
-		preprocessor: text.NewPreprocessor(),
-		tokenizer:    tok,
+		engine:    engine,
+		tokenizer: tok,
 	}
 }
 
@@ -135,17 +133,14 @@ func TestSynthesize_WhitespaceOnly(t *testing.T) {
 	}
 }
 
-func TestSynthesize_ValidInput_ReturnsErrorUntilPhase18(t *testing.T) {
+func TestSynthesize_ValidInput_ReturnsErrorWithTestEngine(t *testing.T) {
 	svc := newTestService(t)
 
-	// Engine.Infer is a temporary shim that returns an error.
-	// This test documents that behavior — it will be updated in Phase 18
-	// when the real generation pipeline is implemented.
+	// The test engine uses an identity model, not the real TTS graphs,
+	// so Synthesize returns an error from the generation pipeline
+	// (missing text_conditioner or other graph).
 	_, err := svc.Synthesize("hello world")
 	if err == nil {
-		t.Fatal("Synthesize should return error (Infer not yet implemented)")
-	}
-	if !strings.Contains(err.Error(), "not yet implemented") {
-		t.Errorf("unexpected error: %v", err)
+		t.Fatal("Synthesize with test engine should return error (missing TTS graphs)")
 	}
 }
