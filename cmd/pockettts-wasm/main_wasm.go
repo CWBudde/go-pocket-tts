@@ -117,6 +117,40 @@ func tokenizeText(_ js.Value, args []js.Value) any {
 	})
 }
 
+type synthesizeOptions struct {
+	Temperature    float64
+	VoiceEmbedding *tensorPayload
+}
+
+func parseSynthOptions(args []js.Value) synthesizeOptions {
+	opts := synthesizeOptions{Temperature: flowTemperature}
+
+	// args[2] is an optional options object: { temperature?: number, voiceEmbedding?: {dtype, shape, f32} }
+	if len(args) < 3 {
+		return opts
+	}
+	optVal := args[2]
+	if optVal.IsUndefined() || optVal.IsNull() {
+		return opts
+	}
+
+	temp := optVal.Get("temperature")
+	if !temp.IsUndefined() && !temp.IsNull() {
+		opts.Temperature = temp.Float()
+	}
+
+	ve := optVal.Get("voiceEmbedding")
+	if !ve.IsUndefined() && !ve.IsNull() {
+		veJSON := js.Global().Get("JSON").Call("stringify", ve).String()
+		var tp tensorPayload
+		if err := json.Unmarshal([]byte(veJSON), &tp); err == nil && len(tp.F32) > 0 {
+			opts.VoiceEmbedding = &tp
+		}
+	}
+
+	return opts
+}
+
 func synthesizeModelAsync(_ js.Value, args []js.Value) any {
 	promiseCtor := js.Global().Get("Promise")
 	var handler js.Func
@@ -133,9 +167,10 @@ func synthesizeModelAsync(_ js.Value, args []js.Value) any {
 		if len(args) > 1 && args[1].Type() == js.TypeFunction {
 			progress.cb = args[1]
 		}
+		opts := parseSynthOptions(args)
 
 		go func() {
-			res, err := synthesizeModel(textArg, &progress)
+			res, err := synthesizeModel(textArg, &progress, opts)
 			if err != nil {
 				reject.Invoke(err.Error())
 				return
@@ -148,7 +183,7 @@ func synthesizeModelAsync(_ js.Value, args []js.Value) any {
 	return promiseCtor.New(handler)
 }
 
-func synthesizeModel(input string, progress *progressReporter) (map[string]any, error) {
+func synthesizeModel(input string, progress *progressReporter, opts synthesizeOptions) (map[string]any, error) {
 	progress.Emit("prepare", 0, 100, "normalizing and tokenizing input")
 	normalized := normalizePromptForModel(input)
 	if normalized == "" {
@@ -178,6 +213,11 @@ func synthesizeModel(input string, progress *progressReporter) (map[string]any, 
 		return nil, fmt.Errorf("text_conditioner output: %w", err)
 	}
 	progress.Emit("text_conditioner", 15, 100, "text embeddings ready")
+
+	if opts.VoiceEmbedding != nil {
+		textEmb = prependVoiceEmb(opts.VoiceEmbedding, &textEmb)
+		progress.Emit("voice", 17, 100, fmt.Sprintf("prepended voice embedding (%d frames)", opts.VoiceEmbedding.Shape[1]))
+	}
 
 	latentDim := int64(32)
 	condDim := int64(1024)
@@ -237,7 +277,7 @@ func synthesizeModel(input string, progress *progressReporter) (map[string]any, 
 		condition := copyOrTile(hidden.F32, int(condDim))
 		x := make([]float32, latentDim)
 		for i := range x {
-			x[i] = float32(rng.NormFloat64() * math.Sqrt(flowTemperature))
+			x[i] = float32(rng.NormFloat64() * math.Sqrt(opts.Temperature))
 		}
 
 		for k := 0; k < flowDecodeSteps; k++ {
@@ -424,6 +464,17 @@ func awaitPromiseString(promise js.Value) (string, error) {
 	then.Release()
 	catch.Release()
 	return res.value, res.err
+}
+
+func prependVoiceEmb(voice *tensorPayload, text *tensorPayload) tensorPayload {
+	combined := make([]float32, 0, len(voice.F32)+len(text.F32))
+	combined = append(combined, voice.F32...)
+	combined = append(combined, text.F32...)
+	return tensorPayload{
+		DType: "float32",
+		Shape: []int64{1, voice.Shape[1] + text.Shape[1], voice.Shape[2]},
+		F32:   combined,
+	}
 }
 
 func pickOutput(outputs map[string]tensorPayload, preferred string) (tensorPayload, error) {

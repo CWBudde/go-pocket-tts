@@ -91,6 +91,7 @@ jobs:
             pocket-tts \
             onnx \
             onnxruntime \
+            huggingface_hub \
             --extra-index-url https://download.pytorch.org/whl/cpu \
             --index-strategy unsafe-best-match
 
@@ -128,14 +129,32 @@ jobs:
       - name: Copy Go wasm runtime JS
         run: cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" web/dist/wasm_exec.js
 
+      - name: Download voice embeddings
+        if: ${{ env.INCLUDE_MODELS == 'true' }}
+        run: |
+          set -euo pipefail
+          mkdir -p voices
+          for voice in alba marius javert jean fantine cosette eponine azelma; do
+            huggingface-cli download kyutai/pocket-tts-without-voice-cloning \
+              "embeddings/${voice}.safetensors" \
+              --local-dir /tmp/pockettts-voices/
+            cp "/tmp/pockettts-voices/embeddings/${voice}.safetensors" "voices/${voice}.safetensors"
+          done
+
       - name: Copy static web assets
-        run: cp web/index.html web/main.js web/bridge.js web/bridge_contract.js web/dist/
+        run: cp web/index.html web/main.js web/bridge.js web/bridge_contract.js web/safetensors.js web/dist/
 
       - name: Bundle ONNX models into web app
         if: ${{ env.INCLUDE_MODELS == 'true' }}
         run: |
           mkdir -p web/dist/models
           cp models/onnx/*.onnx models/onnx/manifest.json web/dist/models/
+
+      - name: Bundle voice embeddings into web app
+        if: ${{ env.INCLUDE_MODELS == 'true' }}
+        run: |
+          mkdir -p web/dist/voices
+          cp voices/*.safetensors voices/manifest.json web/dist/voices/
 
       - name: Disable Jekyll
         run: touch web/dist/.nojekyll

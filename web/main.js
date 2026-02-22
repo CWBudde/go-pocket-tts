@@ -1,4 +1,5 @@
 import { ONNXBridge } from "./bridge.js";
+import { loadVoiceEmbedding } from "./safetensors.js";
 
 const startupInfo = document.getElementById("startup-info");
 const log = document.getElementById("log");
@@ -11,6 +12,9 @@ const player = document.getElementById("player");
 const download = document.getElementById("download");
 const synthProgress = document.getElementById("synth-progress");
 const synthProgressText = document.getElementById("synth-progress-text");
+const voiceSelect = document.getElementById("voice");
+const temperatureSlider = document.getElementById("temperature");
+const temperatureValue = document.getElementById("temperature-value");
 
 const onnxBridge = new ONNXBridge({ manifestPath: "./models/manifest.json" });
 const requiredGraphs = ["text_conditioner", "flow_lm_main", "flow_lm_flow", "mimi_decoder"];
@@ -23,6 +27,8 @@ const state = {
   manifest: null,
   modelLoaded: false,
   activeAudioURL: "",
+  voiceManifest: null,
+  voiceEmbeddings: new Map(),
 };
 
 const modelConfig = {
@@ -279,6 +285,40 @@ async function tokenizeForModel(inputText) {
   };
 }
 
+function prependVoiceEmbedding(voiceEmb, textEmb) {
+  const vF32 = voiceEmb.data;
+  const vShape = voiceEmb.shape;
+  const tF32 = textEmb.f32 || [];
+  const tShape = textEmb.shape || [];
+
+  const D = vShape[2];
+  const combined = new Array(vF32.length + tF32.length);
+  for (let i = 0; i < vF32.length; i++) combined[i] = vF32[i];
+  for (let i = 0; i < tF32.length; i++) combined[vF32.length + i] = tF32[i];
+
+  return {
+    dtype: "float32",
+    shape: [1, vShape[1] + tShape[1], D],
+    f32: combined,
+  };
+}
+
+async function getSelectedVoiceEmbedding() {
+  const voiceId = voiceSelect.value;
+  if (!voiceId) return null;
+
+  if (state.voiceEmbeddings.has(voiceId)) {
+    return state.voiceEmbeddings.get(voiceId);
+  }
+
+  const voice = (state.voiceManifest?.voices || []).find((v) => v.id === voiceId);
+  if (!voice) return null;
+
+  const emb = await loadVoiceEmbedding(`./voices/${voice.path}`);
+  state.voiceEmbeddings.set(voiceId, emb);
+  return emb;
+}
+
 async function synthesizeModelJS(inputText, onProgress) {
   const cfg = modelConfig;
   const emit = (stage, current, total, detail) => {
@@ -298,8 +338,14 @@ async function synthesizeModelJS(inputText, onProgress) {
       i64: prep.tokens,
     },
   });
-  const textEmb = pickOutput(textCondOutputs, "text_embeddings");
+  let textEmb = pickOutput(textCondOutputs, "text_embeddings");
   emit("text_conditioner", 15, 100, "text embeddings ready");
+
+  const voiceEmb = await getSelectedVoiceEmbedding();
+  if (voiceEmb) {
+    textEmb = prependVoiceEmbedding(voiceEmb, textEmb);
+    emit("voice", 17, 100, `prepended voice embedding (${voiceEmb.shape[1]} frames)`);
+  }
 
   const sequenceFrames = [new Float32Array(cfg.latentDim)];
   const generated = [];
@@ -448,9 +494,19 @@ async function synthesizeWithGo(inputText) {
     throw new Error("Go WASM kernel not ready");
   }
 
+  const opts = { temperature: modelConfig.flowTemperature };
+  const voiceEmb = await getSelectedVoiceEmbedding();
+  if (voiceEmb) {
+    opts.voiceEmbedding = {
+      dtype: "float32",
+      shape: Array.from(voiceEmb.shape),
+      f32: Array.from(voiceEmb.data),
+    };
+  }
+
   const out = await globalThis.PocketTTSKernel.synthesizeModel(inputText, (evt) => {
     updateProgress(evt);
-  });
+  }, opts);
 
   if (!out?.ok) {
     throw new Error(out?.error || "synthesis failed");
@@ -560,8 +616,28 @@ async function initApp() {
     log.textContent = `Manifest check: ${formatError(err)}`;
   }
 
+  try {
+    const res = await fetch("./voices/manifest.json");
+    if (res.ok) {
+      state.voiceManifest = await res.json();
+      populateVoiceDropdown();
+    }
+  } catch (_) {
+    // Voice manifest is optional.
+  }
+
   renderStartupInfo();
   setSynthesizeEnabled();
+}
+
+function populateVoiceDropdown() {
+  const voices = state.voiceManifest?.voices || [];
+  for (const v of voices) {
+    const opt = document.createElement("option");
+    opt.value = v.id;
+    opt.textContent = v.id;
+    voiceSelect.appendChild(opt);
+  }
 }
 
 loadModelBtn.addEventListener("click", handleLoadModel);
@@ -569,6 +645,11 @@ synthBtn.addEventListener("click", handleSynthesize);
 engineSelect.addEventListener("change", () => {
   setSynthesizeEnabled();
   renderStartupInfo();
+});
+temperatureSlider.addEventListener("input", () => {
+  const val = parseFloat(temperatureSlider.value);
+  modelConfig.flowTemperature = val;
+  temperatureValue.textContent = val.toFixed(2);
 });
 
 initApp().catch((err) => {
