@@ -207,7 +207,7 @@ def inspect_onnx(path: Path) -> dict[str, Any]:
     }
 
 
-def build_specs(model: TTSModel) -> list[ExportSpec]:
+def build_specs(model: TTSModel, max_sequence_length: int = 256) -> list[ExportSpec]:
     return [
         ExportSpec(
             name="text_conditioner",
@@ -231,7 +231,7 @@ def build_specs(model: TTSModel) -> list[ExportSpec]:
                 torch.randn(1, 8, 32, dtype=torch.float32),
                 torch.randn(1, 8, 1024, dtype=torch.float32),
             ),
-            module=FlowLMMainWrapper(model),
+            module=FlowLMMainWrapper(model, max_sequence_length=max_sequence_length),
         ),
         ExportSpec(
             name="flow_lm_flow",
@@ -272,7 +272,7 @@ def build_specs(model: TTSModel) -> list[ExportSpec]:
             output_names=["audio"],
             dynamic_axes={"latent": {2: "latent_steps"}, "audio": {2: "audio_samples"}},
             example_inputs=(torch.randn(1, 512, 13, dtype=torch.float32),),
-            module=MimiDecoderWrapper(model),
+            module=MimiDecoderWrapper(model, max_sequence_length=max_sequence_length),
         ),
     ]
 
@@ -283,6 +283,7 @@ def main() -> int:
     parser.add_argument("--out-dir", default="models/onnx", help="Output directory for ONNX files")
     parser.add_argument("--variant", default="b6369a24", help="PocketTTS model variant/config")
     parser.add_argument("--int8", action="store_true", help="Apply dynamic INT8 quantization to exported ONNX files")
+    parser.add_argument("--max-seq", type=int, default=256, help="KV-cache max sequence length for flow_lm_main and mimi_decoder (default: 256; use 512+ when using voice conditioning)")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -299,7 +300,7 @@ def main() -> int:
     print(f"loading pocket-tts model variant={args.variant}")
     model = TTSModel.load_model(args.variant)
 
-    specs = build_specs(model)
+    specs = build_specs(model, max_sequence_length=args.max_seq)
     manifest: dict[str, Any] = {
         "variant": args.variant,
         "int8": bool(args.int8),

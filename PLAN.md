@@ -222,7 +222,10 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
   - [x] Unit test: safetensors reader with synthetic test data (known shape + values) — `TestLoadVoiceEmbedding_DataValuesPreserved`, `TestLoadFirstTensor_MetadataKeyIgnored` in `internal/safetensors/reader_test.go`
   - [x] Unit test: verify voice embedding is correctly prepended to text_embeddings — `TestGenerateAudio_WithVoiceEmbedding_PrependsToTextEmb` (19.2, `voice_inject_test.go`) + `TestSynthesize_BadSafetensorsPath_ReturnsError`, `TestSynthesize_InvalidSafetensorsFile_ReturnsError`, `TestSynthesize_EmptyVoicePath_SkipsEmbeddingLoad` in `internal/tts/service_test.go`
   - [x] Integration test (`integration` tag): generate with and without voice, verify outputs differ — `TestGenerateAudioIntegration_VoiceConditioningDiffersFromUnvoiced` in `internal/onnx/generate_integration_test.go`
-  - [ ] CLI: `pockettts synth --backend native --voice alba --text "Hello" --out /tmp/voice.wav` (manual verification)
+  - [x] CLI: `pockettts synth --backend native --voice alba --text "Hello, this is a voice test." --out /tmp/voice_alba.wav` — produces 20 s WAV ✓
+    - Fixed: `resolveVoiceForNative` added to `cmd/pockettts/synth.go` to resolve voice IDs to safetensors paths for native backend
+    - Fixed: `scripts/export_onnx.py` gained `--max-seq` flag (default 256, used 512 for voice conditioning) to avoid RoPE Expand failures
+    - Added: `voices/alba.safetensors` downloaded from `kyutai/pocket-tts-without-voice-cloning/embeddings/alba.safetensors` (shape `[1, 125, 1024]`)
 
 ---
 
