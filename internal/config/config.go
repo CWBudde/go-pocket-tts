@@ -17,9 +17,10 @@ type Config struct {
 }
 
 type PathsConfig struct {
-	ModelPath    string `mapstructure:"model_path"`
-	VoicePath    string `mapstructure:"voice_path"`
-	ONNXManifest string `mapstructure:"onnx_manifest"`
+	ModelPath      string `mapstructure:"model_path"`
+	VoicePath      string `mapstructure:"voice_path"`
+	ONNXManifest   string `mapstructure:"onnx_manifest"`
+	TokenizerModel string `mapstructure:"tokenizer_model"`
 }
 
 type RuntimeConfig struct {
@@ -60,9 +61,10 @@ type flagBinder interface {
 func DefaultConfig() Config {
 	return Config{
 		Paths: PathsConfig{
-			ModelPath:    "models/model.onnx",
-			VoicePath:    "models/voice.bin",
-			ONNXManifest: "models/onnx/manifest.json",
+			ModelPath:      "models/model.onnx",
+			VoicePath:      "models/voice.bin",
+			ONNXManifest:   "models/onnx/manifest.json",
+			TokenizerModel: "models/tokenizer.model",
 		},
 		Runtime: RuntimeConfig{
 			Threads:        4,
@@ -94,6 +96,7 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.String("paths-model-path", defaults.Paths.ModelPath, "Path to ONNX model")
 	fs.String("paths-voice-path", defaults.Paths.VoicePath, "Path to voice/profile asset")
 	fs.String("paths-onnx-manifest", defaults.Paths.ONNXManifest, "Path to ONNX model manifest JSON")
+	fs.String("paths-tokenizer-model", defaults.Paths.TokenizerModel, "Path to SentencePiece tokenizer model")
 	fs.Int("runtime-threads", defaults.Runtime.Threads, "ONNX Runtime intra-op thread count")
 	fs.Int("runtime-inter-op-threads", defaults.Runtime.InterOpThreads, "ONNX Runtime inter-op thread count")
 	fs.String("runtime-ort-library-path", defaults.Runtime.ORTLibraryPath, "Path to ONNX Runtime shared library")

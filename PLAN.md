@@ -1,6 +1,6 @@
 # PLAN
 
-> **Goal:** Go CLI and HTTP server for PocketTTS. Phases 0–15 complete. Active work: Phases 16–19 (native ONNX inference pipeline). Future: Phases 20–22 (pure-Go replacements for CGO dependencies).
+> **Goal:** Go CLI and HTTP server for PocketTTS. Phases 0–15 complete. Active work: Phases 16–19 (native ONNX inference pipeline). Future: Phases 20–23 (voice encoding, safetensors hardening, streaming, KV-cache inference).
 
 ## Phases 0–15 ✅ Complete
 
@@ -81,45 +81,45 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
 
 > **Goal:** Wire `onnxruntime-purego` (already in go.mod, used by `model/verify.go`) into a reusable `Runner` type. Replace the sine-wave stub `Engine` with manifest-based runner management. By the end, `Engine` can load a manifest, create ORT sessions, and run any ONNX graph with correct tensor I/O.
 
-- [ ] Task 16.1: **Create `Runner` type for ONNX graph execution**
-  - [ ] `internal/onnx/runner.go`: `Runner` wraps `ort.Runtime` + `ort.Env` + `ort.Session` per graph
-  - [ ] `Run(ctx, inputs map[string]*Tensor) (map[string]*Tensor, error)` — converts to/from ORT tensors
-  - [ ] Handle float32/int64 dtype dispatch via `ort.NewTensorValue` and `ort.GetTensorData`
-  - [ ] `Close()` for session cleanup (idempotent)
-  - [ ] Tests: round-trip with `identity_float32.onnx` from `model/testdata/`
+- [x] Task 16.1: **Create `Runner` type for ONNX graph execution**
+  - [x] `internal/onnx/runner.go`: `Runner` wraps `ort.Runtime` + `ort.Env` + `ort.Session` per graph
+  - [x] `Run(ctx, inputs map[string]*Tensor) (map[string]*Tensor, error)` — converts to/from ORT tensors
+  - [x] Handle float32/int64 dtype dispatch via `ort.NewTensorValue` and `ort.GetTensorData`
+  - [x] `Close()` for session cleanup (idempotent)
+  - [x] Tests: round-trip with `identity_float32.onnx` from `model/testdata/`
 
-- [ ] Task 16.2: **Add `cfg.Paths.ONNXManifest` config field**
-  - [ ] Add `ONNXManifest string` to `PathsConfig`, default `"models/onnx/manifest.json"`
-  - [ ] Register flag `--paths-onnx-manifest`, env `POCKETTTS_ONNX_MANIFEST`
-  - [ ] Wire defaults, aliases
+- [x] Task 16.2: **Add `cfg.Paths.ONNXManifest` config field**
+  - [x] Add `ONNXManifest string` to `PathsConfig`, default `"models/onnx/manifest.json"`
+  - [x] Register flag `--paths-onnx-manifest`, env `POCKETTTS_ONNX_MANIFEST`
+  - [x] Wire defaults, aliases
 
-- [ ] Task 16.3: **Refactor `Engine` to use `SessionManager` + `Runner`**
-  - [ ] `NewEngine(manifestPath string, cfg RunnerConfig)` — loads manifest, creates `Runner` per graph
-  - [ ] Remove sine-wave stub and `threads` field
-  - [ ] `Engine.Runner(name) (*Runner, bool)` accessor
-  - [ ] `Engine.Close()` to tear down all runners
-  - [ ] Temporary `Infer()` shim returns error (real pipeline in Phase 18)
+- [x] Task 16.3: **Refactor `Engine` to use `SessionManager` + `Runner`**
+  - [x] `NewEngine(manifestPath string, cfg RunnerConfig)` — loads manifest, creates `Runner` per graph
+  - [x] Remove sine-wave stub and `threads` field
+  - [x] `Engine.Runner(name) (*Runner, bool)` accessor
+  - [x] `Engine.Close()` to tear down all runners
+  - [x] Temporary `Infer()` shim returns error (real pipeline in Phase 18)
 
-- [ ] Task 16.4: **Update `tts.Service` and CLI callers**
-  - [ ] `NewService(cfg)` uses `DetectRuntime()` + `NewEngine(cfg.Paths.ONNXManifest, rcfg)`
-  - [ ] Add `Service.Close()` to clean up engine
-  - [ ] Verify `synth` and `serve` commands still compile and work
+- [x] Task 16.4: **Update `tts.Service` and CLI callers**
+  - [x] `NewService(cfg)` uses `DetectRuntime()` + `NewEngine(cfg.Paths.ONNXManifest, rcfg)`
+  - [x] Add `Service.Close()` to clean up engine
+  - [x] Verify `synth` and `serve` commands still compile and work
 
-- [ ] Task 16.5: **Full test sweep**
-  - [ ] `go test ./...` — all existing tests pass
-  - [ ] `golangci-lint run ./...` — no new warnings
-  - [ ] Integration tests with identity ONNX model via `Runner`
+- [x] Task 16.5: **Full test sweep**
+  - [x] `go test ./...` — all 13 packages pass
+  - [x] `golangci-lint run ./...` — no new warnings (1 pre-existing in doctor_test.go)
+  - [x] Integration tests with identity ONNX model via `Runner`
 
 ---
 
 ## Phase 17 — SentencePiece Tokenizer + Text Conditioning
 
-> **Goal:** Replace the unicode code-point preprocessor with SentencePiece tokenization via CGO, and run the `text_conditioner` ONNX graph to produce text embeddings.
+> **Goal:** Replace the unicode code-point preprocessor with SentencePiece tokenization (pure Go, no CGO), and run the `text_conditioner` ONNX graph to produce text embeddings.
 
-- [ ] Task 17.1: **Add SentencePiece CGO binding**
-  - [ ] Evaluate and add Go SentencePiece binding (e.g. `github.com/pquerna/sentencepiece-go` or direct CGO wrapper)
-  - [ ] Create `internal/tokenizer/tokenizer.go` with `Tokenizer` interface: `Encode(text string) ([]int64, error)`
-  - [ ] Implement `SentencePieceTokenizer` that loads `tokenizer.model` file
+- [x] Task 17.1: **Add SentencePiece binding**
+  - [x] Evaluated libraries: model is UNIGRAM; chose `github.com/vikesh-raj/go-sentencepiece-encoder` (pure Go, no CGO, UNIGRAM+BPE, matches Python reference exactly — Phase 20 tokenizer item now N/A)
+  - [x] `internal/tokenizer/tokenizer.go` with `Tokenizer` interface: `Encode(text string) ([]int64, error)`
+  - [x] `SentencePieceTokenizer` loads `tokenizer.model`; 10 tests, 100% coverage
 
 - [ ] Task 17.2: **Add config for tokenizer model path**
   - [ ] Add `cfg.Paths.TokenizerModel` field, default `"models/tokenizer.model"`
@@ -225,24 +225,90 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
 
 ---
 
-## Future Phases (planned)
+## Phase 20 — Voice Encoding from Audio
 
-### Phase 20 — Pure Go SentencePiece (drop CGO tokenizer dependency)
+> **Goal:** Support encoding raw audio files into voice embeddings via the `mimi_encoder` ONNX graph + a `speaker_proj_weight` linear projection. Enables creating voice embeddings from arbitrary audio without external tooling.
 
-> Replace CGO SentencePiece binding with a pure Go implementation. Parse the `tokenizer.model` protobuf, implement BPE merge algorithm natively. Eliminates `libsentencepiece` build dependency.
+- [ ] Task 20.1: **Run `mimi_encoder` to get audio latents**
+  - [ ] Accept raw WAV/PCM input → `audio [1, 1, N_samples] float32` tensor
+  - [ ] Run `mimi_encoder` via `Runner` → `latent [1, T, 512] float32`
 
-### Phase 21 — Voice encoding from audio (mimi_encoder + speaker_proj)
+- [ ] Task 20.2: **Apply speaker projection**
+  - [ ] Load `speaker_proj_weight` from model safetensors (shape `[1024, 512]`)
+  - [ ] Matrix-multiply latent `[1, T, 512]` × `weight^T [512, 1024]` → `embedding [1, T, 1024]`
+  - [ ] Expose as `Engine.EncodeVoice(audioPath string) ([]float32, error)`
 
-> Support encoding raw audio files into voice embeddings via the `mimi_encoder` ONNX graph + `speaker_proj_weight` linear projection. Enables creating voice embeddings from any audio without external tooling.
+- [ ] Task 20.3: **Wire into CLI**
+  - [ ] `export-voice` command uses `Engine.EncodeVoice` instead of Python subprocess
+  - [ ] Save result as `.safetensors` file for later use with voice conditioning
 
-### Phase 22 — Pure Go safetensors (drop CGO if any, optimize)
+- [ ] Task 20.4: **Tests**
+  - [ ] Unit test: verify projection arithmetic with known weight + latent values
+  - [ ] Integration test (`integration` tag): encode a short WAV, verify output shape `[1, T, 1024]`
+  - [ ] CLI: `pockettts export-voice --input audio.wav --out voice.safetensors`
 
-> Harden the safetensors reader: support all dtypes, multiple tensors, large files via mmap. If any CGO dependency was introduced, replace with pure Go.
+---
 
-### Phase 23 — Streaming audio generation
+## Phase 21 — Safetensors Hardening
 
-> Generate and decode latent frames concurrently (producer/consumer pattern matching Rust/Python threading model). Enable real-time audio streaming from the HTTP server.
+> **Goal:** Harden the safetensors reader introduced in Phase 19 for production use: support multiple tensors, all relevant dtypes (float32, float16, bfloat16), and large files via memory mapping.
 
-### Phase 24 — KV-cache ONNX graphs for O(n) inference
+- [ ] Task 21.1: **Extend safetensors reader**
+  - [ ] Support reading named tensors by key (not just the first tensor)
+  - [ ] Handle float16 and bfloat16 dtypes → convert to float32
+  - [ ] Add `ReadAll() (map[string][]float32, error)` for multi-tensor files
 
-> Re-export `flow_lm_main` with stateful KV cache inputs/outputs. Each autoregressive step processes only the new frame instead of the full sequence, reducing inference from O(n²) to O(n).
+- [ ] Task 21.2: **Memory-map large files**
+  - [ ] Use `mmap` for files above a configurable threshold (default 64 MiB)
+  - [ ] Ensure safe cleanup on `Close()`
+
+- [ ] Task 21.3: **Tests**
+  - [ ] Unit test: round-trip write + read for float32, float16 tensors
+  - [ ] Unit test: multi-tensor file, verify correct key lookup
+  - [ ] Benchmark: compare mmap vs. `os.ReadFile` for a 100 MiB file
+
+---
+
+## Phase 22 — Streaming Audio Generation
+
+> **Goal:** Generate and decode latent frames concurrently using a producer/consumer pipeline, matching the Rust/Python threading model. Enable real-time audio streaming from the HTTP server.
+
+- [ ] Task 22.1: **Implement streaming generation pipeline**
+  - [ ] Run `flow_lm_main` + `flow_lm_flow` in a goroutine, emit latent frames to a channel
+  - [ ] Run `latent_to_mimi` + `mimi_decoder` in a consumer goroutine, emit PCM chunks
+  - [ ] Configurable channel buffer depth to tune latency vs. throughput
+
+- [ ] Task 22.2: **HTTP streaming endpoint**
+  - [ ] `/tts/stream` returns `audio/wav` with chunked transfer encoding
+  - [ ] Write WAV header upfront (with unknown length), flush PCM chunks as they arrive
+  - [ ] Honour `context.Context` cancellation to abort in-progress generation
+
+- [ ] Task 22.3: **Tests**
+  - [ ] Unit test: pipeline produces same total PCM as batch mode for the same input
+  - [ ] Integration test (`integration` tag): streaming endpoint delivers first chunk within 500 ms
+  - [ ] Load test: concurrent streaming requests do not deadlock or leak goroutines
+
+---
+
+## Phase 23 — KV-Cache Autoregressive Inference
+
+> **Goal:** Re-export `flow_lm_main` with stateful KV-cache inputs/outputs. Each autoregressive step processes only the new frame instead of the full growing sequence, reducing inference from O(n²) to O(n).
+
+- [ ] Task 23.1: **Re-export KV-cache ONNX graph**
+  - [ ] Extend `scripts/export_onnx.py` to export `flow_lm_main_kv` with past key/value state tensors
+  - [ ] Update ONNX manifest schema to declare stateful graphs with `state_inputs`/`state_outputs`
+  - [ ] Verify exported graph with `model verify` command
+
+- [ ] Task 23.2: **Implement stateful runner**
+  - [ ] `StatefulRunner` wraps `Runner`, carries KV-cache tensors between steps
+  - [ ] `Step(lastHidden, textEmbeddings, state) → (lastHidden, eosLogits, newState)`
+  - [ ] Reset state on new inference call
+
+- [ ] Task 23.3: **Replace O(n²) loop in `Engine.Infer`**
+  - [ ] Detect presence of `flow_lm_main_kv` in manifest; fall back to stateless if absent
+  - [ ] Wire `StatefulRunner` into the autoregressive loop from Phase 18
+
+- [ ] Task 23.4: **Tests**
+  - [ ] Unit test: stateful runner produces identical logits to stateless runner for same sequence
+  - [ ] Benchmark (`go test -bench`): measure RTF improvement for 5 s, 15 s, 30 s utterances
+  - [ ] Integration test (`integration` tag): end-to-end synthesis with KV-cache produces valid audio
