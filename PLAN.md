@@ -121,10 +121,10 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
   - [x] `internal/tokenizer/tokenizer.go` with `Tokenizer` interface: `Encode(text string) ([]int64, error)`
   - [x] `SentencePieceTokenizer` loads `tokenizer.model`; 10 tests, 100% coverage
 
-- [ ] Task 17.2: **Add config for tokenizer model path**
-  - [ ] Add `cfg.Paths.TokenizerModel` field, default `"models/tokenizer.model"`
-  - [ ] Bind to `--tokenizer-model` flag and `POCKETTTS_TOKENIZER_MODEL` env var
-  - [ ] Wire into `Engine` or `tts.Service` construction
+- [x] Task 17.2: **Add config for tokenizer model path**
+  - [x] `cfg.Paths.TokenizerModel string`, default `"models/tokenizer.model"`
+  - [x] Flag `--paths-tokenizer-model`, env `POCKETTTS_PATHS_TOKENIZER_MODEL`; alias, Viper default, `registerAliases` wired
+  - [x] `tts.Service` holds `tokenizer.Tokenizer`; `NewService` initialises it from `cfg.Paths.TokenizerModel`
 
 - [ ] Task 17.3: **Text preprocessing matching reference implementation**
   - [ ] Capitalize first letter of input
