@@ -91,7 +91,6 @@ jobs:
             pocket-tts \
             onnx \
             onnxruntime \
-            huggingface_hub \
             --extra-index-url https://download.pytorch.org/whl/cpu \
             --index-strategy unsafe-best-match
 
@@ -133,6 +132,7 @@ jobs:
         if: ${{ env.INCLUDE_MODELS == 'true' }}
         run: |
           set -euo pipefail
+          python3 -m pip install --quiet huggingface_hub
           mkdir -p voices
           for voice in alba marius javert jean fantine cosette eponine azelma; do
             huggingface-cli download kyutai/pocket-tts-without-voice-cloning \
