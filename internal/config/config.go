@@ -40,12 +40,16 @@ type ServerConfig struct {
 }
 
 type TTSConfig struct {
-	Backend       string `mapstructure:"backend"`
-	Voice         string `mapstructure:"voice"`
-	CLIPath       string `mapstructure:"cli_path"`
-	CLIConfigPath string `mapstructure:"cli_config_path"`
-	Concurrency   int    `mapstructure:"concurrency"`
-	Quiet         bool   `mapstructure:"quiet"`
+	Backend        string  `mapstructure:"backend"`
+	Voice          string  `mapstructure:"voice"`
+	CLIPath        string  `mapstructure:"cli_path"`
+	CLIConfigPath  string  `mapstructure:"cli_config_path"`
+	Concurrency    int     `mapstructure:"concurrency"`
+	Quiet          bool    `mapstructure:"quiet"`
+	Temperature    float64 `mapstructure:"temperature"`
+	EOSThreshold   float64 `mapstructure:"eos_threshold"`
+	MaxSteps       int     `mapstructure:"max_steps"`
+	LSDDecodeSteps int     `mapstructure:"lsd_decode_steps"`
 }
 
 type LoadOptions struct {
@@ -81,12 +85,16 @@ func DefaultConfig() Config {
 			RequestTimeout:  60,
 		},
 		TTS: TTSConfig{
-			Backend:       "native",
-			Voice:         "",
-			CLIPath:       "",
-			CLIConfigPath: "",
-			Concurrency:   1,
-			Quiet:         true,
+			Backend:        "native",
+			Voice:          "",
+			CLIPath:        "",
+			CLIConfigPath:  "",
+			Concurrency:    1,
+			Quiet:          true,
+			Temperature:    0.7,
+			EOSThreshold:   -4.0,
+			MaxSteps:       256,
+			LSDDecodeSteps: 1,
 		},
 		LogLevel: "info",
 	}
@@ -114,6 +122,10 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.String("tts-cli-config-path", defaults.TTS.CLIConfigPath, "Path to pocket-tts config file")
 	fs.Int("tts-concurrency", defaults.TTS.Concurrency, "Max concurrent pocket-tts subprocesses")
 	fs.Bool("tts-quiet", defaults.TTS.Quiet, "Pass --quiet to pocket-tts generate")
+	fs.Float64("temperature", defaults.TTS.Temperature, "Noise temperature for flow sampling")
+	fs.Float64("eos-threshold", defaults.TTS.EOSThreshold, "Raw logit threshold for EOS detection")
+	fs.Int("max-steps", defaults.TTS.MaxSteps, "Maximum autoregressive generation steps")
+	fs.Int("lsd-steps", defaults.TTS.LSDDecodeSteps, "Euler integration steps per latent frame")
 	fs.String("log-level", defaults.LogLevel, "Log level (debug|info|warn|error)")
 }
 
@@ -180,6 +192,10 @@ func setDefaults(v *viper.Viper, c Config) {
 	v.SetDefault("tts.cli_config_path", c.TTS.CLIConfigPath)
 	v.SetDefault("tts.concurrency", c.TTS.Concurrency)
 	v.SetDefault("tts.quiet", c.TTS.Quiet)
+	v.SetDefault("tts.temperature", c.TTS.Temperature)
+	v.SetDefault("tts.eos_threshold", c.TTS.EOSThreshold)
+	v.SetDefault("tts.max_steps", c.TTS.MaxSteps)
+	v.SetDefault("tts.lsd_decode_steps", c.TTS.LSDDecodeSteps)
 	v.SetDefault("log_level", c.LogLevel)
 }
 
@@ -205,5 +221,9 @@ func registerAliases(v *viper.Viper) {
 	v.RegisterAlias("tts.cli_config_path", "tts-cli-config-path")
 	v.RegisterAlias("tts.concurrency", "tts-concurrency")
 	v.RegisterAlias("tts.quiet", "tts-quiet")
+	v.RegisterAlias("tts.temperature", "temperature")
+	v.RegisterAlias("tts.eos_threshold", "eos-threshold")
+	v.RegisterAlias("tts.max_steps", "max-steps")
+	v.RegisterAlias("tts.lsd_decode_steps", "lsd-steps")
 	v.RegisterAlias("log_level", "log-level")
 }

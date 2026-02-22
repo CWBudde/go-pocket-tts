@@ -172,17 +172,19 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
   - [x] `Engine.MimiDecode(ctx, mimiLatent)` — input `latent [1, 512, T]` → output `[]float32` PCM samples
   - [x] Unit tests: stacking (single, multi, empty), missing graph, runner error, correct I/O, missing output — `internal/onnx/audio_decode_test.go`
 
-- [ ] Task 18.4: **Wire complete pipeline into `Engine.Infer()`**
-  - [ ] Replace sine-wave stub with: tokenize → text_conditioner → AR loop → latent_to_mimi → mimi_decoder
-  - [ ] Return 24 kHz float32 PCM audio
-  - [ ] Update `audio.EncodeWAV` calls to use 24000 Hz sample rate (was 22050)
+- [x] Task 18.4: **Wire complete pipeline into `Engine.GenerateAudio()` + `Service.Synthesize()`**
+  - [x] `GenerateConfig` struct with Temperature, EOSThreshold, MaxSteps, LSDDecodeSteps, FramesAfterEOS — `internal/onnx/generate.go`
+  - [x] `Engine.GenerateAudio(ctx, tokens, cfg)` — full pipeline: text_conditioner → AR loop (FlowLMStep + EOS countdown + FlowLMFlow) → StackLatentFrames → LatentToMimi → MimiDecode → `[]float32` PCM
+  - [x] `Service.Synthesize` rewired: PrepareChunks → GenerateAudio per chunk → concatenate PCM
+  - [x] Removed `Engine.Infer` stub (no longer needed)
+  - [x] `audio.ExpectedSampleRate` already set to 24000 — no changes needed
+  - [x] Unit tests: non-empty PCM, MaxSteps limit, EOS countdown (fires at step 2 + 3 after = 5 total), missing graph, empty tokens, error propagation — `internal/onnx/generate_test.go`
 
-- [ ] Task 18.5: **Add generation config fields to `TTSConfig`**
-  - [ ] `Temperature float64` (default `0.7`)
-  - [ ] `EOSThreshold float64` (default `-4.0`)
-  - [ ] `MaxSteps int` (default `256`)
-  - [ ] `LSDDecodeSteps int` (default `1`)
-  - [ ] Bind to CLI flags: `--temperature`, `--eos-threshold`, `--max-steps`, `--lsd-steps`
+- [x] Task 18.5: **Add generation config fields to `TTSConfig`**
+  - [x] `Temperature float64` (default `0.7`), `EOSThreshold float64` (default `-4.0`), `MaxSteps int` (default `256`), `LSDDecodeSteps int` (default `1`) — `internal/config/config.go`
+  - [x] CLI flags: `--temperature`, `--eos-threshold`, `--max-steps`, `--lsd-steps` + viper defaults + aliases
+  - [x] `Service` stores `TTSConfig`, `generateConfig()` reads from it instead of hardcoded defaults
+  - [x] Unit tests: default values, flag registration, flag override loading — `internal/config/config_test.go`
 
 - [ ] Task 18.6: **Tests**
   - [ ] Unit test: mock `Runner`, verify `Engine.Infer` calls graphs in correct order with correct tensor shapes and names
