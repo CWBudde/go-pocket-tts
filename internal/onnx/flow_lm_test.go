@@ -3,6 +3,7 @@ package onnx
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 )
 
@@ -393,4 +394,66 @@ func TestFlowLMFlow_MissingFlowDirectionOutput(t *testing.T) {
 
 func isNaN(f float32) bool {
 	return f != f
+}
+
+// ---------------------------------------------------------------------------
+// Regression test: NaN propagation from BOS sequence
+// ---------------------------------------------------------------------------
+
+// TestFlowLMStep_RejectsNaNOutputFromRunner verifies that if the ONNX runner
+// returns NaN in last_hidden (e.g., because bos_emb substitution is missing
+// from the exported graph), the caller can detect it. This is the regression
+// test for the bug where NewBOSSequence() fills [1,1,32] with NaN and the
+// ONNX model was missing the torch.where(isnan(sequence), bos_emb, sequence)
+// substitution, causing all downstream values to be NaN.
+//
+// This test verifies the detection contract: if a runner returns NaN tensors,
+// the caller must be able to observe this. The fix lives in export_onnx.py
+// (FlowLMMainWrapper now includes the IsNaN→bos_emb substitution).
+func TestFlowLMStep_NaNOutputIsDetectable(t *testing.T) {
+	// Simulate a buggy ONNX model that returns NaN (as happened before the fix).
+	nanHidden := make([]float32, 1024)
+	for i := range nanHidden {
+		nanHidden[i] = float32(math.NaN())
+	}
+	fakeHidden, _ := NewTensor(nanHidden, []int64{1, 1024})
+	fakeEOS, _ := NewTensor([]float32{float32(math.NaN())}, []int64{1, 1})
+
+	fake := &fakeRunner{
+		name: "flow_lm_main",
+		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
+			return map[string]*Tensor{
+				"last_hidden": fakeHidden,
+				"eos_logits":  fakeEOS,
+			}, nil
+		},
+	}
+	e := engineWithFakeRunners(map[string]runnerIface{"flow_lm_main": fake})
+
+	// Use a BOS sequence (all NaN) — this is what the generation loop passes first.
+	bos := NewBOSSequence()
+	emb, _ := NewTensor(make([]float32, 1024), []int64{1, 1, 1024})
+
+	lastHidden, eosLogits, err := e.FlowLMStep(context.Background(), bos, emb)
+	if err != nil {
+		t.Fatalf("FlowLMStep: %v", err)
+	}
+
+	// Verify that NaN in last_hidden IS detectable (not silently swallowed).
+	hiddenData, _ := ExtractFloat32(lastHidden)
+	hasNaN := false
+	for _, v := range hiddenData {
+		if isNaN(v) {
+			hasNaN = true
+			break
+		}
+	}
+	if !hasNaN {
+		t.Error("expected NaN to be detectable in last_hidden output from buggy runner")
+	}
+
+	// EOSDetected must return false for NaN logit (NaN > threshold is always false).
+	if EOSDetected(eosLogits, -4.0) {
+		t.Error("EOSDetected should return false for NaN logit")
+	}
 }

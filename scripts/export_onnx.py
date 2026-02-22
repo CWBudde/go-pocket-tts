@@ -82,9 +82,16 @@ class FlowLMMainWrapper(torch.nn.Module):
         super().__init__()
         self.flow_lm = model.flow_lm
         self.base_state = init_states(self.flow_lm, batch_size=1, sequence_length=max_sequence_length)
+        # Register bos_emb as a buffer so it is baked into the ONNX graph as a constant.
+        # The Go caller signals BOS positions by passing NaN; we replace them here so that
+        # the torch.isnan() branch is always traced (example input contains NaN).
+        self.register_buffer("bos_emb", model.flow_lm.bos_emb.detach().clone())
 
     def forward(self, sequence: torch.Tensor, text_embeddings: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         state = clone_model_state(self.base_state)
+        # Replace NaN BOS positions with the learned bos_emb embedding.
+        # bos_emb is [ldim]; broadcast to match sequence shape [B, S, ldim].
+        sequence = torch.where(torch.isnan(sequence), self.bos_emb, sequence)
         projected = self.flow_lm.input_linear(sequence)
         hidden = self.flow_lm.backbone(projected, text_embeddings, sequence, model_state=state)
         last_hidden = hidden[:, -1, :]
@@ -228,7 +235,12 @@ def build_specs(model: TTSModel, max_sequence_length: int = 256) -> list[ExportS
                 "text_embeddings": {1: "text_tokens"},
             },
             example_inputs=(
-                torch.randn(1, 8, 32, dtype=torch.float32),
+                # First position is NaN (BOS sentinel); rest are normal latents.
+                # This ensures torch.isnan() is always traced into the ONNX graph.
+                torch.cat([
+                    torch.full((1, 1, 32), float("nan"), dtype=torch.float32),
+                    torch.randn(1, 7, 32, dtype=torch.float32),
+                ], dim=1),
                 torch.randn(1, 8, 1024, dtype=torch.float32),
             ),
             module=FlowLMMainWrapper(model, max_sequence_length=max_sequence_length),
