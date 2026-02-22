@@ -322,6 +322,59 @@ func TestLoad_MissingExplicitConfigFile(t *testing.T) {
 	}
 }
 
+// --- TokenizerModel field ---
+
+func TestDefaultConfig_TokenizerModelPath(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Paths.TokenizerModel != "models/tokenizer.model" {
+		t.Errorf("Paths.TokenizerModel = %q; want %q", cfg.Paths.TokenizerModel, "models/tokenizer.model")
+	}
+}
+
+func TestRegisterFlags_TokenizerModelFlag(t *testing.T) {
+	defaults := DefaultConfig()
+	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	RegisterFlags(fs, defaults)
+
+	f := fs.Lookup("paths-tokenizer-model")
+	if f == nil {
+		t.Fatal("flag --paths-tokenizer-model not registered")
+	}
+	if f.DefValue != "models/tokenizer.model" {
+		t.Errorf("flag default = %q; want %q", f.DefValue, "models/tokenizer.model")
+	}
+}
+
+func TestLoad_FlagOverride_TokenizerModel(t *testing.T) {
+	defaults := DefaultConfig()
+	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	RegisterFlags(fs, defaults)
+	if err := fs.Parse([]string{"--paths-tokenizer-model=/custom/tokenizer.model"}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	cfg, err := Load(LoadOptions{Cmd: &fakeBinder{fs: fs}, Defaults: defaults})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Paths.TokenizerModel != "/custom/tokenizer.model" {
+		t.Errorf("Paths.TokenizerModel = %q; want %q", cfg.Paths.TokenizerModel, "/custom/tokenizer.model")
+	}
+}
+
+func TestLoad_EnvOverride_TokenizerModel(t *testing.T) {
+	t.Setenv("POCKETTTS_PATHS_TOKENIZER_MODEL", "/env/tokenizer.model")
+
+	defaults := DefaultConfig()
+	cfg, err := Load(LoadOptions{Defaults: defaults})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Paths.TokenizerModel != "/env/tokenizer.model" {
+		t.Errorf("Paths.TokenizerModel = %q; want %q", cfg.Paths.TokenizerModel, "/env/tokenizer.model")
+	}
+}
+
 func TestLoad_NilCmd(t *testing.T) {
 	// Passing nil Cmd must not panic; Load must return without error.
 	// Viper alias registration interferes with unmarshalling when no flags are bound,
