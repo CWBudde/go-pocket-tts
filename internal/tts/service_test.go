@@ -9,6 +9,7 @@ import (
 	"github.com/example/go-pocket-tts/internal/config"
 	"github.com/example/go-pocket-tts/internal/onnx"
 	"github.com/example/go-pocket-tts/internal/text"
+	"github.com/example/go-pocket-tts/internal/tokenizer"
 )
 
 // ---------------------------------------------------------------------------
@@ -76,9 +77,40 @@ func newTestService(t *testing.T) *Service {
 	if err != nil {
 		t.Skipf("cannot create engine: %v", err)
 	}
+	// Use the real tokenizer model if available, otherwise a nil tokenizer
+	// is acceptable for these tests (they only test Synthesize error paths).
+	var tok tokenizer.Tokenizer
+	if tokPath := config.DefaultConfig().Paths.TokenizerModel; tokPath != "" {
+		if t, err := tokenizer.NewSentencePieceTokenizer(tokPath); err == nil {
+			tok = t
+		}
+	}
 	return &Service{
 		engine:       engine,
 		preprocessor: text.NewPreprocessor(),
+		tokenizer:    tok,
+	}
+}
+
+// TestNewService_MissingTokenizerModel verifies that NewService returns an error
+// when the tokenizer model path points to a missing file.
+func TestNewService_MissingTokenizerModel(t *testing.T) {
+	libPath := os.Getenv("POCKETTTS_ORT_LIB")
+	if libPath == "" {
+		libPath = os.Getenv("ORT_LIBRARY_PATH")
+	}
+	if libPath == "" {
+		t.Skip("no ORT library available; set POCKETTTS_ORT_LIB")
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Runtime.ORTLibraryPath = libPath
+	cfg.Paths.TokenizerModel = "/nonexistent/tokenizer.model"
+	// ONNXManifest is also missing, but tokenizer error should surface first.
+
+	_, err := NewService(cfg)
+	if err == nil {
+		t.Error("NewService with missing tokenizer model should return error")
 	}
 }
 

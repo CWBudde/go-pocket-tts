@@ -1,13 +1,21 @@
 package onnx
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 )
 
+// runnerIface is satisfied by *Runner and by test fakes.
+type runnerIface interface {
+	Run(ctx context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error)
+	Name() string
+	Close()
+}
+
 // Engine manages ONNX graph runners loaded from a manifest.
 type Engine struct {
-	runners map[string]*Runner
+	runners map[string]runnerIface
 	sm      *SessionManager
 }
 
@@ -18,7 +26,7 @@ func NewEngine(manifestPath string, cfg RunnerConfig) (*Engine, error) {
 		return nil, fmt.Errorf("load manifest: %w", err)
 	}
 
-	runners := make(map[string]*Runner, len(sm.Sessions()))
+	runners := make(map[string]runnerIface, len(sm.Sessions()))
 	for _, sess := range sm.Sessions() {
 		runner, err := NewRunner(sess, cfg)
 		if err != nil {
@@ -37,7 +45,11 @@ func NewEngine(manifestPath string, cfg RunnerConfig) (*Engine, error) {
 // Runner returns the named graph runner, if it exists.
 func (e *Engine) Runner(name string) (*Runner, bool) {
 	r, ok := e.runners[name]
-	return r, ok
+	if !ok {
+		return nil, false
+	}
+	concrete, ok := r.(*Runner)
+	return concrete, ok
 }
 
 // Close releases all ORT resources.
@@ -45,6 +57,36 @@ func (e *Engine) Close() {
 	for _, r := range e.runners {
 		r.Close()
 	}
+}
+
+// TextConditioner runs the text_conditioner ONNX graph and returns text
+// embeddings shaped [1, T, 1024] for the given SentencePiece token IDs.
+func (e *Engine) TextConditioner(ctx context.Context, tokens []int64) (*Tensor, error) {
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("text_conditioner: token slice must not be empty")
+	}
+
+	runner, ok := e.runners["text_conditioner"]
+	if !ok {
+		return nil, fmt.Errorf("text_conditioner graph not found in manifest")
+	}
+
+	T := int64(len(tokens))
+	tokenTensor, err := NewTensor(tokens, []int64{1, T})
+	if err != nil {
+		return nil, fmt.Errorf("text_conditioner: build token tensor: %w", err)
+	}
+
+	outputs, err := runner.Run(ctx, map[string]*Tensor{"tokens": tokenTensor})
+	if err != nil {
+		return nil, fmt.Errorf("text_conditioner: run: %w", err)
+	}
+
+	emb, ok := outputs["text_embeddings"]
+	if !ok {
+		return nil, fmt.Errorf("text_conditioner: missing 'text_embeddings' in output")
+	}
+	return emb, nil
 }
 
 // Infer is a temporary compatibility shim.
