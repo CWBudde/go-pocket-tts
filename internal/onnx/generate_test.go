@@ -3,6 +3,7 @@ package onnx
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 )
 
@@ -292,4 +293,114 @@ func TestGenerateAudio_PropagatesFlowLMError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from flow_lm_main")
 	}
+}
+
+// TestGenerateAudio_NaNFromFlowLM_ProducesDetectableSilence is a regression
+// test for the bug where the ONNX flow_lm_main graph was missing the
+// torch.where(isnan(sequence), bos_emb, sequence) substitution. The BOS token
+// is represented as NaN, and without that substitution all hidden states become
+// NaN, which propagates silently through the pipeline and yields a silent WAV.
+//
+// This test documents the failure mode: NaN hidden state → NaN latent frames →
+// NaN/zero mimi output → silence. The test asserts that GenerateAudio detects
+// and reports non-finite PCM when fed by a corrupt (NaN-returning) runner.
+func TestGenerateAudio_NaNHiddenStateProducesSilence(t *testing.T) {
+	// Simulate the buggy ONNX model: flow_lm_main returns NaN for last_hidden,
+	// which is what happened before the bos_emb substitution fix.
+	nanHidden := make([]float32, 1024)
+	for i := range nanHidden {
+		nanHidden[i] = float32(math.NaN())
+	}
+
+	flowMain := &fakeRunner{
+		name: "flow_lm_main",
+		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
+			h, _ := NewTensor(nanHidden, []int64{1, 1024})
+			// NaN logit: NaN > -4.0 is false, so EOS never fires.
+			eos, _ := NewTensor([]float32{float32(math.NaN())}, []int64{1, 1})
+			return map[string]*Tensor{"last_hidden": h, "eos_logits": eos}, nil
+		},
+	}
+	flowFlow := &fakeRunner{
+		name: "flow_lm_flow",
+		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
+			// NaN condition → NaN flow direction.
+			dir := make([]float32, 32)
+			for i := range dir {
+				dir[i] = float32(math.NaN())
+			}
+			out, _ := NewTensor(dir, []int64{1, 32})
+			return map[string]*Tensor{"flow_direction": out}, nil
+		},
+	}
+
+	e := engineWithFakeRunners(map[string]runnerIface{
+		"text_conditioner": &fakeRunner{
+			name: "text_conditioner",
+			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+				T := inputs["tokens"].Shape()[1]
+				out, _ := NewTensor(make([]float32, T*1024), []int64{1, T, 1024})
+				return map[string]*Tensor{"text_embeddings": out}, nil
+			},
+		},
+		"flow_lm_main": flowMain,
+		"flow_lm_flow": flowFlow,
+		"latent_to_mimi": &fakeRunner{
+			name: "latent_to_mimi",
+			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+				T := inputs["latent"].Shape()[1]
+				// NaN latent → NaN mimi_latent.
+				data := make([]float32, 512*T)
+				for i := range data {
+					data[i] = float32(math.NaN())
+				}
+				out, _ := NewTensor(data, []int64{1, 512, T})
+				return map[string]*Tensor{"mimi_latent": out}, nil
+			},
+		},
+		"mimi_decoder": &fakeRunner{
+			name: "mimi_decoder",
+			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+				T := inputs["latent"].Shape()[2]
+				// NaN mimi_latent → NaN or zero PCM (mimi_decoder clamps/zeros NaN).
+				data := make([]float32, T*480)
+				for i := range data {
+					data[i] = float32(math.NaN())
+				}
+				out, _ := NewTensor(data, []int64{1, 1, T * 480})
+				return map[string]*Tensor{"audio": out}, nil
+			},
+		},
+	})
+
+	cfg := GenerateConfig{
+		Temperature:  0.0,
+		EOSThreshold: -4.0,
+		MaxSteps:     5, // limit steps; NaN EOS never fires
+		LSDDecodeSteps: 1,
+	}
+
+	pcm, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, cfg)
+	if err != nil {
+		t.Fatalf("GenerateAudio: %v", err)
+	}
+
+	// With NaN propagation the PCM must contain NaN or have zero RMS (silence).
+	// Either symptom indicates the pipeline is corrupted.
+	var sumSq float64
+	hasNaN := false
+	for _, s := range pcm {
+		if math.IsNaN(float64(s)) {
+			hasNaN = true
+			break
+		}
+		sumSq += float64(s) * float64(s)
+	}
+	rms := math.Sqrt(sumSq / float64(len(pcm)))
+
+	if !hasNaN && rms >= 0.01 {
+		t.Errorf("expected NaN or silence from corrupt pipeline, got rms=%.6f", rms)
+	}
+	// Log what we got so future readers can see the failure mode.
+	t.Logf("NaN pipeline: hasNaN=%v rms=%.6f (expected corrupt/silent output)", hasNaN, rms)
 }

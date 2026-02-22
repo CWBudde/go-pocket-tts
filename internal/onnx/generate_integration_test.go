@@ -80,7 +80,21 @@ func TestGenerateAudioIntegration_ProducesPlausibleAudio(t *testing.T) {
 		t.Errorf("too many samples: %d (> %d for 5.0 s)", len(pcm), maxSamples)
 	}
 
+	// Verify every sample is finite (no NaN or Inf — these indicate pipeline corruption,
+	// e.g. missing bos_emb substitution in the ONNX export causing NaN propagation).
+	for i, s := range pcm {
+		if math.IsNaN(float64(s)) {
+			t.Errorf("pcm[%d] is NaN — pipeline produced corrupt output (check ONNX export)", i)
+			break
+		}
+		if math.IsInf(float64(s), 0) {
+			t.Errorf("pcm[%d] is Inf — pipeline produced corrupt output", i)
+			break
+		}
+	}
+
 	// Verify the output is not silence (all zeros) or a constant value.
+	// Use a meaningful RMS floor: real speech sits well above 0.01; silence is 0.
 	var sum, sumSq float64
 	for _, s := range pcm {
 		v := float64(s)
@@ -93,8 +107,17 @@ func TestGenerateAudioIntegration_ProducesPlausibleAudio(t *testing.T) {
 	rms := math.Sqrt(variance)
 	t.Logf("mean=%.6f rms=%.6f", mean, rms)
 
-	if rms < 1e-6 {
-		t.Error("audio appears to be silence or a constant (RMS ≈ 0)")
+	// Threshold of 0.01 rejects silence and gross corruption while passing real
+	// (possibly quiet) speech. The previous threshold of 1e-6 was too lenient —
+	// it would pass a signal of amplitude 0.001 which is effectively silence.
+	if rms < 0.01 {
+		t.Errorf("audio RMS=%.6f is too low — output appears to be silence or corrupt", rms)
+	}
+
+	// EOS must have fired: for short text, generation should stop well before MaxSteps.
+	// 256 frames at 50 fps = 5.12 s; "Hello." should produce < 3 s.
+	if len(pcm) >= maxSamples {
+		t.Errorf("generated %d samples (= maxSamples) — EOS probably never fired; check ONNX export", len(pcm))
 	}
 }
 
