@@ -50,3 +50,27 @@ build:
 # Clean build artifacts
 clean:
     rm -f coverage.out coverage.html pockettts pockettts-tools pockettts-wasm
+
+# Generate a "Hello, world!" WAV file using the native backend.
+# Builds the binary, downloads models/voices if missing, then synthesizes.
+# Set ORT_LIB to override the ONNX Runtime library path.
+generate ORT_LIB="/usr/local/lib/libonnxruntime.so.1.23.0":
+    @echo "==> Building pockettts..."
+    go build -o pockettts ./cmd/pockettts
+    @echo "==> Downloading models (skipped if already present)..."
+    ./pockettts model download
+    @echo "==> Downloading voice embeddings (skipped if already present)..."
+    @for voice in alba marius javert jean fantine cosette eponine azelma; do \
+        if [ ! -f "voices/$voice.safetensors" ]; then \
+            echo "    Downloading $voice..."; \
+            hf download kyutai/pocket-tts-without-voice-cloning "embeddings/$voice.safetensors" --local-dir /tmp/pockettts-voices/ && \
+            cp "/tmp/pockettts-voices/embeddings/$voice.safetensors" "voices/$voice.safetensors"; \
+        fi; \
+    done
+    @echo "==> Synthesizing 'Hello, world!'..."
+    ORT_LIBRARY_PATH="{{ ORT_LIB }}" ./pockettts synth \
+        --backend native \
+        --voice alba \
+        --text "Hello, world!" \
+        --out hello-world.wav
+    @echo "==> Done: hello-world.wav"

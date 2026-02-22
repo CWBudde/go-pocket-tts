@@ -65,7 +65,12 @@ func newSynthCmd() *cobra.Command {
 				if len(ttsArgs) > 0 {
 					return fmt.Errorf("--tts-arg is only supported with --backend cli")
 				}
-				result, err = synthesizeNative(cmd.Context(), cfg, chunks, selectedVoice)
+				var resolvedVoice string
+				resolvedVoice, err = resolveVoiceForNative(selectedVoice)
+				if err != nil {
+					return err
+				}
+				result, err = synthesizeNative(cmd.Context(), cfg, chunks, resolvedVoice)
 			case "cli":
 				var resolvedVoice string
 				resolvedVoice, err = resolveVoiceOrPath(selectedVoice)
@@ -333,6 +338,38 @@ func resolveSynthBackend(flagBackend, cfgBackend string) (string, error) {
 		backend = strings.TrimSpace(cfgBackend)
 	}
 	return config.NormalizeBackend(backend)
+}
+
+// resolveVoiceForNative resolves a voice identifier to an absolute .safetensors
+// path for the native backend. Unlike resolveVoiceOrPath (which falls back to
+// returning the raw voice string for the CLI), an unresolved ID here means no
+// voice file — we return an empty string so Synthesize skips voice conditioning.
+func resolveVoiceForNative(voice string) (string, error) {
+	if strings.TrimSpace(voice) == "" {
+		return "", nil
+	}
+
+	// If it looks like a file path (contains a slash or ends in .safetensors),
+	// treat it as a direct path.
+	if strings.Contains(voice, string(filepath.Separator)) || strings.HasSuffix(voice, ".safetensors") {
+		return voice, nil
+	}
+
+	// Resolve voice ID via the manifest.
+	vm, err := tts.NewVoiceManager(filepath.Join("voices", "manifest.json"))
+	if err != nil {
+		// Manifest missing or unreadable — skip voice conditioning.
+		return "", nil
+	}
+	path, err := vm.ResolvePath(voice)
+	if err != nil {
+		if strings.Contains(err.Error(), "unknown voice id") {
+			// Not in manifest — skip voice conditioning rather than error.
+			return "", nil
+		}
+		return "", fmt.Errorf("resolve --voice %q: %w", voice, err)
+	}
+	return path, nil
 }
 
 func resolveVoiceOrPath(voice string) (string, error) {

@@ -1,8 +1,43 @@
 {
   "voices": [
     {
-      "id": "mimi",
-      "path": "mimi.safetensors",
+      "id": "alba",
+      "path": "alba.safetensors",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "marius",
+      "path": "marius.safetensors",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "javert",
+      "path": "javert.safetensors",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "jean",
+      "path": "jean.safetensors",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "fantine",
+      "path": "fantine.safetensors",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "cosette",
+      "path": "cosette.safetensors",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "eponine",
+      "path": "eponine.safetensors",
+      "license": "CC-BY-4.0"
+    },
+    {
+      "id": "azelma",
+      "path": "azelma.safetensors",
       "license": "CC-BY-4.0"
     }
   ]
