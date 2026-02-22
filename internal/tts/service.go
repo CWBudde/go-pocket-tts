@@ -18,6 +18,7 @@ const maxTokensPerChunk = 50
 type Service struct {
 	engine    *onnx.Engine
 	tokenizer tokenizer.Tokenizer
+	ttsCfg    config.TTSConfig
 }
 
 // NewService initializes the TTS service with ONNX runners loaded from the manifest.
@@ -46,17 +47,18 @@ func NewService(cfg config.Config) (*Service, error) {
 	return &Service{
 		engine:    engine,
 		tokenizer: tok,
+		ttsCfg:    cfg.TTS,
 	}, nil
 }
 
-// defaultGenerateConfig returns generation parameters matching the reference
-// implementation defaults. These will become configurable in Task 18.5.
-func defaultGenerateConfig(framesAfterEOS int) onnx.GenerateConfig {
+// generateConfig builds a GenerateConfig from the stored TTS config,
+// overriding FramesAfterEOS per chunk.
+func (s *Service) generateConfig(framesAfterEOS int) onnx.GenerateConfig {
 	return onnx.GenerateConfig{
-		Temperature:    0.7,
-		EOSThreshold:   -4.0,
-		MaxSteps:       256,
-		LSDDecodeSteps: 1,
+		Temperature:    s.ttsCfg.Temperature,
+		EOSThreshold:   s.ttsCfg.EOSThreshold,
+		MaxSteps:       s.ttsCfg.MaxSteps,
+		LSDDecodeSteps: s.ttsCfg.LSDDecodeSteps,
 		FramesAfterEOS: framesAfterEOS,
 	}
 }
@@ -75,7 +77,7 @@ func (s *Service) Synthesize(input string) ([]float32, error) {
 	var allAudio []float32
 
 	for i, chunk := range chunks {
-		cfg := defaultGenerateConfig(chunk.FramesAfterEOS())
+		cfg := s.generateConfig(chunk.FramesAfterEOS())
 
 		pcm, err := s.engine.GenerateAudio(ctx, chunk.TokenIDs, cfg)
 		if err != nil {

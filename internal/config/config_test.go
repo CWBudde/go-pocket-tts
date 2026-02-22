@@ -375,6 +375,81 @@ func TestLoad_EnvOverride_TokenizerModel(t *testing.T) {
 	}
 }
 
+// --- Generation config fields ---
+
+func TestDefaultConfig_GenerationFields(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.TTS.Temperature != 0.7 {
+		t.Errorf("TTS.Temperature = %v; want 0.7", cfg.TTS.Temperature)
+	}
+	if cfg.TTS.EOSThreshold != -4.0 {
+		t.Errorf("TTS.EOSThreshold = %v; want -4.0", cfg.TTS.EOSThreshold)
+	}
+	if cfg.TTS.MaxSteps != 256 {
+		t.Errorf("TTS.MaxSteps = %d; want 256", cfg.TTS.MaxSteps)
+	}
+	if cfg.TTS.LSDDecodeSteps != 1 {
+		t.Errorf("TTS.LSDDecodeSteps = %d; want 1", cfg.TTS.LSDDecodeSteps)
+	}
+}
+
+func TestRegisterFlags_GenerationFlags(t *testing.T) {
+	defaults := DefaultConfig()
+	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	RegisterFlags(fs, defaults)
+
+	checks := []struct {
+		flag string
+		want string
+	}{
+		{"temperature", "0.7"},
+		{"eos-threshold", "-4"},
+		{"max-steps", "256"},
+		{"lsd-steps", "1"},
+	}
+	for _, c := range checks {
+		f := fs.Lookup(c.flag)
+		if f == nil {
+			t.Errorf("flag %q not registered", c.flag)
+			continue
+		}
+		if f.DefValue != c.want {
+			t.Errorf("flag %q default = %q; want %q", c.flag, f.DefValue, c.want)
+		}
+	}
+}
+
+func TestLoad_FlagOverride_GenerationFields(t *testing.T) {
+	defaults := DefaultConfig()
+	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	RegisterFlags(fs, defaults)
+	if err := fs.Parse([]string{
+		"--temperature=0.5",
+		"--eos-threshold=-2.0",
+		"--max-steps=128",
+		"--lsd-steps=3",
+	}); err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	cfg, err := Load(LoadOptions{Cmd: &fakeBinder{fs: fs}, Defaults: defaults})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.TTS.Temperature != 0.5 {
+		t.Errorf("TTS.Temperature = %v; want 0.5", cfg.TTS.Temperature)
+	}
+	if cfg.TTS.EOSThreshold != -2.0 {
+		t.Errorf("TTS.EOSThreshold = %v; want -2.0", cfg.TTS.EOSThreshold)
+	}
+	if cfg.TTS.MaxSteps != 128 {
+		t.Errorf("TTS.MaxSteps = %d; want 128", cfg.TTS.MaxSteps)
+	}
+	if cfg.TTS.LSDDecodeSteps != 3 {
+		t.Errorf("TTS.LSDDecodeSteps = %d; want 3", cfg.TTS.LSDDecodeSteps)
+	}
+}
+
 func TestLoad_NilCmd(t *testing.T) {
 	// Passing nil Cmd must not panic; Load must return without error.
 	// Viper alias registration interferes with unmarshalling when no flags are bound,
