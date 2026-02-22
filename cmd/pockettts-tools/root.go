@@ -36,6 +36,7 @@ func NewRootCmd() *cobra.Command {
 	config.RegisterFlags(cmd.PersistentFlags(), defaults)
 
 	cmd.AddCommand(newModelCmd())
+	cmd.AddCommand(newVoiceCmd())
 	cmd.AddCommand(newExportVoiceCmd())
 
 	return cmd

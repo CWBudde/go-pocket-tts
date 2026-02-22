@@ -48,8 +48,16 @@ type lockRecord struct {
 var shaHexPattern = regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
 
 func Download(opts DownloadOptions) error {
+	manifest, err := PinnedManifest(opts.Repo)
+	if err != nil {
+		return err
+	}
+	return DownloadManifest(opts, manifest)
+}
+
+func DownloadManifest(opts DownloadOptions, manifest Manifest) error {
 	if opts.Repo == "" {
-		return fmt.Errorf("repo is required")
+		opts.Repo = manifest.Repo
 	}
 	if opts.OutDir == "" {
 		return fmt.Errorf("out dir is required")
@@ -59,11 +67,6 @@ func Download(opts DownloadOptions) error {
 	}
 	if opts.Stderr == nil {
 		opts.Stderr = io.Discard
-	}
-
-	manifest, err := PinnedManifest(opts.Repo)
-	if err != nil {
-		return err
 	}
 
 	if err := os.MkdirAll(opts.OutDir, 0o755); err != nil {
@@ -86,6 +89,7 @@ func Download(opts DownloadOptions) error {
 			if lr, ok := lock.Files[f.Filename]; ok && lr.Revision == f.Revision && isSHA256Hex(lr.SHA256) {
 				expected = strings.ToLower(lr.SHA256)
 			} else {
+				var err error
 				expected, err = resolveChecksumFromMetadata(client, manifest.Repo, f, opts.HFToken)
 				if err != nil {
 					return err
