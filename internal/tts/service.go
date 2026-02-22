@@ -3,9 +3,11 @@ package tts
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/example/go-pocket-tts/internal/config"
 	"github.com/example/go-pocket-tts/internal/onnx"
+	"github.com/example/go-pocket-tts/internal/safetensors"
 	"github.com/example/go-pocket-tts/internal/text"
 	"github.com/example/go-pocket-tts/internal/tokenizer"
 )
@@ -67,10 +69,27 @@ func (s *Service) generateConfig(framesAfterEOS int) onnx.GenerateConfig {
 // Text is preprocessed and split into ≤50-token chunks per the reference
 // implementation. Each chunk is generated independently and the resulting
 // PCM audio is concatenated.
-func (s *Service) Synthesize(input string) ([]float32, error) {
+//
+// If voicePath is non-empty, it should point to a .safetensors file containing
+// a voice embedding. The embedding is loaded and prepended to the text
+// conditioning for each chunk, enabling voice cloning.
+func (s *Service) Synthesize(input string, voicePath string) ([]float32, error) {
 	chunks, err := text.PrepareChunks(input, s.tokenizer, maxTokensPerChunk)
 	if err != nil {
 		return nil, fmt.Errorf("no tokens produced from input: %w", err)
+	}
+
+	// Load voice embedding if a path was provided.
+	var voiceEmb *onnx.Tensor
+	if strings.TrimSpace(voicePath) != "" {
+		data, shape, err := safetensors.LoadVoiceEmbedding(voicePath)
+		if err != nil {
+			return nil, fmt.Errorf("load voice embedding: %w", err)
+		}
+		voiceEmb, err = onnx.NewTensor(data, shape)
+		if err != nil {
+			return nil, fmt.Errorf("build voice tensor: %w", err)
+		}
 	}
 
 	ctx := context.Background()
@@ -78,6 +97,7 @@ func (s *Service) Synthesize(input string) ([]float32, error) {
 
 	for i, chunk := range chunks {
 		cfg := s.generateConfig(chunk.FramesAfterEOS())
+		cfg.VoiceEmbedding = voiceEmb
 
 		pcm, err := s.engine.GenerateAudio(ctx, chunk.TokenIDs, cfg)
 		if err != nil {

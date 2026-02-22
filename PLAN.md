@@ -212,16 +212,17 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
   - [x] `GenerateAudio` prepends voice embedding to text_embeddings before AR loop when `VoiceEmbedding` is set
   - [x] Unit tests: ConcatTensorsDim1 (basic, dim mismatch, batch mismatch, not-3D), GenerateAudio with/without voice embedding — `internal/onnx/voice_inject_test.go`
 
-- [ ] Task 19.3: **Wire voice into `tts.Service` and CLI**
-  - [ ] `Service.Synthesize()` resolves voice ID → path via `VoiceManager`, passes to `Engine.Infer`
-  - [ ] `synth --voice <id>` and `serve` `/tts?voice=<id>` pass voice to native backend
-  - [ ] Graceful fallback: if no voice specified, generate without conditioning prefix
+- [x] Task 19.3: **Wire voice into `tts.Service` and CLI**
+  - [x] `Service.Synthesize(input, voicePath)` loads `.safetensors` and passes `VoiceEmbedding` to `GenerateConfig` — `internal/tts/service.go`
+  - [x] `synth --voice <id>` passes resolved voice path to `synthesizeNative()` → `Service.Synthesize` — `cmd/pockettts/synth.go`
+  - [x] `serve` `/tts?voice=<id>` passes voice through `nativeSynthesizer.Synthesize` — `internal/server/server.go`
+  - [x] Graceful fallback: empty voicePath = no voice conditioning (no safetensors loaded)
 
-- [ ] Task 19.4: **Tests**
-  - [ ] Unit test: safetensors reader with synthetic test data (known shape + values)
-  - [ ] Unit test: verify voice embedding is correctly prepended to text_embeddings
-  - [ ] Integration test (`integration` tag): generate with and without voice, verify outputs differ
-  - [ ] CLI: `pockettts synth --backend native --voice alba --text "Hello" --out /tmp/voice.wav`
+- [x] Task 19.4: **Tests**
+  - [x] Unit test: safetensors reader with synthetic test data (known shape + values) — `TestLoadVoiceEmbedding_DataValuesPreserved`, `TestLoadFirstTensor_MetadataKeyIgnored` in `internal/safetensors/reader_test.go`
+  - [x] Unit test: verify voice embedding is correctly prepended to text_embeddings — `TestGenerateAudio_WithVoiceEmbedding_PrependsToTextEmb` (19.2, `voice_inject_test.go`) + `TestSynthesize_BadSafetensorsPath_ReturnsError`, `TestSynthesize_InvalidSafetensorsFile_ReturnsError`, `TestSynthesize_EmptyVoicePath_SkipsEmbeddingLoad` in `internal/tts/service_test.go`
+  - [x] Integration test (`integration` tag): generate with and without voice, verify outputs differ — `TestGenerateAudioIntegration_VoiceConditioningDiffersFromUnvoiced` in `internal/onnx/generate_integration_test.go`
+  - [ ] CLI: `pockettts synth --backend native --voice alba --text "Hello" --out /tmp/voice.wav` (manual verification)
 
 ---
 
