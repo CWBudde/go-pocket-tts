@@ -22,6 +22,7 @@
 
       body {
         margin: 0;
+        min-height: 100vh;
         font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
         background:
           radial-gradient(1000px 500px at 90% -10%, #17305a55, transparent),
@@ -157,8 +158,8 @@
           <button id="load-model" type="button">Load Model</button>
           <label class="muted" for="engine">Engine</label>
           <select id="engine">
-            <option value="js">JavaScript</option>
             <option value="go">Go WASM</option>
+            <option value="js">JavaScript</option>
           </select>
           <label class="muted" for="voice">Voice</label>
           <select id="voice">
