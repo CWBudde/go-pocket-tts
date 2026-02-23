@@ -117,6 +117,7 @@ jobs:
               --models-dir models \
               --out-dir models/onnx \
               --variant "${{ github.event.inputs.model-variant || 'b6369a24' }}" \
+              --max-seq 512 \
               ${EXTRA_FLAGS}
           fi
 

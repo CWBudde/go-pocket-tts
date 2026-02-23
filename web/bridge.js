@@ -1,6 +1,38 @@
 import * as ort from "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.all.min.mjs";
 import { parseAndValidateFeedsJSON, validateTensorPayload } from "./bridge_contract.js";
 
+async function fetchWithProgress(url, onProgress) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`fetch ${url} failed (${res.status})`);
+
+  const contentLength = parseInt(res.headers.get("content-length") || "0", 10);
+  if (!res.body || !contentLength) {
+    const buf = await res.arrayBuffer();
+    onProgress(buf.byteLength, buf.byteLength);
+    return buf;
+  }
+
+  const reader = res.body.getReader();
+  const chunks = [];
+  let received = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.length;
+    onProgress(received, contentLength);
+  }
+
+  const buf = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buf.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return buf.buffer;
+}
+
 function ortTensorFromPayload(payload) {
   const shape = payload.shape || [];
   const dtype = (payload.dtype || "").toLowerCase();
@@ -75,15 +107,25 @@ export class ONNXBridge {
     return graph;
   }
 
-  async getSession(graphName) {
+  async getSession(graphName, onProgress) {
     if (this.sessionCache.has(graphName)) {
       return this.sessionCache.get(graphName);
     }
 
     const graph = await this.getGraph(graphName);
-    const session = await ort.InferenceSession.create(`./models/${graph.filename}`, {
-      executionProviders: ["wasm"],
-    });
+    const url = `./models/${graph.filename}`;
+
+    let session;
+    if (onProgress) {
+      const buf = await fetchWithProgress(url, onProgress);
+      session = await ort.InferenceSession.create(buf, {
+        executionProviders: ["wasm"],
+      });
+    } else {
+      session = await ort.InferenceSession.create(url, {
+        executionProviders: ["wasm"],
+      });
+    }
 
     const entry = { graph, session };
     this.sessionCache.set(graphName, entry);

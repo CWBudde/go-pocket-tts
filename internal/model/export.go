@@ -14,6 +14,7 @@ type ExportOptions struct {
 	Int8      bool
 	Variant   string
 	PythonBin string
+	MaxSeq    int // KV-cache max sequence length (0 = script default 256; use 512+ for voice conditioning)
 	Stdout    io.Writer
 	Stderr    io.Writer
 }
@@ -51,6 +52,9 @@ func ExportONNX(opts ExportOptions) error {
 	args := []string{scriptPath, "--models-dir", opts.ModelsDir, "--out-dir", opts.OutDir, "--variant", opts.Variant}
 	if opts.Int8 {
 		args = append(args, "--int8")
+	}
+	if opts.MaxSeq > 0 {
+		args = append(args, "--max-seq", fmt.Sprintf("%d", opts.MaxSeq))
 	}
 
 	cmd := exec.Command(pythonBin, args...)

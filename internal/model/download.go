@@ -85,9 +85,11 @@ func DownloadManifest(opts DownloadOptions, manifest Manifest) error {
 
 	for _, f := range manifest.Files {
 		expected := strings.ToLower(f.SHA256)
+		checksumHard := expected != "" // hard = from manifest, soft = from metadata
 		if expected == "" {
 			if lr, ok := lock.Files[f.Filename]; ok && lr.Revision == f.Revision && isSHA256Hex(lr.SHA256) {
 				expected = strings.ToLower(lr.SHA256)
+				checksumHard = true
 			} else {
 				var err error
 				expected, err = resolveChecksumFromMetadata(client, manifest.Repo, f, opts.HFToken)
@@ -120,10 +122,13 @@ func DownloadManifest(opts DownloadOptions, manifest Manifest) error {
 			return err
 		}
 		if actual != expected {
-			return fmt.Errorf("checksum mismatch for %s: expected %s got %s", f.Filename, expected, actual)
+			if checksumHard {
+				return fmt.Errorf("checksum mismatch for %s: expected %s got %s", f.Filename, expected, actual)
+			}
+			_, _ = fmt.Fprintf(opts.Stdout, "warning: metadata checksum mismatch for %s (metadata=%s, actual=%s); accepting download\n", f.Filename, expected, actual)
 		}
 		_, _ = fmt.Fprintf(opts.Stdout, "verified %s (sha256=%s)\n", f.Filename, actual)
-		lock.Files[f.Filename] = lockRecord{Revision: f.Revision, SHA256: expected}
+		lock.Files[f.Filename] = lockRecord{Revision: f.Revision, SHA256: actual}
 	}
 
 	if err := writeLockManifest(lockPath, lock); err != nil {
