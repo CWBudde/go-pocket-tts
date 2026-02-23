@@ -71,7 +71,7 @@ func TestResolveSynthBackend(t *testing.T) {
 	}{
 		{name: "default native-onnx", want: "native-onnx"},
 		{name: "config cli", cfg: "cli", want: "cli"},
-		{name: "flag native alias overrides config", flag: "native", cfg: "cli", want: "native-safetensors"},
+		{name: "flag native alias overrides config", flag: "native", cfg: "cli", want: "native-onnx"},
 		{name: "flag native-onnx overrides config", flag: "native-onnx", cfg: "cli", want: "native-onnx"},
 		{name: "safetensors backend", flag: "native-safetensors", want: "native-safetensors"},
 		{name: "invalid", flag: "python", wantErr: true},

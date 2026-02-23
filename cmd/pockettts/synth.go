@@ -121,7 +121,7 @@ func newSynthCmd() *cobra.Command {
 		&backend,
 		"backend",
 		"",
-		"Synthesis backend override (native-onnx|native-safetensors|cli; native is alias for native-safetensors)",
+		"Synthesis backend override (native-onnx|native-safetensors|cli; native is alias for native-onnx)",
 	)
 	cmd.Flags().StringVar(&voice, "voice", "", "Voice ID from voices/manifest.json (overrides config)")
 	cmd.Flags().BoolVar(&chunk, "chunk", false, "Split text into sentence chunks and synthesize sequentially")

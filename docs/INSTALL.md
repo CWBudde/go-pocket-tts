@@ -52,7 +52,7 @@ Only needed for export tooling commands:
   - Python `>=3.10,<3.15`
   - importable modules: `pocket_tts`, `torch`, `onnx`
   - optional for `--int8`: `onnxruntime`
-To force compatibility mode that uses the Python CLI for synthesis:
+    To force compatibility mode that uses the Python CLI for synthesis:
 
 ```bash
 pockettts synth --backend cli --text "Hello" --out out.wav
