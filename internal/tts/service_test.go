@@ -1,6 +1,10 @@
 package tts
 
 import (
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,7 +89,7 @@ func newTestService(t *testing.T) *Service {
 		}
 	}
 	return &Service{
-		engine:    engine,
+		runtime:   newONNXRuntime(engine),
 		tokenizer: tok,
 	}
 }
@@ -156,12 +160,44 @@ func (f fakeTokenizer) Encode(_ string) ([]int64, error) {
 	return []int64{1, 2, 3}, nil
 }
 
+type wordCountTokenizer struct{}
+
+func (w wordCountTokenizer) Encode(text string) ([]int64, error) {
+	words := strings.Fields(text)
+	out := make([]int64, len(words))
+	for i := range words {
+		out[i] = int64(i + 1)
+	}
+	return out, nil
+}
+
+type captureRuntime struct {
+	calls int
+
+	lastTokens []int64
+	lastCfg    RuntimeGenerateConfig
+
+	audio []float32
+}
+
+func (c *captureRuntime) GenerateAudio(_ context.Context, tokens []int64, cfg RuntimeGenerateConfig) ([]float32, error) {
+	c.calls++
+	c.lastTokens = append([]int64(nil), tokens...)
+	c.lastCfg = cfg
+	if len(c.audio) == 0 {
+		return []float32{0.1}, nil
+	}
+	return append([]float32(nil), c.audio...), nil
+}
+
+func (c *captureRuntime) Close() {}
+
 // newVoiceTestService builds a Service with a fake tokenizer and no real engine.
 // This is sufficient for testing the voice loading error paths in Synthesize,
 // which occur before the engine is invoked.
 func newVoiceTestService() *Service {
 	return &Service{
-		engine:    nil,
+		runtime:   nil,
 		tokenizer: fakeTokenizer{},
 	}
 }
@@ -222,5 +258,123 @@ func TestSynthesize_EmptyVoicePath_SkipsEmbeddingLoad(t *testing.T) {
 	// NOT a safetensors error.
 	if err != nil && strings.Contains(err.Error(), "load voice embedding") {
 		t.Errorf("whitespace voice path should not attempt safetensors load, got: %v", err)
+	}
+}
+
+func TestSynthesize_ReusesGenerationConfig(t *testing.T) {
+	rt := &captureRuntime{audio: []float32{0.1, 0.2}}
+	svc := &Service{
+		runtime:   rt,
+		tokenizer: fakeTokenizer{},
+		ttsCfg: config.TTSConfig{
+			Temperature:    0.9,
+			EOSThreshold:   -3.5,
+			MaxSteps:       123,
+			LSDDecodeSteps: 5,
+		},
+	}
+
+	got, err := svc.Synthesize("hello world", "")
+	if err != nil {
+		t.Fatalf("Synthesize returned error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("Synthesize samples len = %d; want 2", len(got))
+	}
+	if rt.calls != 1 {
+		t.Fatalf("runtime calls = %d; want 1", rt.calls)
+	}
+	if rt.lastCfg.Temperature != 0.9 ||
+		rt.lastCfg.EOSThreshold != -3.5 ||
+		rt.lastCfg.MaxSteps != 123 ||
+		rt.lastCfg.LSDDecodeSteps != 5 {
+		t.Fatalf("runtime config mismatch: %+v", rt.lastCfg)
+	}
+	if rt.lastCfg.VoiceEmbedding != nil {
+		t.Fatalf("VoiceEmbedding = %+v; want nil", rt.lastCfg.VoiceEmbedding)
+	}
+}
+
+func TestSynthesize_UsesSentenceChunkingPipeline(t *testing.T) {
+	rt := &captureRuntime{audio: []float32{0.2}}
+	svc := &Service{
+		runtime:   rt,
+		tokenizer: wordCountTokenizer{},
+		ttsCfg:    config.DefaultConfig().TTS,
+	}
+
+	longSentence := strings.Repeat("word ", 30)
+	input := longSentence + ". " + longSentence + "."
+
+	_, err := svc.Synthesize(input, "")
+	if err != nil {
+		t.Fatalf("Synthesize returned error: %v", err)
+	}
+	if rt.calls < 2 {
+		t.Fatalf("runtime calls = %d; want at least 2 chunks", rt.calls)
+	}
+}
+
+func TestSynthesize_ReusesVoiceEmbeddingIngestion(t *testing.T) {
+	rt := &captureRuntime{audio: []float32{0.3}}
+	svc := &Service{
+		runtime:   rt,
+		tokenizer: fakeTokenizer{},
+		ttsCfg:    config.DefaultConfig().TTS,
+	}
+
+	voicePath := filepath.Join(t.TempDir(), "voice.safetensors")
+	writeVoiceSafetensors(t, voicePath, []int64{2, 3}, []float32{1, 2, 3, 4, 5, 6})
+
+	_, err := svc.Synthesize("hello world", voicePath)
+	if err != nil {
+		t.Fatalf("Synthesize returned error: %v", err)
+	}
+	if rt.calls != 1 {
+		t.Fatalf("runtime calls = %d; want 1", rt.calls)
+	}
+	if rt.lastCfg.VoiceEmbedding == nil {
+		t.Fatal("VoiceEmbedding = nil; want non-nil")
+	}
+	gotShape := rt.lastCfg.VoiceEmbedding.Shape
+	wantShape := []int64{1, 2, 3}
+	if len(gotShape) != len(wantShape) {
+		t.Fatalf("VoiceEmbedding shape rank = %d; want %d", len(gotShape), len(wantShape))
+	}
+	for i := range wantShape {
+		if gotShape[i] != wantShape[i] {
+			t.Fatalf("VoiceEmbedding shape[%d] = %d; want %d", i, gotShape[i], wantShape[i])
+		}
+	}
+	if len(rt.lastCfg.VoiceEmbedding.Data) != 6 {
+		t.Fatalf("VoiceEmbedding data len = %d; want 6", len(rt.lastCfg.VoiceEmbedding.Data))
+	}
+}
+
+func writeVoiceSafetensors(t *testing.T, path string, shape []int64, values []float32) {
+	t.Helper()
+
+	header := map[string]any{
+		"voice": map[string]any{
+			"dtype":        "F32",
+			"shape":        shape,
+			"data_offsets": []int{0, len(values) * 4},
+		},
+	}
+	hdrJSON, err := json.Marshal(header)
+	if err != nil {
+		t.Fatalf("marshal safetensors header: %v", err)
+	}
+
+	buf := make([]byte, 8+len(hdrJSON)+len(values)*4)
+	binary.LittleEndian.PutUint64(buf[:8], uint64(len(hdrJSON)))
+	copy(buf[8:8+len(hdrJSON)], hdrJSON)
+	dataOff := 8 + len(hdrJSON)
+	for i, v := range values {
+		binary.LittleEndian.PutUint32(buf[dataOff+i*4:], math.Float32bits(v))
+	}
+
+	if err := os.WriteFile(path, buf, 0o644); err != nil {
+		t.Fatalf("write safetensors file: %v", err)
 	}
 }

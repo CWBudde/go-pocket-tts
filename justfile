@@ -59,6 +59,19 @@ generate ORT_LIB="/usr/local/lib/libonnxruntime.so.1.23.0":
     go build -o pockettts ./cmd/pockettts
     @echo "==> Downloading models (skipped if already present)..."
     ./pockettts model download
+    @echo "==> Ensuring ONNX graphs are available..."
+    @if [ ! -f "models/onnx/manifest.json" ] || \
+        [ ! -f "models/onnx/text_conditioner.onnx" ] || \
+        [ ! -f "models/onnx/flow_lm_main.onnx" ] || \
+        [ ! -f "models/onnx/flow_lm_flow.onnx" ] || \
+        [ ! -f "models/onnx/latent_to_mimi.onnx" ] || \
+        [ ! -f "models/onnx/mimi_decoder.onnx" ]; then \
+        echo "    ONNX files missing; exporting from safetensors checkpoint..."; \
+        go build -o pockettts-tools ./cmd/pockettts-tools; \
+        ./pockettts-tools model export --models-dir models --out-dir models/onnx --variant b6369a24 --max-seq 512; \
+    else \
+        echo "    ONNX files already present; skipping export."; \
+    fi
     @echo "==> Downloading voice embeddings (skipped if already present)..."
     @for voice in alba marius javert jean fantine cosette eponine azelma; do \
         if [ ! -f "voices/$voice.safetensors" ]; then \
