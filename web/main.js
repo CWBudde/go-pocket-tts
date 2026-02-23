@@ -522,6 +522,8 @@ async function handleLoadModel() {
   try {
     loadModelBtn.disabled = true;
     modelState.textContent = "Model: loading...";
+    synthProgress.value = 0;
+    synthProgressText.textContent = "0% - loading manifest...";
 
     if (!state.manifestReady) {
       await detectManifest();
@@ -532,7 +534,16 @@ async function handleLoadModel() {
     }
 
     const toPreload = [...requiredGraphs, ...optionalGraphs.filter((name) => graphExists(name))];
-    await onnxBridge.preloadGraphs(toPreload);
+    for (let i = 0; i < toPreload.length; i++) {
+      const name = toPreload[i];
+      const percent = Math.round(((i) / toPreload.length) * 100);
+      synthProgress.value = percent;
+      synthProgressText.textContent = `${percent}% - loading ${name} (${i + 1}/${toPreload.length})`;
+      await onnxBridge.getSession(name);
+    }
+
+    synthProgress.value = 100;
+    synthProgressText.textContent = "100% - all graphs loaded";
 
     state.modelLoaded = true;
     renderModelState();
@@ -544,6 +555,7 @@ async function handleLoadModel() {
     renderModelState();
     setSynthesizeEnabled();
     renderStartupInfo();
+    synthProgressText.textContent = `Load failed: ${formatError(err)}`;
     log.textContent = `Load model failed: ${formatError(err)}`;
   } finally {
     loadModelBtn.disabled = false;

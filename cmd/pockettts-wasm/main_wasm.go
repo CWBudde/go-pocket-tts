@@ -452,7 +452,13 @@ func awaitPromiseString(promise js.Value) (string, error) {
 	catch := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		msg := "promise rejected"
 		if len(args) > 0 {
-			msg = args[0].String()
+			v := args[0]
+			// JS Error objects have a .message property; .String() gives "[object Object]".
+			if m := v.Get("message"); !m.IsUndefined() && !m.IsNull() {
+				msg = m.String()
+			} else {
+				msg = v.Call("toString").String()
+			}
 		}
 		ch <- result{err: fmt.Errorf(msg)}
 		return nil
