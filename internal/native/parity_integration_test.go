@@ -10,11 +10,10 @@ import (
 	"github.com/example/go-pocket-tts/internal/onnx"
 	"github.com/example/go-pocket-tts/internal/runtime/ops"
 	"github.com/example/go-pocket-tts/internal/runtime/tensor"
-	"github.com/example/go-pocket-tts/internal/testutil"
 )
 
 func TestParity_FlowDirection_VsONNX(t *testing.T) {
-	testutil.RequireONNXRuntime(t)
+	requireONNXRuntime(t)
 	ckpt := requireCheckpoint(t)
 
 	m, err := LoadModelFromSafetensors(ckpt, DefaultConfig())
@@ -95,7 +94,7 @@ func TestParity_FlowDirection_VsONNX(t *testing.T) {
 }
 
 func TestParity_LatentToMimi_VsONNX(t *testing.T) {
-	testutil.RequireONNXRuntime(t)
+	requireONNXRuntime(t)
 	ckpt := requireCheckpoint(t)
 
 	m, err := LoadModelFromSafetensors(ckpt, DefaultConfig())
@@ -176,4 +175,27 @@ func requireONNXManifest(t *testing.T) string {
 	}
 	t.Skipf("onnx manifest not available in expected locations: %v", candidates)
 	return ""
+}
+
+func requireONNXRuntime(t *testing.T) {
+	t.Helper()
+	for _, env := range []string{"ORT_LIBRARY_PATH", "POCKETTTS_ORT_LIB"} {
+		if p := os.Getenv(env); p != "" {
+			if _, err := os.Stat(p); err == nil {
+				return
+			}
+			t.Skipf("ONNX Runtime library not found at %s=%q", env, p)
+		}
+	}
+	candidates := []string{
+		"/usr/lib/libonnxruntime.so",
+		"/usr/local/lib/libonnxruntime.so",
+		"/usr/lib/x86_64-linux-gnu/libonnxruntime.so",
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return
+		}
+	}
+	t.Skip("ONNX Runtime shared library not found; set ORT_LIBRARY_PATH or POCKETTTS_ORT_LIB")
 }

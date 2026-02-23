@@ -119,7 +119,7 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.String(
 		"backend",
 		defaults.TTS.Backend,
-		"Synthesis backend (native-onnx|native-safetensors|cli; native is alias for native-onnx)",
+		"Synthesis backend (native-onnx|native-safetensors|cli; native is alias for native-safetensors)",
 	)
 	fs.String("tts-voice", defaults.TTS.Voice, "Voice name or .safetensors file path")
 	fs.String("tts-cli-path", defaults.TTS.CLIPath, "Path to pocket-tts executable")

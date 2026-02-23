@@ -4,7 +4,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -116,16 +117,27 @@ func TestRuntimeDeps_InvalidBackend(t *testing.T) {
 	}
 }
 
-func TestRuntimeDeps_NativeSafetensorsNotImplemented(t *testing.T) {
+func TestRuntimeDeps_NativeSafetensors(t *testing.T) {
 	cfg := config.DefaultConfig()
+	cfg.Paths.ModelPath = filepath.Join("..", "..", "models", "tts_b6369a24.safetensors")
+	cfg.Paths.TokenizerModel = filepath.Join("..", "..", "models", "tokenizer.model")
+	if _, err := os.Stat(cfg.Paths.ModelPath); err != nil {
+		t.Skipf("native safetensors model not available: %v", err)
+	}
+	if _, err := os.Stat(cfg.Paths.TokenizerModel); err != nil {
+		t.Skipf("tokenizer model not available: %v", err)
+	}
 	s := New(cfg, nil)
 
-	_, _, _, err := s.runtimeDeps(config.BackendNativeSafetensors)
-	if err == nil {
-		t.Fatal("runtimeDeps(native-safetensors) = nil; want error")
+	synth, voices, workers, err := s.runtimeDeps(config.BackendNativeSafetensors)
+	if err != nil {
+		t.Fatalf("runtimeDeps(native-safetensors) error = %v", err)
 	}
-	if got := err.Error(); !strings.Contains(got, "not implemented yet") {
-		t.Fatalf("runtimeDeps(native-safetensors) error = %q; want not implemented", got)
+	if synth == nil || voices == nil {
+		t.Fatalf("runtimeDeps(native-safetensors) returned nil deps")
+	}
+	if workers != 0 {
+		t.Fatalf("runtimeDeps(native-safetensors) workers = %d; want 0", workers)
 	}
 }
 

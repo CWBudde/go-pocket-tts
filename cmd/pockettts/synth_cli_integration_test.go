@@ -187,7 +187,7 @@ func TestSynthNative_ShortText(t *testing.T) {
 	root := NewRootCmd()
 	root.SetArgs([]string{
 		"synth",
-		"--backend", "native",
+		"--backend", "native-onnx",
 		"--text", "Hello world.",
 		"--out", out,
 	})
@@ -211,7 +211,7 @@ func TestSynthNative_Chunked(t *testing.T) {
 		t.Helper()
 		args := []string{
 			"synth",
-			"--backend", "native",
+			"--backend", "native-onnx",
 			"--text", text,
 			"--out", out,
 		}
@@ -239,6 +239,29 @@ func TestSynthNative_Chunked(t *testing.T) {
 	if chunkedSamples <= singleSamples {
 		t.Errorf("native chunked sample count (%d) expected to exceed single-sentence count (%d)", chunkedSamples, singleSamples)
 	}
+}
+
+// TestSynthNativeSafetensors_ShortText synthesizes via the safetensors-native
+// backend and asserts a valid WAV at 24 kHz.
+func TestSynthNativeSafetensors_ShortText(t *testing.T) {
+	modelPath, tokPath := requireNativeSafetensorsAssets(t)
+	out := filepath.Join(t.TempDir(), "native_safetensors.wav")
+
+	root := NewRootCmd()
+	root.SetArgs([]string{
+		"--paths-model-path", modelPath,
+		"--paths-tokenizer-model", tokPath,
+		"synth",
+		"--backend", "native-safetensors",
+		"--text", "Hello from safetensors native backend.",
+		"--out", out,
+	})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("synth --backend native-safetensors failed: %v", err)
+	}
+
+	data := readFile(t, out)
+	testutil.AssertValidWAV(t, data)
 }
 
 // synthTestVoice returns the voice to use for CLI integration tests.
@@ -288,4 +311,32 @@ func wavSampleCount(t testing.TB, data []byte) int {
 	}
 	t.Fatal("WAV: data chunk not found")
 	return 0
+}
+
+func requireNativeSafetensorsAssets(t testing.TB) (modelPath, tokPath string) {
+	t.Helper()
+	modelCandidates := []string{
+		filepath.Join("models", "tts_b6369a24.safetensors"),
+		filepath.Join("..", "..", "models", "tts_b6369a24.safetensors"),
+	}
+	tokCandidates := []string{
+		filepath.Join("models", "tokenizer.model"),
+		filepath.Join("..", "..", "models", "tokenizer.model"),
+	}
+	for _, p := range modelCandidates {
+		if _, err := os.Stat(p); err == nil {
+			modelPath = p
+			break
+		}
+	}
+	for _, p := range tokCandidates {
+		if _, err := os.Stat(p); err == nil {
+			tokPath = p
+			break
+		}
+	}
+	if modelPath == "" || tokPath == "" {
+		t.Skipf("native safetensors assets unavailable (model=%q tokenizer=%q)", modelPath, tokPath)
+	}
+	return modelPath, tokPath
 }

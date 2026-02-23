@@ -40,6 +40,12 @@ type FlowLM struct {
 	cfg FlowLMConfig
 }
 
+// FlowLMState stores per-request transformer cache state for incremental AR
+// generation, matching xn-style prompt+step execution.
+type FlowLMState struct {
+	transformer *flowTransformerState
+}
+
 func LoadFlowLM(vb *VarBuilder, cfg FlowLMConfig) (*FlowLM, error) {
 	flow := vb.Path("flow_lm")
 	if cfg.DModel == 0 {
@@ -99,11 +105,48 @@ func LoadFlowLM(vb *VarBuilder, cfg FlowLMConfig) (*FlowLM, error) {
 	}, nil
 }
 
+func (f *FlowLM) InitState() (*FlowLMState, error) {
+	if f == nil || f.transformer == nil {
+		return nil, fmt.Errorf("native: flow_lm transformer unavailable")
+	}
+	tfState, err := f.transformer.initState()
+	if err != nil {
+		return nil, err
+	}
+	return &FlowLMState{transformer: tfState}, nil
+}
+
 func (f *FlowLM) TextEmbeddings(tokenIDs []int64) (*tensor.Tensor, error) {
 	if f == nil || f.conditioner == nil {
 		return nil, fmt.Errorf("native: flow_lm not initialized")
 	}
 	return f.conditioner.EmbedTokens(tokenIDs)
+}
+
+func (f *FlowLM) PromptText(state *FlowLMState, textEmbeddings *tensor.Tensor) error {
+	if f == nil || f.transformer == nil {
+		return fmt.Errorf("native: flow_lm transformer unavailable")
+	}
+	if state == nil || state.transformer == nil {
+		return fmt.Errorf("native: flow_lm state unavailable")
+	}
+	if textEmbeddings == nil {
+		return fmt.Errorf("native: prompt text embeddings are nil")
+	}
+	shape := textEmbeddings.Shape()
+	if len(shape) != 3 {
+		return fmt.Errorf("native: prompt text embeddings must be [B,T,D], got %v", shape)
+	}
+	if shape[2] != f.cfg.DModel {
+		return fmt.Errorf("native: prompt text embedding width must be %d, got %d", f.cfg.DModel, shape[2])
+	}
+	if shape[1] == 0 {
+		return nil
+	}
+	if _, err := f.transformer.prefill(textEmbeddings, state.transformer); err != nil {
+		return err
+	}
+	return nil
 }
 
 // FlowMain runs the flow_lm_main equivalent and returns:
@@ -142,6 +185,60 @@ func (f *FlowLM) FlowMain(sequence, textEmbeddings *tensor.Tensor) (*tensor.Tens
 		return nil, nil, err
 	}
 	return last, eos, nil
+}
+
+// SampleNextLatentStateful runs a single incremental generation step with
+// cached transformer state. The caller should initialize and prompt state once
+// via InitState + PromptText, then call this per frame.
+func (f *FlowLM) SampleNextLatentStateful(state *FlowLMState, sequenceFrame *tensor.Tensor, decodeSteps int, eosThreshold, temperature float32, rng *rand.Rand) (*tensor.Tensor, bool, error) {
+	if f == nil {
+		return nil, false, fmt.Errorf("native: flow_lm is nil")
+	}
+	if state == nil || state.transformer == nil {
+		return nil, false, fmt.Errorf("native: flow_lm state unavailable")
+	}
+	seq, err := replaceNaNWithVector(sequenceFrame, f.bosEmb)
+	if err != nil {
+		return nil, false, err
+	}
+	in, err := f.inputProj.Forward(seq)
+	if err != nil {
+		return nil, false, err
+	}
+	x, err := f.transformer.step(in, state.transformer)
+	if err != nil {
+		return nil, false, err
+	}
+	x, err = f.outNorm.Forward(x)
+	if err != nil {
+		return nil, false, err
+	}
+	last, err := lastToken(x)
+	if err != nil {
+		return nil, false, err
+	}
+	eos, err := f.outEOS.Forward(last)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(eos.RawData()) < 1 {
+		return nil, false, fmt.Errorf("native: eos logits tensor is empty")
+	}
+	isEOS := eos.RawData()[0] > eosThreshold
+
+	noise, err := makeGaussianNoise(last.Shape()[0], f.cfg.LDim, temperature, rng)
+	if err != nil {
+		return nil, false, err
+	}
+	decoded, err := f.LSDDecode(last, noise, decodeSteps)
+	if err != nil {
+		return nil, false, err
+	}
+	next, err := decoded.Reshape([]int64{decoded.Shape()[0], 1, decoded.Shape()[1]})
+	if err != nil {
+		return nil, false, err
+	}
+	return next, isEOS, nil
 }
 
 // FlowDirection runs flow_lm_flow equivalent.

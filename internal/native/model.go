@@ -87,6 +87,27 @@ func (m *Model) SampleNextLatent(sequence, textEmbeddings *tensor.Tensor, decode
 	return m.flow.SampleNextLatent(sequence, textEmbeddings, decodeSteps, eosThreshold, temperature, rng)
 }
 
+func (m *Model) NewFlowState() (*FlowLMState, error) {
+	if m == nil || m.flow == nil {
+		return nil, fmt.Errorf("native: model flow_lm unavailable")
+	}
+	return m.flow.InitState()
+}
+
+func (m *Model) PromptFlow(state *FlowLMState, textEmbeddings *tensor.Tensor) error {
+	if m == nil || m.flow == nil {
+		return fmt.Errorf("native: model flow_lm unavailable")
+	}
+	return m.flow.PromptText(state, textEmbeddings)
+}
+
+func (m *Model) SampleNextLatentStateful(state *FlowLMState, sequenceFrame *tensor.Tensor, decodeSteps int, eosThreshold, temperature float32, rng *rand.Rand) (*tensor.Tensor, bool, error) {
+	if m == nil || m.flow == nil {
+		return nil, false, fmt.Errorf("native: model flow_lm unavailable")
+	}
+	return m.flow.SampleNextLatentStateful(state, sequenceFrame, decodeSteps, eosThreshold, temperature, rng)
+}
+
 // LatentToMimi maps FlowLM latents [B, T, 32] to Mimi latents [B, 512, T].
 func (m *Model) LatentToMimi(latent *tensor.Tensor) (*tensor.Tensor, error) {
 	if m == nil || m.flow == nil || m.mimi == nil {

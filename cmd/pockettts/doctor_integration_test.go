@@ -89,8 +89,8 @@ func TestDoctorPasses_Native(t *testing.T) {
 	if !strings.Contains(out, "doctor checks passed") {
 		t.Errorf("expected 'doctor checks passed' in output, got:\n%s", out)
 	}
-	if !strings.Contains(out, "backend: native-onnx") {
-		t.Errorf("expected 'backend: native-onnx' in output, got:\n%s", out)
+	if !strings.Contains(out, "backend: native-safetensors") {
+		t.Errorf("expected 'backend: native-safetensors' in output, got:\n%s", out)
 	}
 }
 

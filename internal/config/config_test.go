@@ -80,13 +80,13 @@ func TestNormalizeBackend(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{"native lowercase alias", "native", "native-onnx", false},
+		{"native lowercase alias", "native", "native-safetensors", false},
 		{"native onnx canonical", "native-onnx", "native-onnx", false},
 		{"native safetensors", "native-safetensors", "native-safetensors", false},
 		{"cli lowercase", "cli", "cli", false},
-		{"native uppercase alias", "NATIVE", "native-onnx", false},
+		{"native uppercase alias", "NATIVE", "native-safetensors", false},
 		{"cli mixed case", "CLI", "cli", false},
-		{"native alias with spaces", "  native  ", "native-onnx", false},
+		{"native alias with spaces", "  native  ", "native-safetensors", false},
 		{"empty defaults to native-onnx", "", "native-onnx", false},
 		{"whitespace defaults to native-onnx", "   ", "native-onnx", false},
 		{"invalid value", "onnx", "", true},

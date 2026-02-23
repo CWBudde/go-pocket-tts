@@ -3,9 +3,12 @@ package tts
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/example/go-pocket-tts/internal/config"
+	nativemodel "github.com/example/go-pocket-tts/internal/native"
 	"github.com/example/go-pocket-tts/internal/onnx"
 	"github.com/example/go-pocket-tts/internal/safetensors"
 	"github.com/example/go-pocket-tts/internal/text"
@@ -23,31 +26,55 @@ type Service struct {
 	ttsCfg    config.TTSConfig
 }
 
-// NewService initializes the TTS service with ONNX runners loaded from the manifest.
+// NewService initializes the TTS service with the configured native runtime.
 func NewService(cfg config.Config) (*Service, error) {
 	tok, err := tokenizer.NewSentencePieceTokenizer(cfg.Paths.TokenizerModel)
 	if err != nil {
 		return nil, fmt.Errorf("init tokenizer: %w", err)
 	}
 
-	rcfg := onnx.RunnerConfig{
-		LibraryPath: cfg.Runtime.ORTLibraryPath,
-		APIVersion:  23,
-	}
-	if rcfg.LibraryPath == "" {
-		info, err := onnx.DetectRuntime(cfg.Runtime)
-		if err != nil {
-			return nil, fmt.Errorf("detect ORT runtime: %w", err)
-		}
-		rcfg.LibraryPath = info.LibraryPath
+	backend, err := config.NormalizeBackend(cfg.TTS.Backend)
+	if err != nil {
+		return nil, err
 	}
 
-	engine, err := onnx.NewEngine(cfg.Paths.ONNXManifest, rcfg)
-	if err != nil {
-		return nil, fmt.Errorf("init onnx engine: %w", err)
+	var rt Runtime
+	switch backend {
+	case config.BackendNative:
+		rcfg := onnx.RunnerConfig{
+			LibraryPath: cfg.Runtime.ORTLibraryPath,
+			APIVersion:  23,
+		}
+		if rcfg.LibraryPath == "" {
+			info, err := onnx.DetectRuntime(cfg.Runtime)
+			if err != nil {
+				return nil, fmt.Errorf("detect ORT runtime: %w", err)
+			}
+			rcfg.LibraryPath = info.LibraryPath
+		}
+
+		engine, err := onnx.NewEngine(cfg.Paths.ONNXManifest, rcfg)
+		if err != nil {
+			return nil, fmt.Errorf("init onnx engine: %w", err)
+		}
+		rt = newONNXRuntime(engine)
+	case config.BackendNativeSafetensors:
+		modelPath, err := resolveNativeModelPath(cfg)
+		if err != nil {
+			return nil, err
+		}
+		model, err := nativemodel.LoadModelFromSafetensors(modelPath, nativemodel.DefaultConfig())
+		if err != nil {
+			return nil, fmt.Errorf("init safetensors-native model: %w", err)
+		}
+		slog.Info("loaded safetensors model", "path", modelPath)
+		rt = newNativeSafetensorsRuntime(model)
+		slog.Info("created native runtime", "backend", config.BackendNativeSafetensors)
+	default:
+		return nil, fmt.Errorf("unsupported tts service backend %q", backend)
 	}
 	return &Service{
-		runtime:   newONNXRuntime(engine),
+		runtime:   rt,
 		tokenizer: tok,
 		ttsCfg:    cfg.TTS,
 	}, nil
@@ -124,4 +151,26 @@ func (s *Service) Close() {
 	if s.runtime != nil {
 		s.runtime.Close()
 	}
+}
+
+func resolveNativeModelPath(cfg config.Config) (string, error) {
+	candidates := []string{}
+	if p := strings.TrimSpace(cfg.Paths.ModelPath); strings.HasSuffix(strings.ToLower(p), ".safetensors") {
+		candidates = append(candidates, p)
+	}
+	candidates = append(candidates, "models/tts_b6369a24.safetensors")
+
+	for _, path := range candidates {
+		if path == "" {
+			continue
+		}
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
+	}
+
+	return "", fmt.Errorf(
+		"safetensors model not found; set --paths-model-path to a .safetensors checkpoint (tried: %v)",
+		candidates,
+	)
 }

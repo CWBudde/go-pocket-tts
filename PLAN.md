@@ -404,17 +404,19 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
 
 > **Goal:** Run the full generation loop from text tokens to PCM entirely on safetensors-native modules.
 
-- [ ] Task 28.1: **AR loop integration**
-  - [ ] Wire: text conditioning -> AR step -> flow decode -> latent accumulation -> Mimi decode
-  - [ ] Reuse Phase 18 generation config and EOS countdown semantics verbatim
+- [x] Task 28.1: **AR loop integration**
+  - [x] Wired safetensors-native runtime pipeline: text conditioning -> AR step -> flow decode -> latent accumulation -> Mimi decode in `internal/tts/runtime_native_safetensors.go` using `internal/native` modules
+  - [x] Reused Phase 18 generation controls and EOS countdown semantics in native runtime (`Temperature`, `EOSThreshold`, `MaxSteps`, `LSDDecodeSteps`, `FramesAfterEOS`)
+  - [x] Kept existing ONNX (`native-onnx`) runtime path unchanged and selectable alongside native-safetensors
 
-- [ ] Task 28.2: **Voice conditioning integration**
-  - [ ] Prepend voice embeddings exactly as Phase 19 currently does for ONNX path
-  - [ ] Validate no-voice and with-voice branches produce expected divergence behavior
+- [x] Task 28.2: **Voice conditioning integration**
+  - [x] Added voice embedding prepend in safetensors-native runtime exactly at text embedding stage (`[1,T_voice,D] + [1,T_text,D]` along dim=1) in `internal/tts/runtime_native_safetensors.go`
+  - [x] Added integration coverage verifying no-voice vs with-voice synthesis divergence via PCM hash comparison in `internal/tts/native_safetensors_integration_test.go`
 
-- [ ] Task 28.3: **Integration tests**
-  - [ ] `integration` tests for short/medium prompts, chunked text, and voice-conditioned synthesis
-  - [ ] CLI regression: `pockettts synth --backend native-safetensors` emits valid 24 kHz WAV
+- [x] Task 28.3: **Integration tests**
+  - [x] Added `integration` tests for short/medium prompts, chunked text, and voice-conditioned synthesis on `native-safetensors` backend in `internal/tts/native_safetensors_integration_test.go`
+  - [x] Added CLI regression test `synth --backend native-safetensors` producing valid WAV in `cmd/pockettts/synth_cli_integration_test.go`
+  - [x] Updated backend wiring in CLI/server so `native-safetensors` executes native runtime instead of returning \"not implemented yet\" (`cmd/pockettts/synth.go`, `internal/server/server.go`)
 
 ---
 
@@ -423,8 +425,13 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
 > **Goal:** Bring safetensors-native runtime to feature parity with planned advanced runtime phases.
 
 - [ ] Task 29.1: **KV-cache/state reuse**
-  - [ ] Implement stateful AR cache lifecycle aligned with Phase 23 objectives (without ONNX state tensors)
-  - [ ] Reset/reuse state correctly across chunk boundaries and requests
+  - [x] Implemented stateful AR cache lifecycle aligned with Phase 23 objectives (without ONNX state tensors):
+    - native FlowLM now exposes `InitState` + `PromptText` + incremental `SampleNextLatentStateful`
+    - flow transformer gained per-layer KV cache state and `prefill`/`step` execution path
+    - safetensors runtime switched from stateless full-sequence recompute per step to prompt-once + incremental stepping
+  - [x] State reset/reuse correctness:
+    - state is initialized per chunk/request in runtime and never shared across synth calls
+    - ONNX (`native-onnx`) path remains unchanged and selectable
 
 - [ ] Task 29.2: **Streaming synthesis**
   - [ ] Reuse Phase 22 producer/consumer design with safetensors-native latent/audio stages

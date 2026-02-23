@@ -334,19 +334,19 @@ func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, err
 	voices := loadVoiceLister()
 
 	switch backend {
-	case config.BackendNative:
+	case config.BackendNative, config.BackendNativeSafetensors:
 		svc := s.tts
 		if svc == nil {
 			var err error
-			svc, err = tts.NewService(s.cfg)
+			next := s.cfg
+			next.TTS.Backend = backend
+			svc, err = tts.NewService(next)
 			if err != nil {
 				return nil, nil, 0, fmt.Errorf("initialize native service: %w", err)
 			}
 		}
 		// Native mode does not use subprocess worker throttling.
 		return &nativeSynthesizer{svc: svc}, voices, 0, nil
-	case config.BackendNativeSafetensors:
-		return nil, nil, 0, fmt.Errorf("backend %q is not implemented yet", config.BackendNativeSafetensors)
 	case config.BackendCLI:
 		workers := chooseWorkerLimit(s.cfg, backend)
 		return &cliSynthesizer{
