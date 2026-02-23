@@ -316,3 +316,152 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
   - [ ] Unit test: stateful runner produces identical logits to stateless runner for same sequence
   - [ ] Benchmark (`go test -bench`): measure RTF improvement for 5 s, 15 s, 30 s utterances
   - [ ] Integration test (`integration` tag): end-to-end synthesis with KV-cache produces valid audio
+
+---
+
+## Phase 24 — XN-like Runtime Design + Reuse Plan
+
+> **Goal:** Define the non-ONNX runtime architecture and lock interfaces so implementation can proceed incrementally without breaking CLI/server behavior.
+
+- [x] Task 24.1: **Define runtime target and backend contract**
+  - [x] Added explicit backend target `native-safetensors` alongside `native` (ONNX) + `cli` (`internal/config/backend.go`, `internal/config/config.go`, `cmd/pockettts/synth.go`)
+  - [x] Added `tts.Runtime` interface boundary so ONNX and safetensors-native runtimes can coexist (`internal/tts/runtime.go`, `internal/tts/service.go`)
+  - [x] Kept CLI/server flags and request schema stable while backend internals changed (existing `native` path unchanged; `native-safetensors` returns explicit "not implemented yet")
+
+- [x] Task 24.2: **Map reusable components from completed phases**
+  - [x] Reused tokenizer + text chunking from Phase 17 in runtime-neutral service pipeline (`internal/tts/service.go`, validated by `TestSynthesize_UsesSentenceChunkingPipeline` in `internal/tts/service_test.go`)
+  - [x] Reused generation controls from Phase 18 via `RuntimeGenerateConfig` pass-through (`internal/tts/runtime.go`, `internal/tts/runtime_onnx.go`, validated by `TestSynthesize_ReusesGenerationConfig`)
+  - [x] Reused voice embedding ingestion from Phase 19 through runtime-neutral `VoiceEmbedding` (`internal/tts/service.go`, `internal/safetensors/reader.go`, validated by `TestSynthesize_ReusesVoiceEmbeddingIngestion`)
+
+- [ ] Task 24.3: **Parity harness**
+  - [ ] Add deterministic golden harness: same text + voice + RNG seed must run against ONNX and safetensors-native backends
+  - [ ] Persist reference metrics (token counts, frame counts, EOS step, waveform stats) to track migration regressions
+
+---
+
+## Phase 25 — Safetensors Model Loader (VarBuilder-style)
+
+> **Goal:** Load full model weights directly from `.safetensors` into named tensors, similar to `xn` var-builder behavior.
+
+- [ ] Task 25.1: **Implement named tensor store**
+  - [ ] Extend safetensors handling beyond "first tensor" to keyed lookup for full model checkpoints
+  - [ ] Support required dtypes (`f32`, `f16`, `bf16`) with conversion rules for runtime compute dtype
+  - [ ] Provide lazy/mmap-backed loading for large checkpoints (align with Phase 21 goals)
+
+- [ ] Task 25.2: **Key remapping layer**
+  - [ ] Implement remap rules from HF checkpoint keys to internal module paths (equivalent to `xn` remap behavior)
+  - [ ] Add strict/lenient modes: strict for CI parity, lenient for forward-compatible checkpoint changes
+
+- [ ] Task 25.3: **Tests**
+  - [ ] Unit tests for key lookup, remap, dtype conversion, shape validation, missing tensor diagnostics
+  - [ ] Corruption tests (truncated headers, bad offsets, wrong dtype) reusing hardening patterns from Phase 19/21
+
+---
+
+## Phase 26 — Tensor/Ops Runtime Foundation
+
+> **Goal:** Implement the minimal tensor operations needed to execute PocketTTS modules directly in Go.
+
+- [ ] Task 26.1: **Core tensor ops**
+  - [ ] Implement/standardize tensor primitives: reshape, transpose, concat, narrow, gather, broadcast add/mul, layer norm, softmax
+  - [ ] Implement matmul + linear projections with deterministic CPU path
+
+- [ ] Task 26.2: **Model-critical kernels**
+  - [ ] Add kernels required by FlowLM + Mimi path: attention, MLP blocks, Conv1d/ConvTranspose1d, causal masking, RoPE
+  - [ ] Define numerical tolerance targets vs ONNX outputs for each kernel
+
+- [ ] Task 26.3: **Performance envelope**
+  - [ ] Add benchmarks for core kernels and end-to-end frame decode throughput
+  - [ ] Identify optional acceleration points (SIMD/assembly) without changing correctness contract
+
+---
+
+## Phase 27 — Port PocketTTS Modules from Weights
+
+> **Goal:** Rebuild model modules in Go using safetensors-loaded weights (no ONNX graphs).
+
+- [ ] Task 27.1: **FlowLM stack**
+  - [ ] Implement conditioner/token embedding path with current SentencePiece tokenizer integration
+  - [ ] Implement FlowLM transformer + EOS head + BOS handling (NaN/BOS semantics currently in Phase 18 logic)
+  - [ ] Implement flow network (`flow_lm_flow` equivalent) with LSD decode compatibility
+
+- [ ] Task 27.2: **Mimi stack**
+  - [ ] Implement latent projection (`latent_to_mimi` equivalent)
+  - [ ] Implement Mimi decoder path to 24 kHz PCM
+  - [ ] Prepare Mimi encoder hooks so planned Phase 20 voice encoding can target same runtime
+
+- [ ] Task 27.3: **Module-level parity tests**
+  - [ ] Snapshot tests vs ONNX intermediate tensors for representative inputs
+  - [ ] Per-module tolerances and failure reporting (shape, dtype, max abs/rel error)
+
+---
+
+## Phase 28 — End-to-End AR Inference (No ONNX)
+
+> **Goal:** Run the full generation loop from text tokens to PCM entirely on safetensors-native modules.
+
+- [ ] Task 28.1: **AR loop integration**
+  - [ ] Wire: text conditioning -> AR step -> flow decode -> latent accumulation -> Mimi decode
+  - [ ] Reuse Phase 18 generation config and EOS countdown semantics verbatim
+
+- [ ] Task 28.2: **Voice conditioning integration**
+  - [ ] Prepend voice embeddings exactly as Phase 19 currently does for ONNX path
+  - [ ] Validate no-voice and with-voice branches produce expected divergence behavior
+
+- [ ] Task 28.3: **Integration tests**
+  - [ ] `integration` tests for short/medium prompts, chunked text, and voice-conditioned synthesis
+  - [ ] CLI regression: `pockettts synth --backend native-safetensors` emits valid 24 kHz WAV
+
+---
+
+## Phase 29 — Stateful Inference, Streaming, and Concurrency
+
+> **Goal:** Bring safetensors-native runtime to feature parity with planned advanced runtime phases.
+
+- [ ] Task 29.1: **KV-cache/state reuse**
+  - [ ] Implement stateful AR cache lifecycle aligned with Phase 23 objectives (without ONNX state tensors)
+  - [ ] Reset/reuse state correctly across chunk boundaries and requests
+
+- [ ] Task 29.2: **Streaming synthesis**
+  - [ ] Reuse Phase 22 producer/consumer design with safetensors-native latent/audio stages
+  - [ ] Support HTTP chunked streaming with cancellation and backpressure handling
+
+- [ ] Task 29.3: **Concurrency + resource control**
+  - [ ] Integrate with existing worker pool/semaphore controls in `internal/server`
+  - [ ] Add memory budgeting for model weights, cache, and per-request buffers
+
+---
+
+## Phase 30 — CLI/Server Productization + Doctor
+
+> **Goal:** Make safetensors-native runtime first-class in CLI/server UX and operational checks.
+
+- [ ] Task 30.1: **Config + command wiring**
+  - [ ] Add config defaults/env/flags for `native-safetensors` backend and runtime-specific tuning knobs
+  - [ ] Keep backward compatibility for existing ONNX backend flags and manifests during transition
+
+- [ ] Task 30.2: **Doctor + verify tooling**
+  - [ ] Extend `doctor` checks to validate safetensors model presence, key schema, and runtime readiness
+  - [ ] Add `model verify --backend native-safetensors` to run smoke inference without ONNX assets
+
+- [ ] Task 30.3: **User docs**
+  - [ ] Update README/INSTALL with "ONNX path" and "safetensors-native path" setup matrices
+  - [ ] Document checkpoint compatibility, remap policy, and troubleshooting guide
+
+---
+
+## Phase 31 — Rollout, Benchmarks, and Default Switch
+
+> **Goal:** Safely move from ONNX-default to safetensors-native-default once parity and performance are proven.
+
+- [ ] Task 31.1: **Parity gate**
+  - [ ] Define release gate: waveform quality checks, runtime stability, and feature parity against ONNX backend
+  - [ ] Run extended CI matrix comparing both backends on deterministic prompt/voice suite
+
+- [ ] Task 31.2: **Performance gate**
+  - [ ] Benchmark latency/RTF/memory for short and long prompts (with/without voice)
+  - [ ] Set target thresholds before default switch
+
+- [ ] Task 31.3: **Default migration**
+  - [ ] Switch default backend to safetensors-native once gates pass
+  - [ ] Keep ONNX backend as fallback for at least one release cycle, then evaluate deprecation

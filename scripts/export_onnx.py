@@ -326,6 +326,7 @@ def main() -> int:
         manifest["graphs"].append(
             {
                 "name": spec.name,
+                "size_bytes": int(out_path.stat().st_size),
                 **inspect_onnx(out_path),
             }
         )

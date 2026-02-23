@@ -85,7 +85,7 @@ func DefaultConfig() Config {
 			RequestTimeout:  60,
 		},
 		TTS: TTSConfig{
-			Backend:        "native",
+			Backend:        BackendNative,
 			Voice:          "",
 			CLIPath:        "",
 			CLIConfigPath:  "",
@@ -116,7 +116,11 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.Int("shutdown-timeout", defaults.Server.ShutdownTimeout, "Graceful shutdown drain timeout in seconds")
 	fs.Int("max-text-bytes", defaults.Server.MaxTextBytes, "Maximum POST /tts text size in bytes")
 	fs.Int("request-timeout", defaults.Server.RequestTimeout, "Per-request synthesis timeout in seconds")
-	fs.String("backend", defaults.TTS.Backend, "Synthesis backend (native|cli)")
+	fs.String(
+		"backend",
+		defaults.TTS.Backend,
+		"Synthesis backend (native-onnx|native-safetensors|cli; native is alias for native-onnx)",
+	)
 	fs.String("tts-voice", defaults.TTS.Voice, "Voice name or .safetensors file path")
 	fs.String("tts-cli-path", defaults.TTS.CLIPath, "Path to pocket-tts executable")
 	fs.String("tts-cli-config-path", defaults.TTS.CLIConfigPath, "Path to pocket-tts config file")

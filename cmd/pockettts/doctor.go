@@ -33,7 +33,7 @@ func newDoctorCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			nativeMode := backend == "native"
+			nativeMode := backend == config.BackendNative || backend == config.BackendNativeSafetensors
 			_, _ = fmt.Fprintf(os.Stdout, "backend: %s\n", backend)
 
 			dcfg := doctor.Config{
@@ -53,7 +53,14 @@ func newDoctorCmd() *cobra.Command {
 			// ONNX model verify as an additional check.
 			// Skip gracefully when no manifest is present (models not yet downloaded).
 			const onnxManifest = "models/onnx/manifest.json"
-			if _, statErr := os.Stat(onnxManifest); os.IsNotExist(statErr) {
+			if backend == config.BackendNativeSafetensors {
+				_, _ = fmt.Fprintf(
+					os.Stdout,
+					"%s model verify: skipped (backend %s not implemented yet)\n",
+					doctor.PassMark,
+					config.BackendNativeSafetensors,
+				)
+			} else if _, statErr := os.Stat(onnxManifest); os.IsNotExist(statErr) {
 				_, _ = fmt.Fprintf(os.Stdout, "%s model verify: skipped (no manifest at %s)\n", doctor.PassMark, onnxManifest)
 			} else if err := model.VerifyONNX(model.VerifyOptions{
 				ManifestPath: onnxManifest,

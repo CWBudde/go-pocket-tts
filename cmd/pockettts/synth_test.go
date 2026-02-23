@@ -69,9 +69,11 @@ func TestResolveSynthBackend(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "default native", want: "native"},
+		{name: "default native-onnx", want: "native-onnx"},
 		{name: "config cli", cfg: "cli", want: "cli"},
-		{name: "flag overrides config", flag: "native", cfg: "cli", want: "native"},
+		{name: "flag native alias overrides config", flag: "native", cfg: "cli", want: "native-onnx"},
+		{name: "flag native-onnx overrides config", flag: "native-onnx", cfg: "cli", want: "native-onnx"},
+		{name: "safetensors backend", flag: "native-safetensors", want: "native-safetensors"},
 		{name: "invalid", flag: "python", wantErr: true},
 	}
 	for _, tt := range tests {

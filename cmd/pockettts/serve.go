@@ -28,7 +28,7 @@ func newServeCmd() *cobra.Command {
 			}
 
 			var svc *tts.Service
-			if backend == "native" {
+			if backend == config.BackendNative {
 				svc, err = tts.NewService(cfg)
 				if err != nil {
 					return err

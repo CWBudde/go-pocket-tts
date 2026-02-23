@@ -18,7 +18,7 @@ const maxTokensPerChunk = 50
 
 // Service orchestrates text preprocessing and ONNX inference.
 type Service struct {
-	engine    *onnx.Engine
+	runtime   Runtime
 	tokenizer tokenizer.Tokenizer
 	ttsCfg    config.TTSConfig
 }
@@ -47,7 +47,7 @@ func NewService(cfg config.Config) (*Service, error) {
 		return nil, fmt.Errorf("init onnx engine: %w", err)
 	}
 	return &Service{
-		engine:    engine,
+		runtime:   newONNXRuntime(engine),
 		tokenizer: tok,
 		ttsCfg:    cfg.TTS,
 	}, nil
@@ -55,8 +55,8 @@ func NewService(cfg config.Config) (*Service, error) {
 
 // generateConfig builds a GenerateConfig from the stored TTS config,
 // overriding FramesAfterEOS per chunk.
-func (s *Service) generateConfig(framesAfterEOS int) onnx.GenerateConfig {
-	return onnx.GenerateConfig{
+func (s *Service) generateConfig(framesAfterEOS int) RuntimeGenerateConfig {
+	return RuntimeGenerateConfig{
 		Temperature:    s.ttsCfg.Temperature,
 		EOSThreshold:   s.ttsCfg.EOSThreshold,
 		MaxSteps:       s.ttsCfg.MaxSteps,
@@ -80,26 +80,22 @@ func (s *Service) Synthesize(input string, voicePath string) ([]float32, error) 
 	}
 
 	// Load voice embedding if a path was provided.
-	var voiceEmb *onnx.Tensor
-	if strings.TrimSpace(voicePath) != "" {
-		data, shape, err := safetensors.LoadVoiceEmbedding(voicePath)
-		if err != nil {
-			return nil, fmt.Errorf("load voice embedding: %w", err)
-		}
-		voiceEmb, err = onnx.NewTensor(data, shape)
-		if err != nil {
-			return nil, fmt.Errorf("build voice tensor: %w", err)
-		}
+	voiceEmb, err := loadVoiceEmbedding(voicePath)
+	if err != nil {
+		return nil, err
 	}
 
 	ctx := context.Background()
 	var allAudio []float32
+	if s.runtime == nil {
+		return nil, fmt.Errorf("tts runtime unavailable")
+	}
 
 	for i, chunk := range chunks {
 		cfg := s.generateConfig(chunk.FramesAfterEOS())
 		cfg.VoiceEmbedding = voiceEmb
 
-		pcm, err := s.engine.GenerateAudio(ctx, chunk.TokenIDs, cfg)
+		pcm, err := s.runtime.GenerateAudio(ctx, chunk.TokenIDs, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("chunk %d: %w", i, err)
 		}
@@ -109,9 +105,23 @@ func (s *Service) Synthesize(input string, voicePath string) ([]float32, error) 
 	return allAudio, nil
 }
 
+func loadVoiceEmbedding(voicePath string) (*VoiceEmbedding, error) {
+	if strings.TrimSpace(voicePath) == "" {
+		return nil, nil
+	}
+	data, shape, err := safetensors.LoadVoiceEmbedding(voicePath)
+	if err != nil {
+		return nil, fmt.Errorf("load voice embedding: %w", err)
+	}
+	return &VoiceEmbedding{
+		Data:  data,
+		Shape: shape,
+	}, nil
+}
+
 // Close releases engine resources.
 func (s *Service) Close() {
-	if s.engine != nil {
-		s.engine.Close()
+	if s.runtime != nil {
+		s.runtime.Close()
 	}
 }

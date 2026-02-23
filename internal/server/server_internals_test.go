@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,6 +113,19 @@ func TestRuntimeDeps_InvalidBackend(t *testing.T) {
 	_, _, _, err := s.runtimeDeps("unknown")
 	if err == nil {
 		t.Error("runtimeDeps(unknown) = nil; want error")
+	}
+}
+
+func TestRuntimeDeps_NativeSafetensorsNotImplemented(t *testing.T) {
+	cfg := config.DefaultConfig()
+	s := New(cfg, nil)
+
+	_, _, _, err := s.runtimeDeps(config.BackendNativeSafetensors)
+	if err == nil {
+		t.Fatal("runtimeDeps(native-safetensors) = nil; want error")
+	}
+	if got := err.Error(); !strings.Contains(got, "not implemented yet") {
+		t.Fatalf("runtimeDeps(native-safetensors) error = %q; want not implemented", got)
 	}
 }
 

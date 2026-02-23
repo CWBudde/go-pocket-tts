@@ -83,6 +83,19 @@ function hasRequiredGraphs(manifest) {
   return requiredGraphs.every((name) => names.has(name));
 }
 
+function getGraphByName(manifest, name) {
+  return (manifest?.graphs || []).find((g) => g.name === name) || null;
+}
+
+function graphUncompressedSizeBytes(graph) {
+  const raw = graph?.size_bytes ?? graph?.sizeBytes;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    return 0;
+  }
+  return Math.floor(n);
+}
+
 async function bootKernel() {
   const go = new Go();
   const wasm = await WebAssembly.instantiateStreaming(fetch("./pockettts-kernel.wasm"), go.importObject);
@@ -169,22 +182,56 @@ async function handleLoadModel() {
       throw new Error(`manifest missing required graphs: ${requiredGraphs.join(", ")}`);
     }
 
-    const total = requiredGraphs.length;
+    const graphEntries = requiredGraphs.map((name) => {
+      const graph = getGraphByName(state.manifest, name);
+      return {
+        name,
+        sizeBytes: graphUncompressedSizeBytes(graph),
+      };
+    });
+    const totalUncompressedBytes = graphEntries.reduce((sum, g) => sum + g.sizeBytes, 0);
+    const allUncompressedSizesKnown = graphEntries.every((g) => g.sizeBytes > 0);
+
+    const total = graphEntries.length;
+    let loadedUncompressedBytes = 0;
     for (let i = 0; i < total; i += 1) {
-      const name = requiredGraphs[i];
+      const { name, sizeBytes } = graphEntries[i];
       const basePercent = (i / total) * 100;
       const slicePercent = 100 / total;
 
       await onnxBridge.getSession(name, (received, contentLength) => {
-        const dlFrac = contentLength > 0 ? received / contentLength : 1;
-        const percent = Math.round(basePercent + dlFrac * slicePercent);
-        const mb = (received / 1048576).toFixed(1);
-        const totalMb = (contentLength / 1048576).toFixed(1);
-        synthProgress.value = percent;
-        synthProgressText.textContent = `${percent}% - downloading ${name} (${mb}/${totalMb} MB) [${i + 1}/${total}]`;
+        const rx = Number(received) > 0 ? Number(received) : 0;
+        const transferTotal = Number(contentLength) > 0 ? Number(contentLength) : 0;
+        const graphTotalBytes = sizeBytes > 0 ? sizeBytes : transferTotal;
+        const graphReceivedBytes = graphTotalBytes > 0 ? Math.min(rx, graphTotalBytes) : rx;
+
+        let percent;
+        if (allUncompressedSizesKnown && totalUncompressedBytes > 0) {
+          percent = Math.round(((loadedUncompressedBytes + graphReceivedBytes) / totalUncompressedBytes) * 100);
+        } else {
+          const dlFrac = graphTotalBytes > 0 ? graphReceivedBytes / graphTotalBytes : 1;
+          percent = Math.round(basePercent + dlFrac * slicePercent);
+        }
+
+        const boundedPercent = Math.max(0, Math.min(100, percent));
+        synthProgress.value = boundedPercent;
+        if (graphTotalBytes > 0) {
+          const mb = (graphReceivedBytes / 1048576).toFixed(1);
+          const totalMb = (graphTotalBytes / 1048576).toFixed(1);
+          synthProgressText.textContent = `${boundedPercent}% - downloading ${name} (${mb}/${totalMb} MB) [${i + 1}/${total}]`;
+        } else {
+          const mb = (graphReceivedBytes / 1048576).toFixed(1);
+          synthProgressText.textContent = `${boundedPercent}% - downloading ${name} (${mb} MB) [${i + 1}/${total}]`;
+        }
       });
 
-      const initPercent = Math.round(basePercent + slicePercent);
+      if (allUncompressedSizesKnown && totalUncompressedBytes > 0) {
+        loadedUncompressedBytes += sizeBytes;
+      }
+
+      const initPercent = allUncompressedSizesKnown && totalUncompressedBytes > 0
+        ? Math.round((loadedUncompressedBytes / totalUncompressedBytes) * 100)
+        : Math.round(basePercent + slicePercent);
       synthProgress.value = initPercent;
       synthProgressText.textContent = `${initPercent}% - initialized ${name} [${i + 1}/${total}]`;
     }

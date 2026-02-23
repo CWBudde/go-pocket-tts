@@ -61,7 +61,7 @@ func newSynthCmd() *cobra.Command {
 
 			var result []byte
 			switch selectedBackend {
-			case "native":
+			case config.BackendNative:
 				if len(ttsArgs) > 0 {
 					return fmt.Errorf("--tts-arg is only supported with --backend cli")
 				}
@@ -71,7 +71,7 @@ func newSynthCmd() *cobra.Command {
 					return err
 				}
 				result, err = synthesizeNative(cmd.Context(), cfg, chunks, resolvedVoice)
-			case "cli":
+			case config.BackendCLI:
 				var resolvedVoice string
 				resolvedVoice, err = resolveVoiceOrPath(selectedVoice)
 				if err != nil {
@@ -89,6 +89,8 @@ func newSynthCmd() *cobra.Command {
 					Chunks:    chunks,
 					ChunkMode: chunk,
 				})
+			case config.BackendNativeSafetensors:
+				return fmt.Errorf("backend %q is not implemented yet", config.BackendNativeSafetensors)
 			default:
 				return fmt.Errorf("unsupported backend %q", selectedBackend)
 			}
@@ -115,7 +117,12 @@ func newSynthCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&text, "text", "", "Text to synthesize (if empty, read from stdin)")
 	cmd.Flags().StringVar(&out, "out", "out.wav", "Output WAV path ('-' for stdout)")
-	cmd.Flags().StringVar(&backend, "backend", "", "Synthesis backend override (native|cli)")
+	cmd.Flags().StringVar(
+		&backend,
+		"backend",
+		"",
+		"Synthesis backend override (native-onnx|native-safetensors|cli; native is alias for native-onnx)",
+	)
 	cmd.Flags().StringVar(&voice, "voice", "", "Voice ID from voices/manifest.json (overrides config)")
 	cmd.Flags().BoolVar(&chunk, "chunk", false, "Split text into sentence chunks and synthesize sequentially")
 	cmd.Flags().IntVar(&maxChunkChars, "max-chunk-chars", 220, "Maximum characters per chunk when --chunk is enabled")

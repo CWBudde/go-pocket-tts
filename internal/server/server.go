@@ -334,7 +334,7 @@ func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, err
 	voices := loadVoiceLister()
 
 	switch backend {
-	case "native":
+	case config.BackendNative:
 		svc := s.tts
 		if svc == nil {
 			var err error
@@ -345,7 +345,9 @@ func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, err
 		}
 		// Native mode does not use subprocess worker throttling.
 		return &nativeSynthesizer{svc: svc}, voices, 0, nil
-	case "cli":
+	case config.BackendNativeSafetensors:
+		return nil, nil, 0, fmt.Errorf("backend %q is not implemented yet", config.BackendNativeSafetensors)
+	case config.BackendCLI:
 		workers := chooseWorkerLimit(s.cfg, backend)
 		return &cliSynthesizer{
 			executablePath: s.cfg.TTS.CLIPath,
@@ -358,7 +360,7 @@ func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, err
 }
 
 func chooseWorkerLimit(cfg config.Config, backend string) int {
-	if backend != "cli" {
+	if backend != config.BackendCLI {
 		return 0
 	}
 	workers := cfg.Server.Workers
