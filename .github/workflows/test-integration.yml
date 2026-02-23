@@ -2,14 +2,9 @@ name: Integration Tests
 
 on:
   workflow_dispatch:
-    inputs:
-      pocket-tts-version:
-        description: "pip install pocket-tts==<version> (empty = latest)"
-        required: false
-        default: ""
   schedule:
     # Nightly at 02:00 UTC on the main branch.
-    - cron: "0 2 * * *"
+    - cron: 0 2 * * *
 
 permissions:
   contents: read
@@ -21,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ["1.25.x"]
+        go-version: [1.25.x]
 
     steps:
       - name: Checkout
@@ -39,12 +34,7 @@ jobs:
 
       - name: Install pocket-tts
         run: |
-          VERSION="${{ github.event.inputs.pocket-tts-version }}"
-          if [ -n "$VERSION" ]; then
-            pip install "pocket-tts==$VERSION"
-          else
-            pip install pocket-tts
-          fi
+          pip install pocket-tts
           pocket-tts --version
 
       - name: Verify pocket-tts binary is on PATH
@@ -56,7 +46,7 @@ jobs:
           # Set to a built-in voice that ships with pocket-tts so tests can
           # synthesize without a custom voice file. Override via repository
           # secret if a different voice is preferred.
-          POCKETTTS_TEST_VOICE: ${{ secrets.POCKETTTS_TEST_VOICE || 'mimi' }}
+          POCKETTTS_TEST_VOICE: mimi
 
       - name: Upload WAV artifacts
         if: always()

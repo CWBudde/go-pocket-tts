@@ -3,27 +3,23 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
-	"math/rand"
 	"strings"
 	"syscall/js"
-	"time"
 
 	"github.com/example/go-pocket-tts/internal/audio"
+	"github.com/example/go-pocket-tts/internal/config"
+	"github.com/example/go-pocket-tts/internal/onnx"
+	"github.com/example/go-pocket-tts/internal/safetensors"
 	"github.com/example/go-pocket-tts/internal/text"
 )
 
 const (
-	modelSampleRate    = 24000
-	flowTemperature    = 0.7
-	flowDecodeSteps    = 1
-	flowEOSThreshold   = -4.0
-	flowFramesAfterEOS = 2
-	flowMinSteps       = 16
-	flowMaxSteps       = 256
+	maxTokensPerChunk = 50
 )
 
 type tensorPayload struct {
@@ -64,15 +60,88 @@ func (p *progressReporter) Emit(stage string, current, total int, detail string)
 	p.cb.Invoke(js.ValueOf(payload))
 }
 
-var rng = rand.New(rand.NewSource(time.Now().UnixNano()))
+type synthesizeOptions struct {
+	Temperature      float64
+	EOSThreshold     float64
+	MaxSteps         int
+	LSDDecodeSteps   int
+	VoiceSafetensors []byte
+}
+
+type preprocessTokenizer struct {
+	prep *text.Preprocessor
+}
+
+func (t preprocessTokenizer) Encode(input string) ([]int64, error) {
+	tokens := t.prep.Preprocess(input)
+	out := make([]int64, len(tokens))
+	for i, tok := range tokens {
+		out[i] = int64(tok)
+	}
+	return out, nil
+}
+
+type bridgeRunner struct {
+	name string
+}
+
+func (r *bridgeRunner) Name() string {
+	return r.name
+}
+
+func (r *bridgeRunner) Close() {}
+
+func (r *bridgeRunner) Run(ctx context.Context, inputs map[string]*onnx.Tensor) (map[string]*onnx.Tensor, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	feeds := make(map[string]tensorPayload, len(inputs))
+	for name, t := range inputs {
+		p, err := tensorToPayload(t)
+		if err != nil {
+			return nil, fmt.Errorf("encode input %q: %w", name, err)
+		}
+		feeds[name] = p
+	}
+
+	outputs, err := runGraph(r.name, feeds)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]*onnx.Tensor, len(outputs))
+	for name, p := range outputs {
+		t, convErr := payloadToTensor(p)
+		if convErr != nil {
+			return nil, fmt.Errorf("decode output %q: %w", name, convErr)
+		}
+		result[name] = t
+	}
+
+	return result, nil
+}
+
+var (
+	defaults = config.DefaultConfig()
+	engine   = onnx.NewEngineWithRunners(map[string]onnx.GraphRunner{
+		"text_conditioner": &bridgeRunner{name: "text_conditioner"},
+		"flow_lm_main":     &bridgeRunner{name: "flow_lm_main"},
+		"flow_lm_flow":     &bridgeRunner{name: "flow_lm_flow"},
+		"latent_to_mimi":   &bridgeRunner{name: "latent_to_mimi"},
+		"mimi_decoder":     &bridgeRunner{name: "mimi_decoder"},
+	})
+)
 
 func main() {
 	kernel := map[string]any{
-		"version":         "0.2.0-wasm",
-		"sampleRate":      modelSampleRate,
-		"normalize":       js.FuncOf(normalizeText),
-		"tokenize":        js.FuncOf(tokenizeText),
-		"synthesizeModel": js.FuncOf(synthesizeModelAsync),
+		"version":    "0.3.0-wasm",
+		"sampleRate": audio.ExpectedSampleRate,
+		"normalize":  js.FuncOf(normalizeText),
+		"tokenize":   js.FuncOf(tokenizeText),
+		"synthesize": js.FuncOf(synthesizeAsync),
 	}
 
 	js.Global().Set("PocketTTSKernel", js.ValueOf(kernel))
@@ -103,29 +172,34 @@ func tokenizeText(_ js.Value, args []js.Value) any {
 		return errResult(err.Error())
 	}
 
-	prep := text.NewPreprocessor()
-	tokens := prep.Preprocess(normalized)
+	tok := preprocessTokenizer{prep: text.NewPreprocessor()}
+	chunks, err := text.PrepareChunks(normalized, tok, maxTokensPerChunk)
+	if err != nil {
+		return errResult(err.Error())
+	}
 
-	out := make([]any, len(tokens))
-	for i, v := range tokens {
-		out[i] = v
+	flat := make([]any, 0, len(chunks)*8)
+	for _, c := range chunks {
+		for _, id := range c.TokenIDs {
+			flat = append(flat, id)
+		}
 	}
 
 	return okResult(map[string]any{
 		"text":   normalized,
-		"tokens": out,
+		"tokens": flat,
+		"chunks": len(chunks),
 	})
 }
 
-type synthesizeOptions struct {
-	Temperature    float64
-	VoiceEmbedding *tensorPayload
-}
-
 func parseSynthOptions(args []js.Value) synthesizeOptions {
-	opts := synthesizeOptions{Temperature: flowTemperature}
+	opts := synthesizeOptions{
+		Temperature:    defaults.TTS.Temperature,
+		EOSThreshold:   defaults.TTS.EOSThreshold,
+		MaxSteps:       defaults.TTS.MaxSteps,
+		LSDDecodeSteps: defaults.TTS.LSDDecodeSteps,
+	}
 
-	// args[2] is an optional options object: { temperature?: number, voiceEmbedding?: {dtype, shape, f32} }
 	if len(args) < 3 {
 		return opts
 	}
@@ -134,24 +208,41 @@ func parseSynthOptions(args []js.Value) synthesizeOptions {
 		return opts
 	}
 
-	temp := optVal.Get("temperature")
-	if !temp.IsUndefined() && !temp.IsNull() {
-		opts.Temperature = temp.Float()
+	if v := optVal.Get("temperature"); !v.IsUndefined() && !v.IsNull() {
+		temp := v.Float()
+		if !math.IsNaN(temp) && !math.IsInf(temp, 0) && temp >= 0 {
+			opts.Temperature = temp
+		}
+	}
+	if v := optVal.Get("eosThreshold"); !v.IsUndefined() && !v.IsNull() {
+		eos := v.Float()
+		if !math.IsNaN(eos) && !math.IsInf(eos, 0) {
+			opts.EOSThreshold = eos
+		}
+	}
+	if v := optVal.Get("maxSteps"); !v.IsUndefined() && !v.IsNull() {
+		steps := v.Int()
+		if steps > 0 {
+			opts.MaxSteps = steps
+		}
+	}
+	if v := optVal.Get("lsdSteps"); !v.IsUndefined() && !v.IsNull() {
+		steps := v.Int()
+		if steps > 0 {
+			opts.LSDDecodeSteps = steps
+		}
 	}
 
-	ve := optVal.Get("voiceEmbedding")
-	if !ve.IsUndefined() && !ve.IsNull() {
-		veJSON := js.Global().Get("JSON").Call("stringify", ve).String()
-		var tp tensorPayload
-		if err := json.Unmarshal([]byte(veJSON), &tp); err == nil && len(tp.F32) > 0 {
-			opts.VoiceEmbedding = &tp
+	if v := optVal.Get("voiceSafetensors"); !v.IsUndefined() && !v.IsNull() {
+		if b, ok := copyJSBytes(v); ok {
+			opts.VoiceSafetensors = b
 		}
 	}
 
 	return opts
 }
 
-func synthesizeModelAsync(_ js.Value, args []js.Value) any {
+func synthesizeAsync(_ js.Value, args []js.Value) any {
 	promiseCtor := js.Global().Get("Promise")
 	var handler js.Func
 	handler = js.FuncOf(func(_ js.Value, pArgs []js.Value) any {
@@ -170,244 +261,154 @@ func synthesizeModelAsync(_ js.Value, args []js.Value) any {
 		opts := parseSynthOptions(args)
 
 		go func() {
-			res, err := synthesizeModel(textArg, &progress, opts)
+			res, err := synthesize(textArg, &progress, opts)
 			if err != nil {
 				reject.Invoke(err.Error())
 				return
 			}
 			resolve.Invoke(js.ValueOf(res))
 		}()
+
 		return nil
 	})
 
 	return promiseCtor.New(handler)
 }
 
-func synthesizeModel(input string, progress *progressReporter, opts synthesizeOptions) (map[string]any, error) {
-	progress.Emit("prepare", 0, 100, "normalizing and tokenizing input")
-	normalized := normalizePromptForModel(input)
-	if normalized == "" {
-		return nil, fmt.Errorf("text is empty")
-	}
-
-	prep := text.NewPreprocessor()
-	tokens := prep.Preprocess(normalized)
-	if len(tokens) == 0 {
-		return nil, fmt.Errorf("no tokens produced after preprocessing")
-	}
-	progress.Emit("prepare", 5, 100, fmt.Sprintf("tokenized %d units", len(tokens)))
-
-	progress.Emit("text_conditioner", 10, 100, "running text conditioner")
-	textCondOutputs, err := runGraph("text_conditioner", map[string]tensorPayload{
-		"tokens": {
-			DType: "int64",
-			Shape: []int64{1, int64(len(tokens))},
-			I64:   intsToI64(tokens),
-		},
-	})
+func synthesize(input string, progress *progressReporter, opts synthesizeOptions) (map[string]any, error) {
+	progress.Emit("prepare", 0, 100, "normalizing and chunking input")
+	normalized, err := text.Normalize(input)
 	if err != nil {
-		return nil, fmt.Errorf("text_conditioner: %w", err)
+		return nil, err
 	}
-	textEmb, err := pickOutput(textCondOutputs, "text_embeddings")
+
+	tok := preprocessTokenizer{prep: text.NewPreprocessor()}
+	chunks, err := text.PrepareChunks(normalized, tok, maxTokensPerChunk)
 	if err != nil {
-		return nil, fmt.Errorf("text_conditioner output: %w", err)
+		return nil, err
 	}
-	progress.Emit("text_conditioner", 15, 100, "text embeddings ready")
-
-	if opts.VoiceEmbedding != nil {
-		textEmb = prependVoiceEmb(opts.VoiceEmbedding, &textEmb)
-		progress.Emit("voice", 17, 100, fmt.Sprintf("prepended voice embedding (%d frames)", opts.VoiceEmbedding.Shape[1]))
+	if len(chunks) == 0 {
+		return nil, fmt.Errorf("no chunks produced")
 	}
+	progress.Emit("prepare", 10, 100, fmt.Sprintf("prepared %d chunks", len(chunks)))
 
-	latentDim := int64(32)
-	condDim := int64(1024)
-
-	sequenceFrames := make([][]float32, 0, 256)
-	bos := make([]float32, latentDim)
-	// Keep seed finite because feeds are serialized through JSON for the JS ORT bridge.
-	// NaN is not representable in JSON and would fail marshaling.
-	for i := range bos {
-		bos[i] = 0
-	}
-	sequenceFrames = append(sequenceFrames, bos)
-
-	generated := make([][]float32, 0, 256)
-	eosStep := -1
-	maxSteps := flowMaxSteps
-	if maxSteps < len(tokens)*5 {
-		maxSteps = len(tokens) * 5
-	}
-	if maxSteps > flowMaxSteps {
-		maxSteps = flowMaxSteps
-	}
-	progress.Emit("autoregressive", 20, 100, fmt.Sprintf("starting generation loop (%d max steps)", maxSteps))
-
-	for step := 0; step < maxSteps; step++ {
-		if step == 0 || step%2 == 0 {
-			progress.Emit(
-				"autoregressive",
-				20+int((float64(step)/float64(maxSteps))*60.0),
-				100,
-				fmt.Sprintf("step %d/%d", step+1, maxSteps),
-			)
+	var voiceEmb *onnx.Tensor
+	if len(opts.VoiceSafetensors) > 0 {
+		vData, vShape, vErr := safetensors.LoadVoiceEmbeddingFromBytes(opts.VoiceSafetensors)
+		if vErr != nil {
+			return nil, fmt.Errorf("load voice embedding: %w", vErr)
 		}
-		seqFlat := flattenFrames(sequenceFrames, int(latentDim))
-
-		mainOutputs, err := runGraph("flow_lm_main", map[string]tensorPayload{
-			"sequence": {
-				DType: "float32",
-				Shape: []int64{1, int64(len(sequenceFrames)), latentDim},
-				F32:   seqFlat,
-			},
-			"text_embeddings": textEmb,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("flow_lm_main: %w", err)
+		voiceEmb, vErr = onnx.NewTensor(vData, vShape)
+		if vErr != nil {
+			return nil, fmt.Errorf("build voice tensor: %w", vErr)
 		}
-
-		hidden, err := pickOutput(mainOutputs, "last_hidden")
-		if err != nil {
-			return nil, fmt.Errorf("flow_lm_main hidden: %w", err)
-		}
-		eos, err := pickOutput(mainOutputs, "eos_logits")
-		if err != nil {
-			return nil, fmt.Errorf("flow_lm_main eos: %w", err)
-		}
-
-		condition := copyOrTile(hidden.F32, int(condDim))
-		x := make([]float32, latentDim)
-		for i := range x {
-			x[i] = float32(rng.NormFloat64() * math.Sqrt(opts.Temperature))
-		}
-
-		for k := 0; k < flowDecodeSteps; k++ {
-			s := float32(float64(k) / float64(flowDecodeSteps))
-			t := float32(float64(k+1) / float64(flowDecodeSteps))
-			flowOut, err := runGraph("flow_lm_flow", map[string]tensorPayload{
-				"condition": {
-					DType: "float32",
-					Shape: []int64{1, condDim},
-					F32:   condition,
-				},
-				"s": {
-					DType: "float32",
-					Shape: []int64{1, 1},
-					F32:   []float32{s},
-				},
-				"t": {
-					DType: "float32",
-					Shape: []int64{1, 1},
-					F32:   []float32{t},
-				},
-				"x": {
-					DType: "float32",
-					Shape: []int64{1, latentDim},
-					F32:   x,
-				},
-			})
-			if err != nil {
-				return nil, fmt.Errorf("flow_lm_flow: %w", err)
-			}
-			dir, err := pickOutput(flowOut, "flow_direction")
-			if err != nil {
-				return nil, fmt.Errorf("flow_lm_flow output: %w", err)
-			}
-			dt := float32(1.0 / float64(flowDecodeSteps))
-			for i := range x {
-				x[i] += dir.F32[i%len(dir.F32)] * dt
-			}
-		}
-
-		next := make([]float32, latentDim)
-		copy(next, x)
-		sequenceFrames = append(sequenceFrames, next)
-		generated = append(generated, next)
-
-		eosVal := float32(-10)
-		if len(eos.F32) > 0 {
-			eosVal = eos.F32[0]
-		}
-		if eosVal > flowEOSThreshold && eosStep < 0 {
-			eosStep = step
-		}
-		if eosStep >= 0 && step >= eosStep+flowFramesAfterEOS && step+1 >= flowMinSteps {
-			progress.Emit(
-				"autoregressive",
-				80,
-				100,
-				fmt.Sprintf("stopped at step %d (EOS+tail)", step+1),
-			)
-			break
-		}
+		progress.Emit("voice", 15, 100, fmt.Sprintf("loaded voice embedding (%d frames)", vShape[1]))
 	}
 
-	if len(generated) == 0 {
-		return nil, fmt.Errorf("model loop produced no latents")
-	}
+	allAudio := make([]float32, 0, audio.ExpectedSampleRate)
+	totalTokens := 0
+	for i, chunk := range chunks {
+		pct := 20 + int((float64(i)/float64(len(chunks)))*70)
+		progress.Emit("synthesize", pct, 100, fmt.Sprintf("chunk %d/%d", i+1, len(chunks)))
 
-	steps := int64(len(generated))
-	latentSeq := flattenFrames(generated, int(latentDim))
-	progress.Emit("latent_to_mimi", 85, 100, "projecting latent for Mimi decoder")
-
-	var mimiInput tensorPayload
-	latentToMimiOutputs, err := runGraph("latent_to_mimi", map[string]tensorPayload{
-		"latent": {
-			DType: "float32",
-			Shape: []int64{1, steps, latentDim},
-			F32:   latentSeq,
-		},
-	})
-	if err == nil {
-		mimiInput, err = pickOutput(latentToMimiOutputs, "mimi_latent")
-		if err != nil {
-			return nil, fmt.Errorf("latent_to_mimi output: %w", err)
+		cfg := onnx.GenerateConfig{
+			Temperature:    opts.Temperature,
+			EOSThreshold:   opts.EOSThreshold,
+			MaxSteps:       opts.MaxSteps,
+			LSDDecodeSteps: opts.LSDDecodeSteps,
+			FramesAfterEOS: chunk.FramesAfterEOS(),
+			VoiceEmbedding: voiceEmb,
 		}
-	} else {
-		// Fallback for manifests without latent_to_mimi graph.
-		mimiDim := int64(512)
-		fallback := make([]float32, mimiDim*steps)
-		for t := int64(0); t < steps; t++ {
-			src := generated[t]
-			for c := int64(0); c < mimiDim; c++ {
-				fallback[c*steps+t] = src[c%int64(len(src))]
-			}
+
+		pcm, genErr := engine.GenerateAudio(context.Background(), chunk.TokenIDs, cfg)
+		if genErr != nil {
+			return nil, fmt.Errorf("chunk %d synthesis failed: %w", i+1, genErr)
 		}
-		mimiInput = tensorPayload{
-			DType: "float32",
-			Shape: []int64{1, mimiDim, steps},
-			F32:   fallback,
-		}
+		allAudio = append(allAudio, pcm...)
+		totalTokens += len(chunk.TokenIDs)
+	}
+	if len(allAudio) == 0 {
+		return nil, fmt.Errorf("synthesis produced no samples")
 	}
 
-	mimiOutputs, err := runGraph("mimi_decoder", map[string]tensorPayload{
-		"latent": mimiInput,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("mimi_decoder: %w", err)
-	}
-	audioOut, err := pickOutput(mimiOutputs, "audio")
-	if err != nil {
-		return nil, fmt.Errorf("mimi_decoder output: %w", err)
-	}
-	if len(audioOut.F32) == 0 {
-		return nil, fmt.Errorf("decoder returned empty audio")
-	}
-	progress.Emit("mimi_decoder", 95, 100, "encoding WAV")
-
-	wav, err := audio.EncodeWAVPCM16(audioOut.F32, modelSampleRate)
+	progress.Emit("encode", 95, 100, "encoding WAV")
+	wav, err := audio.EncodeWAV(allAudio)
 	if err != nil {
 		return nil, fmt.Errorf("encode wav: %w", err)
 	}
 
-	res := okResult(map[string]any{
-		"text":        normalized,
-		"token_count": len(tokens),
-		"frames":      len(generated),
-		"sample_rate": modelSampleRate,
-		"wav_base64":  base64.StdEncoding.EncodeToString(wav),
+	result := okResult(map[string]any{
+		"text":         normalized,
+		"token_count":  totalTokens,
+		"chunk_count":  len(chunks),
+		"sample_count": len(allAudio),
+		"sample_rate":  audio.ExpectedSampleRate,
+		"wav_base64":   base64.StdEncoding.EncodeToString(wav),
 	})
 	progress.Emit("done", 100, 100, "synthesis complete")
-	return res, nil
+	return result, nil
+}
+
+func copyJSBytes(v js.Value) ([]byte, bool) {
+	if v.IsUndefined() || v.IsNull() {
+		return nil, false
+	}
+
+	uint8Array := js.Global().Get("Uint8Array")
+	if !uint8Array.IsUndefined() && v.InstanceOf(uint8Array) {
+		buf := make([]byte, v.Get("length").Int())
+		n := js.CopyBytesToGo(buf, v)
+		return buf[:n], true
+	}
+
+	arrayBuffer := js.Global().Get("ArrayBuffer")
+	if !arrayBuffer.IsUndefined() && v.InstanceOf(arrayBuffer) {
+		wrapped := uint8Array.New(v)
+		buf := make([]byte, wrapped.Get("length").Int())
+		n := js.CopyBytesToGo(buf, wrapped)
+		return buf[:n], true
+	}
+
+	return nil, false
+}
+
+func tensorToPayload(t *onnx.Tensor) (tensorPayload, error) {
+	s := t.Shape()
+	dtype := string(t.DType())
+
+	switch t.DType() {
+	case onnx.DTypeFloat32:
+		data, err := onnx.ExtractFloat32(t)
+		if err != nil {
+			return tensorPayload{}, err
+		}
+		for i := range data {
+			if math.IsNaN(float64(data[i])) || math.IsInf(float64(data[i]), 0) {
+				data[i] = 0
+			}
+		}
+		return tensorPayload{DType: dtype, Shape: s, F32: data}, nil
+	case onnx.DTypeInt64:
+		data, err := onnx.ExtractInt64(t)
+		if err != nil {
+			return tensorPayload{}, err
+		}
+		return tensorPayload{DType: dtype, Shape: s, I64: data}, nil
+	default:
+		return tensorPayload{}, fmt.Errorf("unsupported tensor dtype %q", t.DType())
+	}
+}
+
+func payloadToTensor(p tensorPayload) (*onnx.Tensor, error) {
+	dtype := strings.ToLower(strings.TrimSpace(p.DType))
+	switch dtype {
+	case "float", "float32":
+		return onnx.NewTensor(p.F32, p.Shape)
+	case "int64", "long":
+		return onnx.NewTensor(p.I64, p.Shape)
+	default:
+		return nil, fmt.Errorf("unsupported tensor payload dtype %q", p.DType)
+	}
 }
 
 func runGraph(graphName string, feeds map[string]tensorPayload) (map[string]tensorPayload, error) {
@@ -453,7 +454,6 @@ func awaitPromiseString(promise js.Value) (string, error) {
 		msg := "promise rejected"
 		if len(args) > 0 {
 			v := args[0]
-			// JS Error objects have a .message property; .String() gives "[object Object]".
 			if m := v.Get("message"); !m.IsUndefined() && !m.IsNull() {
 				msg = m.String()
 			} else {
@@ -470,81 +470,6 @@ func awaitPromiseString(promise js.Value) (string, error) {
 	then.Release()
 	catch.Release()
 	return res.value, res.err
-}
-
-func prependVoiceEmb(voice *tensorPayload, text *tensorPayload) tensorPayload {
-	combined := make([]float32, 0, len(voice.F32)+len(text.F32))
-	combined = append(combined, voice.F32...)
-	combined = append(combined, text.F32...)
-	return tensorPayload{
-		DType: "float32",
-		Shape: []int64{1, voice.Shape[1] + text.Shape[1], voice.Shape[2]},
-		F32:   combined,
-	}
-}
-
-func pickOutput(outputs map[string]tensorPayload, preferred string) (tensorPayload, error) {
-	if out, ok := outputs[preferred]; ok {
-		return out, nil
-	}
-	for _, out := range outputs {
-		return out, nil
-	}
-	return tensorPayload{}, fmt.Errorf("no outputs")
-}
-
-func flattenFrames(frames [][]float32, frameDim int) []float32 {
-	out := make([]float32, 0, len(frames)*frameDim)
-	for _, f := range frames {
-		out = append(out, copyOrTile(f, frameDim)...)
-	}
-	return out
-}
-
-func copyOrTile(src []float32, n int) []float32 {
-	if n <= 0 {
-		return nil
-	}
-	if len(src) == n {
-		out := make([]float32, n)
-		copy(out, src)
-		return out
-	}
-	out := make([]float32, n)
-	if len(src) == 0 {
-		return out
-	}
-	for i := range out {
-		out[i] = src[i%len(src)]
-	}
-	return out
-}
-
-func normalizePromptForModel(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return s
-	}
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	s = strings.ReplaceAll(s, "\r", "\n")
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.Join(strings.Fields(s), " ")
-	if s == "" {
-		return s
-	}
-	last := s[len(s)-1]
-	if last != '.' && last != '!' && last != '?' {
-		s += "."
-	}
-	return s
-}
-
-func intsToI64(in []int) []int64 {
-	out := make([]int64, len(in))
-	for i, v := range in {
-		out[i] = int64(v)
-	}
-	return out
 }
 
 func okResult(payload map[string]any) map[string]any {
