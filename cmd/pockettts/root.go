@@ -40,6 +40,7 @@ func NewRootCmd() *cobra.Command {
 	config.RegisterFlags(cmd.PersistentFlags(), defaults)
 
 	cmd.AddCommand(newSynthCmd())
+	cmd.AddCommand(newExportVoiceCmd())
 	cmd.AddCommand(newBenchCmd())
 	cmd.AddCommand(newModelCmd())
 	cmd.AddCommand(newServeCmd())

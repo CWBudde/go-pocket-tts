@@ -233,23 +233,23 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
 
 > **Goal:** Support encoding raw audio files into voice embeddings via the `mimi_encoder` ONNX graph + a `speaker_proj_weight` linear projection. Enables creating voice embeddings from arbitrary audio without external tooling.
 
-- [ ] Task 20.1: **Run `mimi_encoder` to get audio latents**
-  - [ ] Accept raw WAV/PCM input → `audio [1, 1, N_samples] float32` tensor
-  - [ ] Run `mimi_encoder` via `Runner` → `latent [1, T, 512] float32`
+- [x] Task 20.1: **Run `mimi_encoder` to get audio latents**
+  - [x] Accept raw WAV/PCM input → `audio [1, 1, N_samples] float32` tensor
+  - [x] Run `mimi_encoder` via `Runner` → `latent [1, T, 512] float32`
 
-- [ ] Task 20.2: **Apply speaker projection**
-  - [ ] Load `speaker_proj_weight` from model safetensors (shape `[1024, 512]`)
-  - [ ] Matrix-multiply latent `[1, T, 512]` × `weight^T [512, 1024]` → `embedding [1, T, 1024]`
-  - [ ] Expose as `Engine.EncodeVoice(audioPath string) ([]float32, error)`
+- [x] Task 20.2: **Apply speaker projection**
+  - [x] Load `speaker_proj_weight` from model safetensors (shape `[1024, 512]`)
+  - [x] Matrix-multiply latent `[1, T, 512]` × `weight^T [512, 1024]` → `embedding [1, T, 1024]`
+  - [x] Expose as `Engine.EncodeVoice(audioPath string) ([]float32, error)`
 
-- [ ] Task 20.3: **Wire into CLI**
-  - [ ] `export-voice` command uses `Engine.EncodeVoice` instead of Python subprocess
-  - [ ] Save result as `.safetensors` file for later use with voice conditioning
+- [x] Task 20.3: **Wire into CLI**
+  - [x] `export-voice` command uses `Engine.EncodeVoice` instead of Python subprocess
+  - [x] Save result as `.safetensors` file for later use with voice conditioning
 
-- [ ] Task 20.4: **Tests**
-  - [ ] Unit test: verify projection arithmetic with known weight + latent values
-  - [ ] Integration test (`integration` tag): encode a short WAV, verify output shape `[1, T, 1024]`
-  - [ ] CLI: `pockettts export-voice --input audio.wav --out voice.safetensors`
+- [x] Task 20.4: **Tests**
+  - [x] Unit test: verify projection arithmetic with known weight + latent values
+  - [x] Integration test (`integration` tag): encode a short WAV, verify output shape `[1, T, 1024]`
+  - [x] CLI: `pockettts export-voice --input audio.wav --out voice.safetensors`
 
 ---
 
@@ -363,17 +363,19 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
 
 > **Goal:** Implement the minimal tensor operations needed to execute PocketTTS modules directly in Go.
 
-- [ ] Task 26.1: **Core tensor ops**
-  - [ ] Implement/standardize tensor primitives: reshape, transpose, concat, narrow, gather, broadcast add/mul, layer norm, softmax
-  - [ ] Implement matmul + linear projections with deterministic CPU path
+- [x] Task 26.1: **Core tensor ops**
+  - [x] Added deterministic CPU tensor primitives (`reshape`, `transpose`, `concat`, `narrow`, `gather`, broadcast `add`/`mul`, `layer_norm`, `softmax`) in `internal/runtime/tensor/tensor.go`
+  - [x] Added deterministic CPU `matmul` + `linear` projection path in `internal/runtime/tensor/tensor.go`
+  - [x] Added unit coverage for primitives and numeric behavior in `internal/runtime/tensor/tensor_test.go`
 
-- [ ] Task 26.2: **Model-critical kernels**
-  - [ ] Add kernels required by FlowLM + Mimi path: attention, MLP blocks, Conv1d/ConvTranspose1d, causal masking, RoPE
-  - [ ] Define numerical tolerance targets vs ONNX outputs for each kernel
+- [x] Task 26.2: **Model-critical kernels**
+  - [x] Added kernels for FlowLM + Mimi building blocks: `attention`, `MLP`, `Conv1d`, `ConvTranspose1d`, `causal masking`, `RoPE` in `internal/runtime/ops/ops.go`
+  - [x] Added per-kernel ONNX parity tolerance targets (`abs`/`rel`) in `internal/runtime/ops/tolerance.go`
+  - [x] Added kernel-level tests in `internal/runtime/ops/ops_test.go`
 
-- [ ] Task 26.3: **Performance envelope**
-  - [ ] Add benchmarks for core kernels and end-to-end frame decode throughput
-  - [ ] Identify optional acceleration points (SIMD/assembly) without changing correctness contract
+- [x] Task 26.3: **Performance envelope**
+  - [x] Added benchmarks for core kernels and decode-like throughput (`BenchmarkMatMulFlowLM`, `BenchmarkLayerNormFlowLM`, `BenchmarkAttentionFlowLM`, `BenchmarkConv1DMimi`, `BenchmarkFrameDecodeThroughput`) in `internal/runtime/ops/ops_bench_test.go`
+  - [x] Documented optional acceleration points (SIMD/assembly/fusion/parallelization) while preserving correctness contract in `internal/runtime/ops/PERFORMANCE.md`
 
 ---
 

@@ -9,7 +9,7 @@ import (
 func TestNewRootCmd_HasExpectedSubcommands(t *testing.T) {
 	root := NewRootCmd()
 
-	want := []string{"synth", "bench", "model", "serve", "health", "doctor"}
+	want := []string{"synth", "export-voice", "bench", "model", "serve", "health", "doctor"}
 	for _, name := range want {
 		found := false
 		for _, sub := range root.Commands() {

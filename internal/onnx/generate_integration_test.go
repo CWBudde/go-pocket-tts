@@ -7,9 +7,9 @@ import (
 	"encoding/binary"
 	"math"
 	"math/rand"
-	"strconv"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"github.com/example/go-pocket-tts/internal/safetensors"

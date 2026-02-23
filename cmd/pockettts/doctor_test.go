@@ -59,7 +59,7 @@ func TestCollectVoiceFiles_NoManifest(t *testing.T) {
 
 	files := collectVoiceFiles()
 	// With no manifest, should return nil/empty (not panic).
-	if files != nil && len(files) != 0 {
+	if len(files) != 0 {
 		t.Errorf("expected nil/empty slice without manifest, got %v", files)
 	}
 }

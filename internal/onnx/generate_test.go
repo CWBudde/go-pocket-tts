@@ -374,9 +374,9 @@ func TestGenerateAudio_NaNHiddenStateProducesSilence(t *testing.T) {
 	})
 
 	cfg := GenerateConfig{
-		Temperature:  0.0,
-		EOSThreshold: -4.0,
-		MaxSteps:     5, // limit steps; NaN EOS never fires
+		Temperature:    0.0,
+		EOSThreshold:   -4.0,
+		MaxSteps:       5, // limit steps; NaN EOS never fires
 		LSDDecodeSteps: 1,
 	}
 
