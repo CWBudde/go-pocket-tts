@@ -97,7 +97,11 @@ func DownloadManifest(opts DownloadOptions, manifest Manifest) error {
 			}
 		}
 
-		localPath := filepath.Join(opts.OutDir, filepath.FromSlash(f.Filename))
+		saveName := f.Filename
+		if f.LocalPath != "" {
+			saveName = f.LocalPath
+		}
+		localPath := filepath.Join(opts.OutDir, filepath.FromSlash(saveName))
 		if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 			return fmt.Errorf("create local subdir: %w", err)
 		}
