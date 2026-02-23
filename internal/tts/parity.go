@@ -37,9 +37,7 @@ type ParitySnapshot struct {
 
 type ServiceFactory func(backend string) (*Service, error)
 
-// NewServiceFactory builds services for parity runs from config. The current
-// implementation supports the ONNX-native path and reports safetensors-native
-// as not implemented.
+// NewServiceFactory builds services for parity runs from config.
 func NewServiceFactory(cfg config.Config) ServiceFactory {
 	return func(backend string) (*Service, error) {
 		normalized, err := config.NormalizeBackend(backend)
@@ -48,12 +46,10 @@ func NewServiceFactory(cfg config.Config) ServiceFactory {
 		}
 
 		switch normalized {
-		case config.BackendNative:
+		case config.BackendNative, config.BackendNativeSafetensors:
 			next := cfg
 			next.TTS.Backend = normalized
 			return NewService(next)
-		case config.BackendNativeSafetensors:
-			return nil, fmt.Errorf("%w: %s", ErrBackendNotImplemented, config.BackendNativeSafetensors)
 		default:
 			return nil, fmt.Errorf("unsupported backend %q for parity harness", normalized)
 		}

@@ -21,6 +21,40 @@ type flowTransformerLayer struct {
 	headDim int64
 }
 
+type flowTransformerLayerState struct {
+	kCache *tensor.Tensor // [B, H, Tk, Dh]
+	vCache *tensor.Tensor // [B, H, Tk, Dh]
+	seqLen int64
+}
+
+func (s *flowTransformerLayerState) appendKV(k, v *tensor.Tensor) error {
+	if s == nil {
+		return fmt.Errorf("native: flow transformer layer state is nil")
+	}
+	if k == nil || v == nil {
+		return fmt.Errorf("native: appendKV requires non-nil k/v tensors")
+	}
+	if s.kCache == nil || s.vCache == nil {
+		s.kCache = k
+		s.vCache = v
+		s.seqLen = k.Shape()[2]
+		return nil
+	}
+
+	kAll, err := tensor.Concat([]*tensor.Tensor{s.kCache, k}, 2)
+	if err != nil {
+		return fmt.Errorf("native: append key cache: %w", err)
+	}
+	vAll, err := tensor.Concat([]*tensor.Tensor{s.vCache, v}, 2)
+	if err != nil {
+		return fmt.Errorf("native: append value cache: %w", err)
+	}
+	s.kCache = kAll
+	s.vCache = vAll
+	s.seqLen = kAll.Shape()[2]
+	return nil
+}
+
 func loadFlowTransformerLayer(vb *VarBuilder, nHeads int64) (*flowTransformerLayer, error) {
 	norm1, err := loadLayerNorm(vb, "norm1", 1e-5)
 	if err != nil {
@@ -93,57 +127,74 @@ func (l *flowTransformerLayer) forward(x, ropeCos, ropeSin *tensor.Tensor) (*ten
 	return addSameShape(x, ff)
 }
 
-func (l *flowTransformerLayer) selfAttention(x, ropeCos, ropeSin *tensor.Tensor) (*tensor.Tensor, error) {
+func (l *flowTransformerLayer) projectQKV(
+	x, ropeCos, ropeSin *tensor.Tensor,
+	pos int64,
+) (q, k, v *tensor.Tensor, err error) {
 	shape := x.Shape() // [B, T, D]
 	if len(shape) != 3 {
-		return nil, fmt.Errorf("native: selfAttention expects [B, T, D], got %v", shape)
+		return nil, nil, nil, fmt.Errorf("native: selfAttention expects [B, T, D], got %v", shape)
 	}
-	b, t, d := shape[0], shape[1], shape[2]
+	b, t := shape[0], shape[1]
 
 	qkv, err := l.inProj.Forward(x)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
-	q, k, v, err := splitLastDim3(qkv)
+	q, k, v, err = splitLastDim3(qkv)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	q, err = q.Reshape([]int64{b, t, l.nHeads, l.headDim})
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	k, err = k.Reshape([]int64{b, t, l.nHeads, l.headDim})
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	v, err = v.Reshape([]int64{b, t, l.nHeads, l.headDim})
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
 	q, err = q.Transpose(1, 2) // [B, H, T, Dh]
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	k, err = k.Transpose(1, 2)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 	v, err = v.Transpose(1, 2)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
 
-	q, err = ops.RoPE(q, ropeCos, ropeSin, 0)
+	q, err = ops.RoPE(q, ropeCos, ropeSin, pos)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
-	k, err = ops.RoPE(k, ropeCos, ropeSin, 0)
+	k, err = ops.RoPE(k, ropeCos, ropeSin, pos)
 	if err != nil {
-		return nil, err
+		return nil, nil, nil, err
 	}
+	return q, k, v, nil
+}
 
-	a, err := ops.Attention(q, k, v, true, 0)
+func (l *flowTransformerLayer) attentionFromQKV(
+	q, k, v *tensor.Tensor,
+	causal bool,
+	offset int64,
+) (*tensor.Tensor, error) {
+	qShape := q.Shape()
+	if len(qShape) != 4 {
+		return nil, fmt.Errorf("native: attentionFromQKV expects q rank 4, got %v", qShape)
+	}
+	b, t := qShape[0], qShape[2]
+	d := l.nHeads * l.headDim
+
+	a, err := ops.Attention(q, k, v, causal, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -158,10 +209,86 @@ func (l *flowTransformerLayer) selfAttention(x, ropeCos, ropeSin *tensor.Tensor)
 	return l.outProj.Forward(a)
 }
 
+func (l *flowTransformerLayer) forwardWithState(
+	x, ropeCos, ropeSin *tensor.Tensor,
+	state *flowTransformerLayerState,
+	incremental bool,
+) (*tensor.Tensor, error) {
+	if state == nil {
+		return nil, fmt.Errorf("native: flow transformer layer state is nil")
+	}
+	n1, err := l.norm1.Forward(x)
+	if err != nil {
+		return nil, err
+	}
+	pos := state.seqLen
+	q, k, v, err := l.projectQKV(n1, ropeCos, ropeSin, pos)
+	if err != nil {
+		return nil, err
+	}
+	if err := state.appendKV(k, v); err != nil {
+		return nil, err
+	}
+
+	causal := true
+	offset := pos
+	if incremental {
+		// In step mode, query length is 1 and caches only contain historical+current
+		// keys, so no future keys are present.
+		causal = false
+		offset = 0
+	}
+
+	attn, err := l.attentionFromQKV(q, state.kCache, state.vCache, causal, offset)
+	if err != nil {
+		return nil, err
+	}
+	x, err = addSameShape(x, attn)
+	if err != nil {
+		return nil, err
+	}
+
+	n2, err := l.norm2.Forward(x)
+	if err != nil {
+		return nil, err
+	}
+	ff, err := l.linear1.Forward(n2)
+	if err != nil {
+		return nil, err
+	}
+	ff = geluErfTensor(ff)
+	ff, err = l.linear2.Forward(ff)
+	if err != nil {
+		return nil, err
+	}
+	return addSameShape(x, ff)
+}
+
+func (l *flowTransformerLayer) selfAttention(x, ropeCos, ropeSin *tensor.Tensor) (*tensor.Tensor, error) {
+	q, k, v, err := l.projectQKV(x, ropeCos, ropeSin, 0)
+	if err != nil {
+		return nil, err
+	}
+	return l.attentionFromQKV(q, k, v, true, 0)
+}
+
 type flowTransformer struct {
 	layers  []*flowTransformerLayer
 	ropeCos *tensor.Tensor // [max_seq, head_dim/2]
 	ropeSin *tensor.Tensor // [max_seq, head_dim/2]
+}
+
+type flowTransformerState struct {
+	layers []flowTransformerLayerState
+}
+
+func (t *flowTransformer) initState() (*flowTransformerState, error) {
+	if t == nil {
+		return nil, fmt.Errorf("native: flow transformer is nil")
+	}
+	return &flowTransformerState{
+		layers: make([]flowTransformerLayerState, len(t.layers)),
+	}, nil
 }
 
 func loadFlowTransformer(vb *VarBuilder, nHeads int64, maxPeriod float64) (*flowTransformer, error) {
@@ -198,6 +325,46 @@ func (t *flowTransformer) forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 		x, err = layer.forward(x, t.ropeCos, t.ropeSin)
 		if err != nil {
 			return nil, fmt.Errorf("native: transformer layer %d: %w", i, err)
+		}
+	}
+	return x, nil
+}
+
+func (t *flowTransformer) prefill(x *tensor.Tensor, state *flowTransformerState) (*tensor.Tensor, error) {
+	if t == nil {
+		return nil, fmt.Errorf("native: flow transformer is nil")
+	}
+	if state == nil {
+		return nil, fmt.Errorf("native: flow transformer state is nil")
+	}
+	if len(state.layers) != len(t.layers) {
+		return nil, fmt.Errorf("native: flow transformer state layer count %d does not match transformer layers %d", len(state.layers), len(t.layers))
+	}
+	var err error
+	for i, layer := range t.layers {
+		x, err = layer.forwardWithState(x, t.ropeCos, t.ropeSin, &state.layers[i], false)
+		if err != nil {
+			return nil, fmt.Errorf("native: transformer prefill layer %d: %w", i, err)
+		}
+	}
+	return x, nil
+}
+
+func (t *flowTransformer) step(x *tensor.Tensor, state *flowTransformerState) (*tensor.Tensor, error) {
+	if t == nil {
+		return nil, fmt.Errorf("native: flow transformer is nil")
+	}
+	if state == nil {
+		return nil, fmt.Errorf("native: flow transformer state is nil")
+	}
+	if len(state.layers) != len(t.layers) {
+		return nil, fmt.Errorf("native: flow transformer state layer count %d does not match transformer layers %d", len(state.layers), len(t.layers))
+	}
+	var err error
+	for i, layer := range t.layers {
+		x, err = layer.forwardWithState(x, t.ropeCos, t.ropeSin, &state.layers[i], true)
+		if err != nil {
+			return nil, fmt.Errorf("native: transformer step layer %d: %w", i, err)
 		}
 	}
 	return x, nil

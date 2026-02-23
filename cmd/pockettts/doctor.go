@@ -56,7 +56,7 @@ func newDoctorCmd() *cobra.Command {
 			if backend == config.BackendNativeSafetensors {
 				_, _ = fmt.Fprintf(
 					os.Stdout,
-					"%s model verify: skipped (backend %s not implemented yet)\n",
+					"%s model verify: skipped (backend %s does not require ONNX graphs)\n",
 					doctor.PassMark,
 					config.BackendNativeSafetensors,
 				)

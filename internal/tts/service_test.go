@@ -116,6 +116,23 @@ func TestNewService_MissingTokenizerModel(t *testing.T) {
 	}
 }
 
+func TestNewService_NativeSafetensors_NoORTRequired(t *testing.T) {
+	modelPath, tokPath := requireNativeSafetensorsAssetsForUnit(t)
+
+	cfg := config.DefaultConfig()
+	cfg.TTS.Backend = config.BackendNativeSafetensors
+	cfg.Paths.ModelPath = modelPath
+	cfg.Paths.TokenizerModel = tokPath
+	// Must not be consulted for native-safetensors path.
+	cfg.Runtime.ORTLibraryPath = "/nonexistent/libonnxruntime.so"
+
+	svc, err := NewService(cfg)
+	if err != nil {
+		t.Fatalf("NewService(native-safetensors) returned error: %v", err)
+	}
+	svc.Close()
+}
+
 func TestSynthesize_EmptyInput(t *testing.T) {
 	svc := newTestService(t)
 
@@ -377,4 +394,32 @@ func writeVoiceSafetensors(t *testing.T, path string, shape []int64, values []fl
 	if err := os.WriteFile(path, buf, 0o644); err != nil {
 		t.Fatalf("write safetensors file: %v", err)
 	}
+}
+
+func requireNativeSafetensorsAssetsForUnit(t testing.TB) (modelPath, tokPath string) {
+	t.Helper()
+	modelCandidates := []string{
+		filepath.Join("models", "tts_b6369a24.safetensors"),
+		filepath.Join("..", "..", "models", "tts_b6369a24.safetensors"),
+	}
+	tokCandidates := []string{
+		filepath.Join("models", "tokenizer.model"),
+		filepath.Join("..", "..", "models", "tokenizer.model"),
+	}
+	for _, p := range modelCandidates {
+		if _, err := os.Stat(p); err == nil {
+			modelPath = p
+			break
+		}
+	}
+	for _, p := range tokCandidates {
+		if _, err := os.Stat(p); err == nil {
+			tokPath = p
+			break
+		}
+	}
+	if modelPath == "" || tokPath == "" {
+		t.Skipf("native safetensors assets unavailable (model=%q tokenizer=%q)", modelPath, tokPath)
+	}
+	return modelPath, tokPath
 }

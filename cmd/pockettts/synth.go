@@ -61,7 +61,7 @@ func newSynthCmd() *cobra.Command {
 
 			var result []byte
 			switch selectedBackend {
-			case config.BackendNative:
+			case config.BackendNative, config.BackendNativeSafetensors:
 				if len(ttsArgs) > 0 {
 					return fmt.Errorf("--tts-arg is only supported with --backend cli")
 				}
@@ -70,7 +70,9 @@ func newSynthCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				result, err = synthesizeNative(cmd.Context(), cfg, chunks, resolvedVoice)
+				nativeCfg := cfg
+				nativeCfg.TTS.Backend = selectedBackend
+				result, err = synthesizeNative(cmd.Context(), nativeCfg, chunks, resolvedVoice)
 			case config.BackendCLI:
 				var resolvedVoice string
 				resolvedVoice, err = resolveVoiceOrPath(selectedVoice)
@@ -89,8 +91,6 @@ func newSynthCmd() *cobra.Command {
 					Chunks:    chunks,
 					ChunkMode: chunk,
 				})
-			case config.BackendNativeSafetensors:
-				return fmt.Errorf("backend %q is not implemented yet", config.BackendNativeSafetensors)
 			default:
 				return fmt.Errorf("unsupported backend %q", selectedBackend)
 			}
@@ -121,7 +121,7 @@ func newSynthCmd() *cobra.Command {
 		&backend,
 		"backend",
 		"",
-		"Synthesis backend override (native-onnx|native-safetensors|cli; native is alias for native-onnx)",
+		"Synthesis backend override (native-onnx|native-safetensors|cli; native is alias for native-safetensors)",
 	)
 	cmd.Flags().StringVar(&voice, "voice", "", "Voice ID from voices/manifest.json (overrides config)")
 	cmd.Flags().BoolVar(&chunk, "chunk", false, "Split text into sentence chunks and synthesize sequentially")
@@ -246,6 +246,7 @@ func synthesizeNative(ctx context.Context, cfg config.Config, chunks []string, v
 	if err != nil {
 		return nil, fmt.Errorf("initialize native synth service: %w", err)
 	}
+	defer svc.Close()
 
 	merged := make([]float32, 0, 24000)
 	for i, chunkText := range chunks {

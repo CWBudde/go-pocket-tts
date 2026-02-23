@@ -51,26 +51,19 @@ build:
 clean:
     rm -f coverage.out coverage.html pockettts pockettts-tools pockettts-wasm
 
-# Generate a "Hello, world!" WAV file using the native backend.
+# Generate a "Hello, world!" WAV file using the safetensors-native backend.
 # Builds the binary, downloads models/voices if missing, then synthesizes.
-# Set ORT_LIB to override the ONNX Runtime library path.
-generate ORT_LIB="/usr/local/lib/libonnxruntime.so.1.23.0":
+generate:
     @echo "==> Building pockettts..."
     go build -o pockettts ./cmd/pockettts
     @echo "==> Downloading models (skipped if already present)..."
     ./pockettts model download
-    @echo "==> Ensuring ONNX graphs are available..."
-    @if [ ! -f "models/onnx/manifest.json" ] || \
-        [ ! -f "models/onnx/text_conditioner.onnx" ] || \
-        [ ! -f "models/onnx/flow_lm_main.onnx" ] || \
-        [ ! -f "models/onnx/flow_lm_flow.onnx" ] || \
-        [ ! -f "models/onnx/latent_to_mimi.onnx" ] || \
-        [ ! -f "models/onnx/mimi_decoder.onnx" ]; then \
-        echo "    ONNX files missing; exporting from safetensors checkpoint..."; \
-        go build -o pockettts-tools ./cmd/pockettts-tools; \
-        ./pockettts-tools model export --models-dir models --out-dir models/onnx --variant b6369a24 --max-seq 512; \
+    @echo "==> Ensuring tokenizer.model is available..."
+    @if [ ! -f "models/tokenizer.model" ]; then \
+        echo "    tokenizer.model missing; downloading from ungated repo..."; \
+        ./pockettts model download --hf-repo kyutai/pocket-tts-without-voice-cloning --out-dir models; \
     else \
-        echo "    ONNX files already present; skipping export."; \
+        echo "    tokenizer.model already present; skipping extra download."; \
     fi
     @echo "==> Downloading voice embeddings (skipped if already present)..."
     @for voice in alba marius javert jean fantine cosette eponine azelma; do \
@@ -81,7 +74,9 @@ generate ORT_LIB="/usr/local/lib/libonnxruntime.so.1.23.0":
         fi; \
     done
     @echo "==> Synthesizing 'Hello, world!'..."
-    ORT_LIBRARY_PATH="{{ ORT_LIB }}" ./pockettts synth \
+    @echo "==> Removing old output (if any)..."
+    rm -f hello-world.wav
+    ./pockettts synth \
         --backend native \
         --voice alba \
         --text "Hello, world!" \

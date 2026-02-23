@@ -21,7 +21,7 @@ func NormalizeBackend(raw string) (string, error) {
 	case BackendNative, BackendCLI, BackendNativeSafetensors:
 		return backend, nil
 	case BackendNativeLegacyAlias:
-		return BackendNative, nil
+		return BackendNativeSafetensors, nil
 	default:
 		return "", fmt.Errorf(
 			"invalid backend %q (expected %s|%s|%s|%s)",
