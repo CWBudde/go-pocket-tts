@@ -534,12 +534,24 @@ async function handleLoadModel() {
     }
 
     const toPreload = [...requiredGraphs, ...optionalGraphs.filter((name) => graphExists(name))];
-    for (let i = 0; i < toPreload.length; i++) {
+    const total = toPreload.length;
+    for (let i = 0; i < total; i++) {
       const name = toPreload[i];
-      const percent = Math.round(((i) / toPreload.length) * 100);
-      synthProgress.value = percent;
-      synthProgressText.textContent = `${percent}% - loading ${name} (${i + 1}/${toPreload.length})`;
-      await onnxBridge.getSession(name);
+      const basePercent = (i / total) * 100;
+      const slicePercent = 100 / total;
+
+      await onnxBridge.getSession(name, (received, contentLength) => {
+        const dlFrac = contentLength > 0 ? received / contentLength : 1;
+        const percent = Math.round(basePercent + dlFrac * slicePercent);
+        const mb = (received / 1048576).toFixed(1);
+        const totalMb = (contentLength / 1048576).toFixed(1);
+        synthProgress.value = percent;
+        synthProgressText.textContent = `${percent}% - downloading ${name} (${mb}/${totalMb} MB) [${i + 1}/${total}]`;
+      });
+
+      const initPercent = Math.round(basePercent + slicePercent);
+      synthProgress.value = initPercent;
+      synthProgressText.textContent = `${initPercent}% - initialized ${name} [${i + 1}/${total}]`;
     }
 
     synthProgress.value = 100;

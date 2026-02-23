@@ -14,6 +14,7 @@ func newModelExportCmd() *cobra.Command {
 	var int8 bool
 	var variant string
 	var pythonBin string
+	var maxSeq int
 
 	cmd := &cobra.Command{
 		Use:   "export",
@@ -27,6 +28,7 @@ func newModelExportCmd() *cobra.Command {
 				Int8:      int8,
 				Variant:   variant,
 				PythonBin: pythonBin,
+				MaxSeq:    maxSeq,
 				Stdout:    os.Stdout,
 				Stderr:    os.Stderr,
 			})
@@ -45,6 +47,7 @@ func newModelExportCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&int8, "int8", false, "Enable post-export INT8 quantization")
 	cmd.Flags().StringVar(&variant, "variant", "b6369a24", "PocketTTS model variant signature or config alias")
 	cmd.Flags().StringVar(&pythonBin, "python-bin", "", "Python interpreter for export helper (auto-detected from pocket-tts by default)")
+	cmd.Flags().IntVar(&maxSeq, "max-seq", 0, "KV-cache max sequence length (0 = script default 256; use 512+ for voice conditioning)")
 
 	return cmd
 }
