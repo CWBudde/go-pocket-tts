@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 )
 
 // runnerIface is satisfied by *Runner and by test fakes.
@@ -17,6 +18,12 @@ type runnerIface interface {
 type Engine struct {
 	runners map[string]runnerIface
 	sm      *SessionManager
+
+	manifestPath      string
+	modelWeightsPath  string
+	speakerProjOnce   sync.Once
+	speakerProjWeight []float32
+	speakerProjErr    error
 }
 
 // NewEngine loads the ONNX manifest and creates a Runner for each graph.
@@ -39,7 +46,12 @@ func NewEngine(manifestPath string, cfg RunnerConfig) (*Engine, error) {
 		slog.Info("created ONNX runner", "graph", sess.Name)
 	}
 
-	return &Engine{runners: runners, sm: sm}, nil
+	return &Engine{
+		runners:          runners,
+		sm:               sm,
+		manifestPath:     manifestPath,
+		modelWeightsPath: cfg.ModelWeightsPath,
+	}, nil
 }
 
 // Runner returns the named graph runner, if it exists.

@@ -11,8 +11,9 @@ import (
 
 // RunnerConfig holds ORT library settings for creating runners.
 type RunnerConfig struct {
-	LibraryPath string
-	APIVersion  uint32
+	LibraryPath      string
+	APIVersion       uint32
+	ModelWeightsPath string // Optional .safetensors checkpoint path (used by voice encoding).
 }
 
 // Runner wraps an ORT session for a single ONNX graph.

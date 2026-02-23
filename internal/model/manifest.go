@@ -50,8 +50,10 @@ func PinnedManifest(repo string) (Manifest, error) {
 	}
 }
 
-const voiceRepo = "kyutai/pocket-tts-without-voice-cloning"
-const voiceRevision = "d4fdd22ae8c8e1cb3634e150ebeff1dab2d16df3"
+const (
+	voiceRepo     = "kyutai/pocket-tts-without-voice-cloning"
+	voiceRevision = "d4fdd22ae8c8e1cb3634e150ebeff1dab2d16df3"
+)
 
 func VoiceManifest() Manifest {
 	voices := []struct {

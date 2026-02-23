@@ -11,8 +11,9 @@ import (
 // In js/wasm builds, native ORT is unavailable; this struct is kept so the
 // package API remains build-compatible.
 type RunnerConfig struct {
-	LibraryPath string
-	APIVersion  uint32
+	LibraryPath      string
+	APIVersion       uint32
+	ModelWeightsPath string
 }
 
 // Runner is unavailable in js/wasm builds. Use NewEngineWithRunners with a

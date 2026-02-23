@@ -6,13 +6,13 @@ Go CLI (and a small HTTP server skeleton) for working with [PocketTTS](https://g
 - Download PocketTTS model checkpoints from Hugging Face
 - Export PocketTTS PyTorch checkpoints to ONNX subgraphs + manifest
 - Smoke-verify exported ONNX graphs
-- Export voice embeddings (`.safetensors`) from a WAV prompt (optional tooling)
+- Export voice embeddings (`.safetensors`) from a WAV/PCM prompt (native ONNX)
 
 ## Status
 
 - CLI commands are implemented.
-- Runtime binary: `pockettts` (`synth`, `serve`, `doctor`, `health`, `model download`, `model verify`).
-- Tooling binary: `pockettts-tools` (`model export`, `export-voice`).
+- Runtime binary: `pockettts` (`synth`, `export-voice`, `serve`, `doctor`, `health`, `model download`, `model verify`).
+- Tooling binary: `pockettts-tools` (`model export`).
 - HTTP server endpoints: `GET /health`, `GET /voices`, `POST /tts`.
 
 ## Get Started (No Python)
@@ -70,8 +70,6 @@ ls -lh hello.wav
 - `pockettts-tools model export`
   - Python environment with `pocket_tts`, `torch`, `onnx`
   - optional for `--int8`: Python `onnxruntime`
-- `pockettts-tools export-voice`
-  - `pocket-tts` CLI installed (Python package), available in `PATH` or set via `--tts-cli-path`
 
 ## Build
 
@@ -193,11 +191,10 @@ export ORT_LIBRARY_PATH=/usr/local/lib/libonnxruntime.so
 
 ## Export a voice embedding
 
-Exports a `.safetensors` voice embedding from a speaker WAV prompt and prints a suggested `voices/manifest.json` entry.
-This is an optional tooling command requiring Python `pocket-tts`.
+Exports a `.safetensors` voice embedding from a speaker WAV/PCM prompt using the native ONNX `mimi_encoder` + speaker projection path and prints a suggested `voices/manifest.json` entry.
 
 ```bash
-./pockettts-tools export-voice --audio speaker.wav --out voices/my_voice.safetensors --id my-voice --license "CC-BY-4.0"
+./pockettts export-voice --input speaker.wav --out voices/my_voice.safetensors --id my-voice --license "CC-BY-4.0"
 ```
 
 See [voices/README.md](voices/README.md) for licensing guidance.

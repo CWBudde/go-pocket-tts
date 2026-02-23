@@ -26,7 +26,8 @@ func buildSafetensors(t *testing.T, tensors map[string]struct {
 	dtype string
 	shape []int64
 	data  []byte
-}) []byte {
+},
+) []byte {
 	t.Helper()
 
 	// Build header and compute offsets.

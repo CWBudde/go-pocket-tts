@@ -2,8 +2,8 @@
 
 ## Runtime vs tooling dependencies
 
-- Runtime commands (`synth`, `serve`, `doctor`, `model verify`) can run without Python when using backend `native`.
-- Tooling commands (`pockettts-tools model export`, `pockettts-tools export-voice`) require Python tooling.
+- Runtime commands (`synth`, `export-voice`, `serve`, `doctor`, `model verify`) can run without Python when using backend `native`.
+- Tooling command (`pockettts-tools model export`) requires Python tooling.
 
 ## ONNX Runtime shared library
 
@@ -52,9 +52,6 @@ Only needed for export tooling commands:
   - Python `>=3.10,<3.15`
   - importable modules: `pocket_tts`, `torch`, `onnx`
   - optional for `--int8`: `onnxruntime`
-- `pockettts-tools export-voice`:
-  - `pocket-tts` CLI installed (Python package)
-
 To force compatibility mode that uses the Python CLI for synthesis:
 
 ```bash
