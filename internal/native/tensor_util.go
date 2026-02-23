@@ -1,0 +1,231 @@
+package native
+
+import (
+	"fmt"
+	"math"
+
+	"github.com/example/go-pocket-tts/internal/runtime/tensor"
+)
+
+func addSameShape(a, b *tensor.Tensor) (*tensor.Tensor, error) {
+	if a == nil || b == nil {
+		return nil, fmt.Errorf("native: add requires non-nil tensors")
+	}
+	if !equalShape(a.Shape(), b.Shape()) {
+		return nil, fmt.Errorf("native: add shape mismatch %v vs %v", a.Shape(), b.Shape())
+	}
+	out := a.Clone()
+	od := out.RawData()
+	bd := b.RawData()
+	for i := range od {
+		od[i] += bd[i]
+	}
+	return out, nil
+}
+
+func mulSameShape(a, b *tensor.Tensor) (*tensor.Tensor, error) {
+	if a == nil || b == nil {
+		return nil, fmt.Errorf("native: mul requires non-nil tensors")
+	}
+	if !equalShape(a.Shape(), b.Shape()) {
+		return nil, fmt.Errorf("native: mul shape mismatch %v vs %v", a.Shape(), b.Shape())
+	}
+	out := a.Clone()
+	od := out.RawData()
+	bd := b.RawData()
+	for i := range od {
+		od[i] *= bd[i]
+	}
+	return out, nil
+}
+
+func scaleTensor(x *tensor.Tensor, s float32) *tensor.Tensor {
+	out := x.Clone()
+	d := out.RawData()
+	for i := range d {
+		d[i] *= s
+	}
+	return out
+}
+
+func addScalar(x *tensor.Tensor, s float32) *tensor.Tensor {
+	out := x.Clone()
+	d := out.RawData()
+	for i := range d {
+		d[i] += s
+	}
+	return out
+}
+
+func siluTensor(x *tensor.Tensor) *tensor.Tensor {
+	out := x.Clone()
+	d := out.RawData()
+	for i, v := range d {
+		d[i] = v / (1 + float32(math.Exp(float64(-v))))
+	}
+	return out
+}
+
+func geluErfTensor(x *tensor.Tensor) *tensor.Tensor {
+	out := x.Clone()
+	d := out.RawData()
+	for i, v := range d {
+		fv := float64(v)
+		d[i] = float32(0.5 * fv * (1 + math.Erf(fv/math.Sqrt2)))
+	}
+	return out
+}
+
+func eluTensor(x *tensor.Tensor, alpha float32) *tensor.Tensor {
+	out := x.Clone()
+	d := out.RawData()
+	for i, v := range d {
+		if v <= 0 {
+			d[i] = alpha * (float32(math.Exp(float64(v))) - 1)
+		}
+	}
+	return out
+}
+
+func repeatAlongMiddle(x *tensor.Tensor, middle int64) (*tensor.Tensor, error) {
+	shape := x.Shape()
+	if len(shape) != 2 {
+		return nil, fmt.Errorf("native: repeatAlongMiddle expects rank-2 tensor, got %v", shape)
+	}
+	if middle < 0 {
+		return nil, fmt.Errorf("native: middle repeat must be non-negative")
+	}
+	out, err := tensor.Zeros([]int64{shape[0], middle, shape[1]})
+	if err != nil {
+		return nil, err
+	}
+	in := x.RawData()
+	od := out.RawData()
+	b := int(shape[0])
+	d := int(shape[1])
+	m := int(middle)
+	for bi := 0; bi < b; bi++ {
+		for mi := 0; mi < m; mi++ {
+			src := bi * d
+			dst := (bi*m + mi) * d
+			copy(od[dst:dst+d], in[src:src+d])
+		}
+	}
+	return out, nil
+}
+
+func lastToken(x *tensor.Tensor) (*tensor.Tensor, error) {
+	shape := x.Shape()
+	if len(shape) != 3 || shape[1] < 1 {
+		return nil, fmt.Errorf("native: lastToken expects [B, T, D] with T>=1, got %v", shape)
+	}
+	last, err := x.Narrow(1, shape[1]-1, 1)
+	if err != nil {
+		return nil, err
+	}
+	return last.Reshape([]int64{shape[0], shape[2]})
+}
+
+func splitLastDim3(x *tensor.Tensor) (a, b, c *tensor.Tensor, err error) {
+	shape := x.Shape()
+	if len(shape) < 1 {
+		return nil, nil, nil, fmt.Errorf("native: splitLastDim3 requires rank >= 1")
+	}
+	last := shape[len(shape)-1]
+	if last%3 != 0 {
+		return nil, nil, nil, fmt.Errorf("native: splitLastDim3 last dim %d is not divisible by 3", last)
+	}
+	chunk := last / 3
+	a, err = x.Narrow(-1, 0, chunk)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	b, err = x.Narrow(-1, chunk, chunk)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	c, err = x.Narrow(-1, 2*chunk, chunk)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return a, b, c, nil
+}
+
+func modulate(x, shift, scale *tensor.Tensor) (*tensor.Tensor, error) {
+	if x == nil || shift == nil || scale == nil {
+		return nil, fmt.Errorf("native: modulate requires non-nil tensors")
+	}
+	onePlusScale := addScalar(scale, 1.0)
+	mul, err := tensor.BroadcastMul(x, onePlusScale)
+	if err != nil {
+		return nil, fmt.Errorf("native: modulate mul: %w", err)
+	}
+	out, err := tensor.BroadcastAdd(mul, shift)
+	if err != nil {
+		return nil, fmt.Errorf("native: modulate add: %w", err)
+	}
+	return out, nil
+}
+
+func replaceNaNWithVector(x, vec *tensor.Tensor) (*tensor.Tensor, error) {
+	if x == nil || vec == nil {
+		return nil, fmt.Errorf("native: replaceNaNWithVector requires non-nil tensors")
+	}
+	xShape := x.Shape()
+	if len(xShape) == 0 {
+		return nil, fmt.Errorf("native: replaceNaNWithVector input rank must be >=1")
+	}
+	d := xShape[len(xShape)-1]
+	vShape := vec.Shape()
+	if len(vShape) != 1 || vShape[0] != d {
+		return nil, fmt.Errorf("native: replaceNaNWithVector vector shape %v incompatible with last dim %d", vShape, d)
+	}
+
+	out := x.Clone()
+	od := out.RawData()
+	vd := vec.RawData()
+	dd := int(d)
+	for i := range od {
+		if math.IsNaN(float64(od[i])) {
+			od[i] = vd[i%dd]
+		}
+	}
+	return out, nil
+}
+
+func rmsNormWithAlpha(x, alpha *tensor.Tensor, eps float32) (*tensor.Tensor, error) {
+	if x == nil || alpha == nil {
+		return nil, fmt.Errorf("native: rmsNormWithAlpha requires non-nil tensors")
+	}
+	shape := x.Shape()
+	if len(shape) < 1 {
+		return nil, fmt.Errorf("native: rmsNormWithAlpha rank must be >=1")
+	}
+	d := shape[len(shape)-1]
+	if d <= 0 {
+		return nil, fmt.Errorf("native: rmsNormWithAlpha last dim must be >0")
+	}
+	if aShape := alpha.Shape(); len(aShape) != 1 || aShape[0] != d {
+		return nil, fmt.Errorf("native: rmsNormWithAlpha alpha shape %v incompatible with last dim %d", aShape, d)
+	}
+
+	out := x.Clone()
+	xd := out.RawData()
+	ad := alpha.RawData()
+	dd := int(d)
+	outer := len(xd) / dd
+	for i := 0; i < outer; i++ {
+		base := i * dd
+		var meanSq float64
+		for j := 0; j < dd; j++ {
+			v := float64(xd[base+j])
+			meanSq += v * v
+		}
+		meanSq /= float64(dd)
+		inv := float32(1.0 / math.Sqrt(meanSq+float64(eps)))
+		for j := 0; j < dd; j++ {
+			xd[base+j] = xd[base+j] * inv * ad[j]
+		}
+	}
+	return out, nil
+}
