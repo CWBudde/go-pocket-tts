@@ -6,14 +6,14 @@
     <title>PocketTTS Web Demo</title>
     <style>
       :root {
-        --bg: #0b1220;
-        --bg-soft: #101a2e;
-        --panel: #13203a;
-        --line: #2e4368;
-        --text: #dfe8f6;
-        --muted: #98abc9;
-        --accent: #4cb2ff;
-        --accent-ink: #00101f;
+        --bg: #0e1726;
+        --bg-soft: #13223a;
+        --panel: #152842;
+        --line: #2f4f75;
+        --text: #e3edf9;
+        --muted: #9bb2d3;
+        --accent: #73d8ff;
+        --accent-ink: #001826;
       }
 
       * {
@@ -25,20 +25,20 @@
         min-height: 100vh;
         font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
         background:
-          radial-gradient(1000px 500px at 90% -10%, #17305a55, transparent),
-          radial-gradient(900px 400px at -10% 120%, #214c7a44, transparent),
+          radial-gradient(1200px 600px at 95% -20%, #2867a233, transparent),
+          radial-gradient(900px 420px at -10% 120%, #3c7bb733, transparent),
           var(--bg);
         color: var(--text);
       }
 
       main {
-        max-width: 900px;
+        max-width: 940px;
         margin: 1.2rem auto;
         padding: 1rem;
       }
 
       .panel {
-        background: linear-gradient(180deg, #162645cc, #111d33dd);
+        background: linear-gradient(180deg, #182d4ddd, #122238e6);
         border: 1px solid var(--line);
         border-radius: 12px;
         padding: 1rem;
@@ -71,9 +71,9 @@
 
       textarea {
         width: 100%;
-        min-height: 110px;
+        min-height: 120px;
         margin-top: 0.7rem;
-        background: #0a1428;
+        background: #091427;
         border: 1px solid var(--line);
         border-radius: 10px;
         color: var(--text);
@@ -83,7 +83,7 @@
 
       button,
       select {
-        background: #0d1a30;
+        background: #0f1c33;
         color: var(--text);
         border: 1px solid var(--line);
         border-radius: 9px;
@@ -94,7 +94,7 @@
       button.primary {
         background: var(--accent);
         color: var(--accent-ink);
-        border-color: #82c9ff;
+        border-color: #9ee4ff;
         font-weight: 700;
       }
 
@@ -150,17 +150,12 @@
     <main>
       <section class="panel">
         <h1>PocketTTS Web Demo</h1>
-        <p class="subtitle">Run model inference in-browser with JavaScript or Go WASM orchestration.</p>
+        <p class="subtitle">Single-path demo using the Go WASM kernel with the native PocketTTS generation pipeline.</p>
 
         <div id="startup-info" class="info">Starting...</div>
 
         <div class="row">
           <button id="load-model" type="button">Load Model</button>
-          <label class="muted" for="engine">Engine</label>
-          <select id="engine">
-            <option value="go">Go WASM</option>
-            <option value="js">JavaScript</option>
-          </select>
           <label class="muted" for="voice">Voice</label>
           <select id="voice">
             <option value="">No voice</option>

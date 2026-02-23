@@ -240,20 +240,18 @@ Run/deploy workflow:
   - Manual runs support `include-models`, `onnx-bundle-url`, and `onnx-bundle-sha256`.
   - `main` builds include ONNX model export/bundle by default so model actions are enabled.
 
-The deployed page provides:
+The deployed page provides a single synthesis path:
 
-- `Generate Fallback Tone WAV`: wasm-only fallback tone generation (sanity path, not model speech quality).
-- `Verify ONNX Models`: browser-side ONNX smoke inference over bundled graphs via `onnxruntime-web`.
-- `Synthesize via ONNX (Exp)`: experimental browser autoregressive graph orchestration, now executed in Go wasm (`PocketTTSKernel.synthesizeModel`) via a thin JS ORT bridge.
-  - Uses exported `latent_to_mimi` graph when present for upstream-aligned latent denorm + quantizer projection.
+- `Go WASM kernel` orchestration (`PocketTTSKernel.synthesize`) for text preprocessing/chunking, autoregressive generation, and WAV encoding.
+- `onnxruntime-web` is used only as a graph execution bridge (session loading and `runGraph` calls), with no separate JavaScript synthesis engine.
+- Optional voice conditioning by passing `.safetensors` embeddings into the Go kernel.
 
-At startup the app now runs capability checks and only enables actions that are currently available (kernel, manifest, required model graphs).
+At startup the app runs capability checks and only enables synthesis when kernel + manifest + required ONNX graphs are ready.
 
-Current gap for full browser PocketTTS inference:
+Current browser constraints:
 
-- Native ONNX Runtime (`onnxruntime-purego`) is not available in browser wasm.
-- Remaining gap: architecture-accurate state/KV-cache parity and voice-conditioning parity with upstream Python runtime.
-- Model download/export still happens in CI/tooling (not in-browser).
+- Native ONNX Runtime (`onnxruntime-purego`) is not available in browser wasm; graph execution uses `onnxruntime-web`.
+- Model download/export remains a CI/tooling step (not in-browser).
 
 ## Configuration
 

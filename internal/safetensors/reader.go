@@ -29,6 +29,16 @@ func LoadFirstTensor(path string) (*Tensor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("safetensors: read %s: %w", path, err)
 	}
+	return LoadFirstTensorFromBytes(data)
+}
+
+// LoadFirstTensorFromBytes decodes a safetensors payload and returns the first
+// float32 tensor.
+func LoadFirstTensorFromBytes(data []byte) (*Tensor, error) {
+	return loadFirstTensor(data)
+}
+
+func loadFirstTensor(data []byte) (*Tensor, error) {
 
 	if len(data) < 8 {
 		return nil, fmt.Errorf("safetensors: file too short (%d bytes)", len(data))
@@ -49,7 +59,7 @@ func LoadFirstTensor(path string) (*Tensor, error) {
 	delete(header, "__metadata__")
 
 	if len(header) == 0 {
-		return nil, fmt.Errorf("safetensors: no tensors found in %s", path)
+		return nil, fmt.Errorf("safetensors: no tensors found")
 	}
 
 	// Pick the first tensor.
@@ -103,7 +113,20 @@ func LoadVoiceEmbedding(path string) ([]float32, []int64, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	return normalizeVoiceEmbeddingShape(tensor)
+}
 
+// LoadVoiceEmbeddingFromBytes loads a voice embedding from safetensors payload
+// bytes and ensures the result has 3D shape [1, T, D].
+func LoadVoiceEmbeddingFromBytes(data []byte) ([]float32, []int64, error) {
+	tensor, err := LoadFirstTensorFromBytes(data)
+	if err != nil {
+		return nil, nil, err
+	}
+	return normalizeVoiceEmbeddingShape(tensor)
+}
+
+func normalizeVoiceEmbeddingShape(tensor *Tensor) ([]float32, []int64, error) {
 	switch len(tensor.Shape) {
 	case 2:
 		// [T, D] → [1, T, D]
