@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -394,6 +395,63 @@ func TestFlowLMFlow_MissingFlowDirectionOutput(t *testing.T) {
 
 func isNaN(f float32) bool {
 	return f != f
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests for FlowLMKVState and Engine.FlowLMPrefill
+// ---------------------------------------------------------------------------
+
+// TestFlowLMPrefill_ReturnsMissingGraphError verifies that FlowLMPrefill returns a
+// descriptive error when the flow_lm_prefill graph is absent from the engine.
+func TestFlowLMPrefill_ReturnsMissingGraphError(t *testing.T) {
+	e := engineWithFakeRunners(map[string]runnerIface{})
+	ctx := context.Background()
+	textEmb, _ := NewTensor(make([]float32, 8*1024), []int64{1, 8, 1024})
+
+	_, err := e.FlowLMPrefill(ctx, textEmb)
+	if err == nil {
+		t.Fatal("expected error for missing flow_lm_prefill graph")
+	}
+	if !strings.Contains(err.Error(), "flow_lm_prefill") {
+		t.Errorf("error %q should mention 'flow_lm_prefill'", err.Error())
+	}
+}
+
+// TestFlowLMPrefill_UnpacksKVState verifies that FlowLMPrefill unpacks the KV tensors
+// and offset from the graph outputs into a FlowLMKVState.
+func TestFlowLMPrefill_UnpacksKVState(t *testing.T) {
+	const numLayers = 3
+	T := int64(5) // text tokens
+
+	fakePrefill := &fakeRunner{
+		name: "flow_lm_prefill",
+		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+			out := make(map[string]*Tensor)
+			for i := range numLayers {
+				kv, _ := NewTensor(make([]float32, 2*1*int(T)*2*4), []int64{2, 1, T, 2, 4})
+				out[fmt.Sprintf("kv_%d", i)] = kv
+			}
+			offsetTensor, _ := NewTensor([]int64{T}, []int64{1})
+			out["offset"] = offsetTensor
+			return out, nil
+		},
+	}
+
+	e := engineWithFakeRunners(map[string]runnerIface{
+		"flow_lm_prefill": fakePrefill,
+	})
+
+	textEmb, _ := NewTensor(make([]float32, T*1024), []int64{1, T, 1024})
+	state, err := e.FlowLMPrefill(context.Background(), textEmb)
+	if err != nil {
+		t.Fatalf("FlowLMPrefill: %v", err)
+	}
+	if len(state.KV) != numLayers {
+		t.Fatalf("KV len = %d; want %d", len(state.KV), numLayers)
+	}
+	if state.Offset != T {
+		t.Fatalf("Offset = %d; want %d", state.Offset, T)
+	}
 }
 
 // ---------------------------------------------------------------------------
