@@ -1,5 +1,3 @@
-import { ONNXBridge } from "./bridge.js";
-
 const startupInfo = document.getElementById("startup-info");
 const log = document.getElementById("log");
 const textArea = document.getElementById("text");
@@ -14,14 +12,9 @@ const voiceSelect = document.getElementById("voice");
 const temperatureSlider = document.getElementById("temperature");
 const temperatureValue = document.getElementById("temperature-value");
 
-const onnxBridge = new ONNXBridge({ manifestPath: "./models/manifest.json" });
-const requiredGraphs = ["text_conditioner", "flow_lm_main", "flow_lm_flow", "latent_to_mimi", "mimi_decoder"];
-
 const state = {
   kernelReady: false,
   kernelVersion: "",
-  manifestReady: false,
-  manifest: null,
   modelLoaded: false,
   activeAudioURL: "",
   voiceManifest: null,
@@ -31,6 +24,8 @@ const state = {
 const modelConfig = {
   temperature: 0.7,
 };
+
+const modelAssetPath = "./models/tts_b6369a24.safetensors";
 
 function formatError(err) {
   if (!err) return "unknown error";
@@ -78,22 +73,59 @@ function updateProgress(evt) {
   synthProgressText.textContent = `${Math.round(percent)}% - ${stage}${detail}`;
 }
 
-function hasRequiredGraphs(manifest) {
-  const names = new Set((manifest?.graphs || []).map((g) => g.name));
-  return requiredGraphs.every((name) => names.has(name));
+function renderStartupInfo() {
+  const lines = [
+    `Kernel: ${state.kernelReady ? `ready (${state.kernelVersion})` : "unavailable"}`,
+    `Model asset: ${modelAssetPath}`,
+    `Loaded: ${state.modelLoaded ? "yes" : "no"}`,
+    "Runtime: Go native-safetensors (pure wasm)",
+    "Pipeline: Go wasm orchestration (CLI-aligned)",
+  ];
+
+  startupInfo.textContent = lines.join("\n");
 }
 
-function getGraphByName(manifest, name) {
-  return (manifest?.graphs || []).find((g) => g.name === name) || null;
+function renderModelState() {
+  modelState.textContent = state.modelLoaded ? "Model: loaded" : "Model: not loaded";
 }
 
-function graphUncompressedSizeBytes(graph) {
-  const raw = graph?.size_bytes ?? graph?.sizeBytes;
-  const n = Number(raw);
-  if (!Number.isFinite(n) || n <= 0) {
-    return 0;
+function setSynthesizeEnabled() {
+  synthBtn.disabled = !(state.kernelReady && state.modelLoaded);
+}
+
+async function fetchBytesWithProgress(url, onProgress) {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`fetch ${url} failed (${res.status})`);
   }
-  return Math.floor(n);
+
+  const contentLength = parseInt(res.headers.get("content-length") || "0", 10);
+  if (!res.body) {
+    const buf = await res.arrayBuffer();
+    if (onProgress) onProgress(buf.byteLength, buf.byteLength);
+    return new Uint8Array(buf);
+  }
+
+  const reader = res.body.getReader();
+  const chunks = [];
+  let received = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    received += value.length;
+    if (onProgress) onProgress(received, contentLength);
+  }
+
+  const out = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  if (onProgress) onProgress(received, contentLength || received);
+  return out;
 }
 
 async function bootKernel() {
@@ -108,42 +140,12 @@ async function bootKernel() {
   if (typeof kernel.synthesize !== "function") {
     throw new Error("PocketTTSKernel.synthesize is missing");
   }
+  if (typeof kernel.loadModel !== "function") {
+    throw new Error("PocketTTSKernel.loadModel is missing");
+  }
 
   state.kernelReady = true;
   state.kernelVersion = String(kernel.version || "unknown");
-}
-
-async function detectManifest() {
-  const manifest = await onnxBridge.loadManifest();
-  state.manifest = manifest;
-  state.manifestReady = true;
-}
-
-function renderStartupInfo() {
-  const graphNames = (state.manifest?.graphs || []).map((g) => g.name);
-
-  const lines = [
-    `Kernel: ${state.kernelReady ? `ready (${state.kernelVersion})` : "unavailable"}`,
-    `Manifest: ${state.manifestReady ? "found" : "not found"}`,
-    `Required graphs: ${state.manifestReady && hasRequiredGraphs(state.manifest) ? "ready" : "missing"}`,
-    `Loaded: ${state.modelLoaded ? "yes" : "no"}`,
-    "Runtime: onnxruntime-web (WASM provider)",
-    "Pipeline: Go wasm orchestration (CLI-aligned)",
-  ];
-
-  if (graphNames.length > 0) {
-    lines.push(`Graphs: ${graphNames.join(", ")}`);
-  }
-
-  startupInfo.textContent = lines.join("\n");
-}
-
-function renderModelState() {
-  modelState.textContent = state.modelLoaded ? "Model: loaded" : "Model: not loaded";
-}
-
-function setSynthesizeEnabled() {
-  synthBtn.disabled = !(state.kernelReady && state.modelLoaded);
 }
 
 async function getSelectedVoiceSafetensors() {
@@ -172,78 +174,43 @@ async function handleLoadModel() {
     loadModelBtn.disabled = true;
     modelState.textContent = "Model: loading...";
     synthProgress.value = 0;
-    synthProgressText.textContent = "0% - loading manifest...";
+    synthProgressText.textContent = "0% - downloading model...";
 
-    if (!state.manifestReady) {
-      await detectManifest();
-    }
+    const modelBytes = await fetchBytesWithProgress(modelAssetPath, (received, total) => {
+      const frac = total > 0 ? Math.min(1, received / total) : 0;
+      const percent = Math.round(frac * 80);
+      synthProgress.value = percent;
 
-    if (!hasRequiredGraphs(state.manifest)) {
-      throw new Error(`manifest missing required graphs: ${requiredGraphs.join(", ")}`);
-    }
-
-    const graphEntries = requiredGraphs.map((name) => {
-      const graph = getGraphByName(state.manifest, name);
-      return {
-        name,
-        sizeBytes: graphUncompressedSizeBytes(graph),
-      };
-    });
-    const totalUncompressedBytes = graphEntries.reduce((sum, g) => sum + g.sizeBytes, 0);
-    const allUncompressedSizesKnown = graphEntries.every((g) => g.sizeBytes > 0);
-
-    const total = graphEntries.length;
-    let loadedUncompressedBytes = 0;
-    for (let i = 0; i < total; i += 1) {
-      const { name, sizeBytes } = graphEntries[i];
-      const basePercent = (i / total) * 100;
-      const slicePercent = 100 / total;
-
-      await onnxBridge.getSession(name, (received, contentLength) => {
-        const rx = Number(received) > 0 ? Number(received) : 0;
-        const transferTotal = Number(contentLength) > 0 ? Number(contentLength) : 0;
-        const graphTotalBytes = sizeBytes > 0 ? sizeBytes : transferTotal;
-        const graphReceivedBytes = graphTotalBytes > 0 ? Math.min(rx, graphTotalBytes) : rx;
-
-        let percent;
-        if (allUncompressedSizesKnown && totalUncompressedBytes > 0) {
-          percent = Math.round(((loadedUncompressedBytes + graphReceivedBytes) / totalUncompressedBytes) * 100);
-        } else {
-          const dlFrac = graphTotalBytes > 0 ? graphReceivedBytes / graphTotalBytes : 1;
-          percent = Math.round(basePercent + dlFrac * slicePercent);
-        }
-
-        const boundedPercent = Math.max(0, Math.min(100, percent));
-        synthProgress.value = boundedPercent;
-        if (graphTotalBytes > 0) {
-          const mb = (graphReceivedBytes / 1048576).toFixed(1);
-          const totalMb = (graphTotalBytes / 1048576).toFixed(1);
-          synthProgressText.textContent = `${boundedPercent}% - downloading ${name} (${mb}/${totalMb} MB) [${i + 1}/${total}]`;
-        } else {
-          const mb = (graphReceivedBytes / 1048576).toFixed(1);
-          synthProgressText.textContent = `${boundedPercent}% - downloading ${name} (${mb} MB) [${i + 1}/${total}]`;
-        }
-      });
-
-      if (allUncompressedSizesKnown && totalUncompressedBytes > 0) {
-        loadedUncompressedBytes += sizeBytes;
+      const mb = (received / 1048576).toFixed(1);
+      if (total > 0) {
+        const totalMb = (total / 1048576).toFixed(1);
+        synthProgressText.textContent = `${percent}% - downloading model (${mb}/${totalMb} MB)`;
+      } else {
+        synthProgressText.textContent = `${percent}% - downloading model (${mb} MB)`;
       }
+    });
 
-      const initPercent = allUncompressedSizesKnown && totalUncompressedBytes > 0
-        ? Math.round((loadedUncompressedBytes / totalUncompressedBytes) * 100)
-        : Math.round(basePercent + slicePercent);
-      synthProgress.value = initPercent;
-      synthProgressText.textContent = `${initPercent}% - initialized ${name} [${i + 1}/${total}]`;
+    const result = await globalThis.PocketTTSKernel.loadModel(modelBytes, (evt) => {
+      const stagePercent = Math.max(0, Math.min(100, Number(evt?.percent || 0)));
+      const percent = 80 + Math.round(stagePercent * 0.2);
+      synthProgress.value = percent;
+
+      const detail = evt?.detail ? ` - ${evt.detail}` : "";
+      synthProgressText.textContent = `${percent}% - initializing${detail}`;
+    });
+
+    if (!result?.ok) {
+      throw new Error(result?.error || "model load failed");
     }
 
     synthProgress.value = 100;
-    synthProgressText.textContent = "100% - all graphs loaded";
+    synthProgressText.textContent = "100% - model loaded";
 
     state.modelLoaded = true;
     renderModelState();
     setSynthesizeEnabled();
     renderStartupInfo();
-    log.textContent = `Model loaded (${requiredGraphs.length} graph sessions).`;
+    log.textContent = `Model loaded (${(modelBytes.length / 1048576).toFixed(1)} MB safetensors).`;
   } catch (err) {
     state.modelLoaded = false;
     renderModelState();
@@ -306,12 +273,6 @@ async function handleSynthesize() {
   }
 }
 
-function setupBridge() {
-  globalThis.PocketTTSBridge = {
-    runGraph: (graphName, feedsJSON) => onnxBridge.runGraph(graphName, feedsJSON),
-  };
-}
-
 function populateVoiceDropdown() {
   const voices = state.voiceManifest?.voices || [];
   for (const v of voices) {
@@ -323,7 +284,6 @@ function populateVoiceDropdown() {
 }
 
 async function initApp() {
-  setupBridge();
   resetProgress();
   renderModelState();
   setSynthesizeEnabled();
@@ -334,13 +294,6 @@ async function initApp() {
   } catch (err) {
     state.kernelReady = false;
     log.textContent = `Kernel startup failed: ${formatError(err)}`;
-  }
-
-  try {
-    await detectManifest();
-  } catch (err) {
-    state.manifestReady = false;
-    log.textContent = `Manifest check: ${formatError(err)}`;
   }
 
   try {

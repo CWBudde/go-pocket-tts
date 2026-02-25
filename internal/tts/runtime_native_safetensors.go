@@ -29,6 +29,12 @@ func newNativeSafetensorsRuntime(model *nativemodel.Model) Runtime {
 	}
 }
 
+// NewNativeSafetensorsRuntime creates the pure-Go safetensors runtime for a
+// preloaded native model (used by js/wasm and tests that bootstrap from bytes).
+func NewNativeSafetensorsRuntime(model *nativemodel.Model) Runtime {
+	return newNativeSafetensorsRuntime(model)
+}
+
 func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []int64, cfg RuntimeGenerateConfig) ([]float32, error) {
 	if r == nil || r.model == nil {
 		return nil, fmt.Errorf("native-safetensors runtime unavailable")

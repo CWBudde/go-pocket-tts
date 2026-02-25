@@ -5,29 +5,22 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"math"
-	"strings"
+	"sync"
 	"syscall/js"
 
 	"github.com/example/go-pocket-tts/internal/audio"
 	"github.com/example/go-pocket-tts/internal/config"
-	"github.com/example/go-pocket-tts/internal/onnx"
+	nativemodel "github.com/example/go-pocket-tts/internal/native"
 	"github.com/example/go-pocket-tts/internal/safetensors"
 	"github.com/example/go-pocket-tts/internal/text"
+	"github.com/example/go-pocket-tts/internal/tts"
 )
 
 const (
 	maxTokensPerChunk = 50
 )
-
-type tensorPayload struct {
-	DType string    `json:"dtype"`
-	Shape []int64   `json:"shape"`
-	F32   []float32 `json:"f32,omitempty"`
-	I64   []int64   `json:"i64,omitempty"`
-}
 
 type progressReporter struct {
 	cb js.Value
@@ -81,64 +74,21 @@ func (t preprocessTokenizer) Encode(input string) ([]int64, error) {
 	return out, nil
 }
 
-type bridgeRunner struct {
-	name string
-}
-
-func (r *bridgeRunner) Name() string {
-	return r.name
-}
-
-func (r *bridgeRunner) Close() {}
-
-func (r *bridgeRunner) Run(ctx context.Context, inputs map[string]*onnx.Tensor) (map[string]*onnx.Tensor, error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-	}
-
-	feeds := make(map[string]tensorPayload, len(inputs))
-	for name, t := range inputs {
-		p, err := tensorToPayload(t)
-		if err != nil {
-			return nil, fmt.Errorf("encode input %q: %w", name, err)
-		}
-		feeds[name] = p
-	}
-
-	outputs, err := runGraph(r.name, feeds)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make(map[string]*onnx.Tensor, len(outputs))
-	for name, p := range outputs {
-		t, convErr := payloadToTensor(p)
-		if convErr != nil {
-			return nil, fmt.Errorf("decode output %q: %w", name, convErr)
-		}
-		result[name] = t
-	}
-
-	return result, nil
+type nativeEngine struct {
+	runtime tts.Runtime
 }
 
 var (
 	defaults = config.DefaultConfig()
-	engine   = onnx.NewEngineWithRunners(map[string]onnx.GraphRunner{
-		"text_conditioner": &bridgeRunner{name: "text_conditioner"},
-		"flow_lm_main":     &bridgeRunner{name: "flow_lm_main"},
-		"flow_lm_flow":     &bridgeRunner{name: "flow_lm_flow"},
-		"latent_to_mimi":   &bridgeRunner{name: "latent_to_mimi"},
-		"mimi_decoder":     &bridgeRunner{name: "mimi_decoder"},
-	})
+	engineMu sync.RWMutex
+	engine   *nativeEngine
 )
 
 func main() {
 	kernel := map[string]any{
-		"version":    "0.3.0-wasm",
+		"version":    "0.4.0-wasm",
 		"sampleRate": audio.ExpectedSampleRate,
+		"loadModel":  js.FuncOf(loadModelAsync),
 		"normalize":  js.FuncOf(normalizeText),
 		"tokenize":   js.FuncOf(tokenizeText),
 		"synthesize": js.FuncOf(synthesizeAsync),
@@ -190,6 +140,76 @@ func tokenizeText(_ js.Value, args []js.Value) any {
 		"tokens": flat,
 		"chunks": len(chunks),
 	})
+}
+
+func loadModelAsync(_ js.Value, args []js.Value) any {
+	promiseCtor := js.Global().Get("Promise")
+	var handler js.Func
+	handler = js.FuncOf(func(_ js.Value, pArgs []js.Value) any {
+		defer handler.Release()
+		resolve := pArgs[0]
+		reject := pArgs[1]
+
+		if len(args) < 1 {
+			reject.Invoke("missing model safetensors bytes argument")
+			return nil
+		}
+
+		modelBytes, ok := copyJSBytes(args[0])
+		if !ok || len(modelBytes) == 0 {
+			reject.Invoke("model safetensors bytes must be a non-empty Uint8Array/ArrayBuffer")
+			return nil
+		}
+
+		var progress progressReporter
+		if len(args) > 1 && args[1].Type() == js.TypeFunction {
+			progress.cb = args[1]
+		}
+
+		go func() {
+			res, err := loadModel(modelBytes, &progress)
+			if err != nil {
+				reject.Invoke(err.Error())
+				return
+			}
+			resolve.Invoke(js.ValueOf(res))
+		}()
+
+		return nil
+	})
+
+	return promiseCtor.New(handler)
+}
+
+func loadModel(modelSafetensors []byte, progress *progressReporter) (map[string]any, error) {
+	progress.Emit("load", 5, 100, "opening safetensors checkpoint")
+	store, err := safetensors.OpenStoreFromBytes(modelSafetensors, safetensors.StoreOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("open model safetensors: %w", err)
+	}
+
+	progress.Emit("load", 35, 100, "building native model")
+	model, err := nativemodel.LoadModelFromStore(store, nativemodel.DefaultConfig())
+	if err != nil {
+		store.Close()
+		return nil, fmt.Errorf("load native model: %w", err)
+	}
+	runtime := tts.NewNativeSafetensorsRuntime(model)
+
+	newEngine := &nativeEngine{runtime: runtime}
+	engineMu.Lock()
+	oldEngine := engine
+	engine = newEngine
+	engineMu.Unlock()
+
+	if oldEngine != nil && oldEngine.runtime != nil {
+		oldEngine.runtime.Close()
+	}
+
+	progress.Emit("load", 100, 100, "model ready")
+	return okResult(map[string]any{
+		"model_bytes": len(modelSafetensors),
+	}), nil
 }
 
 func parseSynthOptions(args []js.Value) synthesizeOptions {
@@ -276,6 +296,14 @@ func synthesizeAsync(_ js.Value, args []js.Value) any {
 }
 
 func synthesize(input string, progress *progressReporter, opts synthesizeOptions) (map[string]any, error) {
+	engineMu.RLock()
+	currentEngine := engine
+	if currentEngine == nil || currentEngine.runtime == nil {
+		engineMu.RUnlock()
+		return nil, fmt.Errorf("model is not loaded; call loadModel first")
+	}
+	defer engineMu.RUnlock()
+
 	progress.Emit("prepare", 0, 100, "normalizing and chunking input")
 	normalized, err := text.Normalize(input)
 	if err != nil {
@@ -292,16 +320,13 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 	}
 	progress.Emit("prepare", 10, 100, fmt.Sprintf("prepared %d chunks", len(chunks)))
 
-	var voiceEmb *onnx.Tensor
+	var voiceEmb *tts.VoiceEmbedding
 	if len(opts.VoiceSafetensors) > 0 {
 		vData, vShape, vErr := safetensors.LoadVoiceEmbeddingFromBytes(opts.VoiceSafetensors)
 		if vErr != nil {
 			return nil, fmt.Errorf("load voice embedding: %w", vErr)
 		}
-		voiceEmb, vErr = onnx.NewTensor(vData, vShape)
-		if vErr != nil {
-			return nil, fmt.Errorf("build voice tensor: %w", vErr)
-		}
+		voiceEmb = &tts.VoiceEmbedding{Data: vData, Shape: vShape}
 		progress.Emit("voice", 15, 100, fmt.Sprintf("loaded voice embedding (%d frames)", vShape[1]))
 	}
 
@@ -311,7 +336,7 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 		pct := 20 + int((float64(i)/float64(len(chunks)))*70)
 		progress.Emit("synthesize", pct, 100, fmt.Sprintf("chunk %d/%d", i+1, len(chunks)))
 
-		cfg := onnx.GenerateConfig{
+		cfg := tts.RuntimeGenerateConfig{
 			Temperature:    opts.Temperature,
 			EOSThreshold:   opts.EOSThreshold,
 			MaxSteps:       opts.MaxSteps,
@@ -320,7 +345,7 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 			VoiceEmbedding: voiceEmb,
 		}
 
-		pcm, genErr := engine.GenerateAudio(context.Background(), chunk.TokenIDs, cfg)
+		pcm, genErr := currentEngine.runtime.GenerateAudio(context.Background(), chunk.TokenIDs, cfg)
 		if genErr != nil {
 			return nil, fmt.Errorf("chunk %d synthesis failed: %w", i+1, genErr)
 		}
@@ -370,106 +395,6 @@ func copyJSBytes(v js.Value) ([]byte, bool) {
 	}
 
 	return nil, false
-}
-
-func tensorToPayload(t *onnx.Tensor) (tensorPayload, error) {
-	s := t.Shape()
-	dtype := string(t.DType())
-
-	switch t.DType() {
-	case onnx.DTypeFloat32:
-		data, err := onnx.ExtractFloat32(t)
-		if err != nil {
-			return tensorPayload{}, err
-		}
-		for i := range data {
-			if math.IsNaN(float64(data[i])) || math.IsInf(float64(data[i]), 0) {
-				data[i] = 0
-			}
-		}
-		return tensorPayload{DType: dtype, Shape: s, F32: data}, nil
-	case onnx.DTypeInt64:
-		data, err := onnx.ExtractInt64(t)
-		if err != nil {
-			return tensorPayload{}, err
-		}
-		return tensorPayload{DType: dtype, Shape: s, I64: data}, nil
-	default:
-		return tensorPayload{}, fmt.Errorf("unsupported tensor dtype %q", t.DType())
-	}
-}
-
-func payloadToTensor(p tensorPayload) (*onnx.Tensor, error) {
-	dtype := strings.ToLower(strings.TrimSpace(p.DType))
-	switch dtype {
-	case "float", "float32":
-		return onnx.NewTensor(p.F32, p.Shape)
-	case "int64", "long":
-		return onnx.NewTensor(p.I64, p.Shape)
-	default:
-		return nil, fmt.Errorf("unsupported tensor payload dtype %q", p.DType)
-	}
-}
-
-func runGraph(graphName string, feeds map[string]tensorPayload) (map[string]tensorPayload, error) {
-	bridge := js.Global().Get("PocketTTSBridge")
-	if bridge.IsUndefined() || bridge.IsNull() {
-		return nil, fmt.Errorf("PocketTTSBridge is not available")
-	}
-
-	payload, err := json.Marshal(feeds)
-	if err != nil {
-		return nil, fmt.Errorf("marshal feeds: %w", err)
-	}
-
-	promise := bridge.Call("runGraph", graphName, string(payload))
-	outputJSON, err := awaitPromiseString(promise)
-	if err != nil {
-		return nil, err
-	}
-
-	var outputs map[string]tensorPayload
-	if err := json.Unmarshal([]byte(outputJSON), &outputs); err != nil {
-		return nil, fmt.Errorf("decode bridge output: %w", err)
-	}
-	return outputs, nil
-}
-
-func awaitPromiseString(promise js.Value) (string, error) {
-	type result struct {
-		value string
-		err   error
-	}
-	ch := make(chan result, 1)
-
-	then := js.FuncOf(func(_ js.Value, args []js.Value) any {
-		if len(args) > 0 {
-			ch <- result{value: args[0].String()}
-		} else {
-			ch <- result{value: ""}
-		}
-		return nil
-	})
-	catch := js.FuncOf(func(_ js.Value, args []js.Value) any {
-		msg := "promise rejected"
-		if len(args) > 0 {
-			v := args[0]
-			if m := v.Get("message"); !m.IsUndefined() && !m.IsNull() {
-				msg = m.String()
-			} else {
-				msg = v.Call("toString").String()
-			}
-		}
-		ch <- result{err: fmt.Errorf(msg)}
-		return nil
-	})
-
-	promise.Call("then", then)
-	promise.Call("catch", catch)
-	res := <-ch
-	then.Release()
-	catch.Release()
-	return res.value, res.err
 }
 
 func okResult(payload map[string]any) map[string]any {

@@ -227,28 +227,27 @@ This repo now includes a GitHub Action that builds a browser app artifact with:
 - Go wasm kernel: `web/dist/pockettts-kernel.wasm`
 - Go runtime JS shim: `web/dist/wasm_exec.js`
 - Static app: `web/dist/index.html`, `web/dist/main.js`
-- Optional ONNX bundle: `web/dist/models/*.onnx` + `web/dist/models/manifest.json`
+- Native safetensors model: `web/dist/models/tts_b6369a24.safetensors`
+- Voice embeddings: `web/dist/voices/*.safetensors` + `web/dist/voices/manifest.json`
 
 Run/deploy workflow:
 
 - GitHub Actions -> `Deploy Web App to GitHub Pages` -> `Run workflow`
 - Deployment is handled by `.github/workflows/deploy-pages.yml`.
   - Pushes to `main` build and deploy automatically.
-  - Manual runs support `include-models`, `onnx-bundle-url`, and `onnx-bundle-sha256`.
-  - `main` builds include ONNX model export/bundle by default so model actions are enabled.
+  - Build includes direct safetensors model download (no ONNX export/conversion step).
 
 The deployed page provides a single synthesis path:
 
-- `Go WASM kernel` orchestration (`PocketTTSKernel.synthesize`) for text preprocessing/chunking, autoregressive generation, and WAV encoding.
-- `onnxruntime-web` is used only as a graph execution bridge (session loading and `runGraph` calls), with no separate JavaScript synthesis engine.
+- `Go WASM kernel` orchestration (`PocketTTSKernel.loadModel` + `PocketTTSKernel.synthesize`) for model boot, text preprocessing/chunking, autoregressive generation, and WAV encoding.
+- Native safetensors inference runs directly in Go/wasm (no `onnxruntime-web` graph bridge).
 - Optional voice conditioning by passing `.safetensors` embeddings into the Go kernel.
 
-At startup the app runs capability checks and only enables synthesis when kernel + manifest + required ONNX graphs are ready.
+At startup the app runs capability checks and only enables synthesis when kernel + model are ready.
 
 Current browser constraints:
 
-- Native ONNX Runtime (`onnxruntime-purego`) is not available in browser wasm; graph execution uses `onnxruntime-web`.
-- Model download/export remains a CI/tooling step (not in-browser).
+- Model download/bundling remains a CI/tooling step (not in-browser conversion).
 
 ## Configuration
 
