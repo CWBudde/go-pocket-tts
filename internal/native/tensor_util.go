@@ -216,13 +216,22 @@ func rmsNormWithAlpha(x, alpha *tensor.Tensor, eps float32) (*tensor.Tensor, err
 	outer := len(xd) / dd
 	for i := 0; i < outer; i++ {
 		base := i * dd
-		var meanSq float64
+		// Python _rms_norm uses x.var(dim=-1) which computes variance with
+		// Bessel correction (N-1 denominator), NOT mean(x^2).
+		var mean float64
 		for j := 0; j < dd; j++ {
-			v := float64(xd[base+j])
-			meanSq += v * v
+			mean += float64(xd[base+j])
 		}
-		meanSq /= float64(dd)
-		inv := float32(1.0 / math.Sqrt(meanSq+float64(eps)))
+		mean /= float64(dd)
+		var variance float64
+		for j := 0; j < dd; j++ {
+			diff := float64(xd[base+j]) - mean
+			variance += diff * diff
+		}
+		if dd > 1 {
+			variance /= float64(dd - 1) // Bessel correction (torch default)
+		}
+		inv := float32(1.0 / math.Sqrt(variance+float64(eps)))
 		for j := 0; j < dd; j++ {
 			xd[base+j] = xd[base+j] * inv * ad[j]
 		}

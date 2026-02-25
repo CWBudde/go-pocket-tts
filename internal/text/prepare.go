@@ -23,18 +23,21 @@ type ChunkMetadata struct {
 }
 
 // MaxFrames returns the maximum number of latent frames for this chunk.
-// Formula: ceil(num_tokens/3 + 2) × 12.5
+// Formula: ceil((num_tokens / 3 + 2) × 12.5)
+// Matches the reference: ceil(gen_len_sec × frame_rate)
+// where gen_len_sec = token_count / 3.0 + 2.0 and frame_rate = 12.5.
 func (c ChunkMetadata) MaxFrames() float64 {
-	return math.Ceil(float64(c.NumTokens)/3.0+2.0) * 12.5
+	return math.Ceil((float64(c.NumTokens)/3.0 + 2.0) * 12.5)
 }
 
 // FramesAfterEOS returns the number of extra frames to generate after EOS is
-// detected: 3 for ≤4-word chunks, 1 otherwise.
+// detected. The base value is 3 for ≤4-word chunks or 1 otherwise, plus 2
+// additional frames matching the reference implementation.
 func (c ChunkMetadata) FramesAfterEOS() int {
 	if c.NumWords <= 4 {
-		return 3
+		return 5
 	}
-	return 1
+	return 3
 }
 
 // PrepareText applies the reference text preprocessing:
