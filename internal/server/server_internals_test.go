@@ -129,7 +129,7 @@ func TestRuntimeDeps_NativeSafetensors(t *testing.T) {
 	}
 	s := New(cfg, nil)
 
-	synth, voices, workers, err := s.runtimeDeps(config.BackendNativeSafetensors)
+	synth, voices, workers, err := s.runtimeDeps(config.BackendNative)
 	if err != nil {
 		t.Fatalf("runtimeDeps(native-safetensors) error = %v", err)
 	}

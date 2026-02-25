@@ -46,7 +46,7 @@ func NewServiceFactory(cfg config.Config) ServiceFactory {
 		}
 
 		switch normalized {
-		case config.BackendNative, config.BackendNativeSafetensors:
+		case config.BackendNative, config.BackendNativeONNX:
 			next := cfg
 			next.TTS.Backend = normalized
 			return NewService(next)

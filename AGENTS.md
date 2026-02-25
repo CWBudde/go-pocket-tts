@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Go CLI and HTTP server for [PocketTTS](https://github.com/kyutai-labs/pocket-tts) text-to-speech. Currently working on a native ONNX Runtime backend (see PLAN.md). Until then the CLI uses the original Python-based PocketTTS as a subprocess for synthesis.
+Go CLI and HTTP server for [PocketTTS](https://github.com/kyutai-labs/pocket-tts) text-to-speech. The default backend (`native` / `native-safetensors`) runs pure-Go inference from safetensors weights — no Python, no ONNX Runtime required. An ONNX backend (`native-onnx`) is available as a fallback. See PLAN.md for details.
 
 **Module:** `github.com/example/go-pocket-tts`
 **Go version:** 1.25+
@@ -79,7 +79,7 @@ golangci-lint with: govet, staticcheck, errcheck, ineffassign, unused, gofmt. Co
 
 ## Development Plan
 
-See `PLAN.md` for the phased implementation roadmap. Phases 0-16 are complete. Current work is in Phases 17-19 (native ONNX inference pipeline). Future work includes Phases 20-23 (voice encoding, safetensors hardening, streaming, KV-cache inference).
+See `PLAN.md` for the phased implementation roadmap. Phases 0-31 are complete. The default backend is now `native-safetensors` (pure Go). The ONNX backend (`native-onnx`) has a known garbled-beginning issue on longer text (Phase 32). Future work includes Phases 20-23 (voice encoding, safetensors hardening, streaming, KV-cache inference).
 
 ## References
 

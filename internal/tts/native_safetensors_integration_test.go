@@ -19,7 +19,7 @@ func TestSynthesizeNativeSafetensors_ShortMediumChunked(t *testing.T) {
 	modelPath, tokPath := requireNativeSafetensorsAssets(t)
 
 	cfg := config.DefaultConfig()
-	cfg.TTS.Backend = config.BackendNativeSafetensors
+	cfg.TTS.Backend = config.BackendNative
 	cfg.Paths.ModelPath = modelPath
 	cfg.Paths.TokenizerModel = tokPath
 	cfg.TTS.MaxSteps = 24
@@ -66,7 +66,7 @@ func TestSynthesizeNativeSafetensors_VoiceConditioningDiffers(t *testing.T) {
 	modelPath, tokPath := requireNativeSafetensorsAssets(t)
 
 	cfg := config.DefaultConfig()
-	cfg.TTS.Backend = config.BackendNativeSafetensors
+	cfg.TTS.Backend = config.BackendNative
 	cfg.Paths.ModelPath = modelPath
 	cfg.Paths.TokenizerModel = tokPath
 	cfg.TTS.MaxSteps = 24

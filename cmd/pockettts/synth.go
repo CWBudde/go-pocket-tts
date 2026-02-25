@@ -61,7 +61,7 @@ func newSynthCmd() *cobra.Command {
 
 			var result []byte
 			switch selectedBackend {
-			case config.BackendNative, config.BackendNativeSafetensors:
+			case config.BackendNative, config.BackendNativeONNX:
 				if len(ttsArgs) > 0 {
 					return fmt.Errorf("--tts-arg is only supported with --backend cli")
 				}

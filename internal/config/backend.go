@@ -6,10 +6,9 @@ import (
 )
 
 const (
-	BackendNative            = "native-onnx"
-	BackendNativeLegacyAlias = "native"
-	BackendNativeSafetensors = "native-safetensors"
-	BackendCLI               = "cli"
+	BackendNative     = "native-safetensors"
+	BackendNativeONNX = "native-onnx"
+	BackendCLI        = "cli"
 )
 
 func NormalizeBackend(raw string) (string, error) {
@@ -18,17 +17,16 @@ func NormalizeBackend(raw string) (string, error) {
 		backend = BackendNative
 	}
 	switch backend {
-	case BackendNative, BackendCLI, BackendNativeSafetensors:
+	case BackendNative, BackendNativeONNX, BackendCLI:
 		return backend, nil
-	case BackendNativeLegacyAlias:
+	case "native":
 		return BackendNative, nil
 	default:
 		return "", fmt.Errorf(
-			"invalid backend %q (expected %s|%s|%s|%s)",
+			"invalid backend %q (expected %s|%s|%s|native)",
 			raw,
 			BackendNative,
-			BackendNativeLegacyAlias,
-			BackendNativeSafetensors,
+			BackendNativeONNX,
 			BackendCLI,
 		)
 	}

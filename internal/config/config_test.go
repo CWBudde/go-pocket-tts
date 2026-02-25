@@ -57,8 +57,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Server.RequestTimeout != 60 {
 		t.Errorf("Server.RequestTimeout = %d; want 60", cfg.Server.RequestTimeout)
 	}
-	if cfg.TTS.Backend != "native-onnx" {
-		t.Errorf("TTS.Backend = %q; want %q", cfg.TTS.Backend, "native-onnx")
+	if cfg.TTS.Backend != "native-safetensors" {
+		t.Errorf("TTS.Backend = %q; want %q", cfg.TTS.Backend, "native-safetensors")
 	}
 	if cfg.TTS.Concurrency != 1 {
 		t.Errorf("TTS.Concurrency = %d; want 1", cfg.TTS.Concurrency)
@@ -80,15 +80,15 @@ func TestNormalizeBackend(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{"native lowercase alias", "native", "native-onnx", false},
+		{"native lowercase alias", "native", "native-safetensors", false},
 		{"native onnx canonical", "native-onnx", "native-onnx", false},
 		{"native safetensors", "native-safetensors", "native-safetensors", false},
 		{"cli lowercase", "cli", "cli", false},
-		{"native uppercase alias", "NATIVE", "native-onnx", false},
+		{"native uppercase alias", "NATIVE", "native-safetensors", false},
 		{"cli mixed case", "CLI", "cli", false},
-		{"native alias with spaces", "  native  ", "native-onnx", false},
-		{"empty defaults to native-onnx", "", "native-onnx", false},
-		{"whitespace defaults to native-onnx", "   ", "native-onnx", false},
+		{"native alias with spaces", "  native  ", "native-safetensors", false},
+		{"empty defaults to native-safetensors", "", "native-safetensors", false},
+		{"whitespace defaults to native-safetensors", "   ", "native-safetensors", false},
 		{"invalid value", "onnx", "", true},
 		{"invalid with spaces", "  bad  ", "", true},
 	}
@@ -128,7 +128,7 @@ func TestRegisterFlags(t *testing.T) {
 		{"paths-model-path", "models/model.onnx"},
 		{"paths-voice-path", "models/voice.bin"},
 		{"server-listen-addr", ":8080"},
-		{"backend", "native-onnx"},
+		{"backend", "native-safetensors"},
 		{"log-level", "info"},
 	}
 
