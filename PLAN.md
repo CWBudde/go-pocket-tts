@@ -486,7 +486,13 @@ This non-incremental approach is architecturally different from the Python refer
 
 The native-safetensors backend already follows the correct incremental pattern and produces clear audio for all text lengths.
 
-**Possible approaches:**
-- [ ] Task 32.1: **Re-export ONNX with incremental interface** — Export separate `flow_lm_prefill` and `flow_lm_step` graphs that accept/return KV-cache tensors as explicit I/O, matching the native-safetensors incremental pattern
-- [ ] Task 32.2: **Alternative: pass KV-cache as ONNX I/O** — Modify `FlowLMMainWrapper` to accept KV-cache tensors as additional inputs/outputs, allowing the Go caller to maintain state across steps
-- [ ] Task 32.3: **Evaluate deprecation** — If safetensors backend performance is acceptable, consider deprecating the ONNX backend entirely to reduce maintenance burden
+**Implemented approach (Task 32.1):**
+
+- [x] Task 32.1: **Re-export ONNX with incremental interface** — Exported `flow_lm_prefill` and `flow_lm_step` graphs with explicit KV-cache I/O. Go `GenerateAudio` dispatches to the stateful path when these graphs are present, falling back to the legacy stateless `flow_lm_main` path for older bundles.
+  - `scripts/export_onnx.py`: added `FlowLMPrefillWrapper`, `FlowLMStepWrapper`, `extract_kv_tensors`, `rebuild_state_from_kv` helpers and two new `ExportSpec` entries
+  - `internal/onnx/flow_lm.go`: added `FlowLMKVState`, `Engine.FlowLMPrefill`, `Engine.FlowLMStepStateful`
+  - `internal/onnx/generate.go`: `GenerateAudio` dispatcher → `generateAudioStateful` (prefill+step) or `generateAudioStateless` (legacy); shared `decodeLatentsToAudio`
+  - Integration test added (`TestGenerateAudioIntegration_StatefulPath_ProducesPlausibleAudio`); skips when re-exported bundle unavailable
+  - **Pending:** Re-run `scripts/export_onnx.py` in a Python+PyTorch environment to produce `flow_lm_prefill.onnx` and `flow_lm_step.onnx` and update the manifest
+- [ ] Task 32.2: Superseded by 32.1 (deferred)
+- [ ] Task 32.3: **Evaluate deprecation** — Deferred; ONNX backend kept for compatibility
