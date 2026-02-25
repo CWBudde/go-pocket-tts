@@ -455,6 +455,75 @@ func TestFlowLMPrefill_UnpacksKVState(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Unit tests for Engine.FlowLMStepStateful
+// ---------------------------------------------------------------------------
+
+// TestFlowLMStepStateful_ReturnsMissingGraphError verifies error when graph absent.
+func TestFlowLMStepStateful_ReturnsMissingGraphError(t *testing.T) {
+	e := engineWithFakeRunners(map[string]runnerIface{})
+	state := &FlowLMKVState{KV: []*Tensor{}, Offset: 0}
+	frame, _ := NewTensor(make([]float32, 32), []int64{1, 1, 32})
+
+	_, _, err := e.FlowLMStepStateful(context.Background(), frame, state)
+	if err == nil {
+		t.Fatal("expected error for missing flow_lm_step graph")
+	}
+	if !strings.Contains(err.Error(), "flow_lm_step") {
+		t.Errorf("error %q should mention 'flow_lm_step'", err.Error())
+	}
+}
+
+// TestFlowLMStepStateful_UpdatesStateInPlace verifies that FlowLMStepStateful
+// updates the KV tensors and offset in the state after a successful step.
+func TestFlowLMStepStateful_UpdatesStateInPlace(t *testing.T) {
+	const numLayers = 2
+	initialOffset := int64(5)
+	newOffset := int64(6)
+
+	fakeStep := &fakeRunner{
+		name: "flow_lm_step",
+		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+			out := map[string]*Tensor{}
+			for i := range numLayers {
+				kv, _ := NewTensor(make([]float32, 2*1*int(newOffset)*2*4), []int64{2, 1, newOffset, 2, 4})
+				out[fmt.Sprintf("kv_%d", i)] = kv
+			}
+			updated, _ := NewTensor([]int64{newOffset}, []int64{1})
+			out["offset"] = updated
+			hidden, _ := NewTensor(make([]float32, 1024), []int64{1, 1024})
+			out["last_hidden"] = hidden
+			eos, _ := NewTensor([]float32{-10.0}, []int64{1, 1})
+			out["eos_logits"] = eos
+			return out, nil
+		},
+	}
+
+	e := engineWithFakeRunners(map[string]runnerIface{"flow_lm_step": fakeStep})
+
+	kvs := make([]*Tensor, numLayers)
+	for i := range numLayers {
+		kv, _ := NewTensor(make([]float32, 2*1*int(initialOffset)*2*4), []int64{2, 1, initialOffset, 2, 4})
+		kvs[i] = kv
+	}
+	state := &FlowLMKVState{KV: kvs, Offset: initialOffset}
+	frame, _ := NewTensor(make([]float32, 32), []int64{1, 1, 32})
+
+	lastHidden, eosLogits, err := e.FlowLMStepStateful(context.Background(), frame, state)
+	if err != nil {
+		t.Fatalf("FlowLMStepStateful: %v", err)
+	}
+	if lastHidden == nil || eosLogits == nil {
+		t.Fatal("expected non-nil lastHidden and eosLogits")
+	}
+	if state.Offset != newOffset {
+		t.Fatalf("state.Offset = %d; want %d", state.Offset, newOffset)
+	}
+	if state.KV[0].Shape()[2] != newOffset {
+		t.Fatalf("state.KV[0] seq dim = %d; want %d", state.KV[0].Shape()[2], newOffset)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Regression test: NaN propagation from BOS sequence
 // ---------------------------------------------------------------------------
 
