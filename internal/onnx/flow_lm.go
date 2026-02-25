@@ -213,3 +213,66 @@ func (e *Engine) FlowLMPrefill(ctx context.Context, textEmbeddings *Tensor) (*Fl
 
 	return &FlowLMKVState{KV: kvTensors, Offset: offsetData[0]}, nil
 }
+
+// FlowLMStepStateful runs a single autoregressive step using the flow_lm_step
+// graph. It passes the current KV-cache state as inputs, and updates the state
+// in-place with the returned updated KV tensors and offset.
+//
+// sequenceFrame has shape [1, 1, 32] — the BOS sentinel (NaN) on the first call,
+// then the latest decoded latent frame on subsequent calls.
+func (e *Engine) FlowLMStepStateful(ctx context.Context, sequenceFrame *Tensor, state *FlowLMKVState) (lastHidden, eosLogits *Tensor, err error) {
+	runner, found := e.runners["flow_lm_step"]
+	if !found {
+		return nil, nil, fmt.Errorf("flow_lm_step graph not found in manifest")
+	}
+
+	inputs := map[string]*Tensor{
+		"sequence_frame": sequenceFrame,
+	}
+	for i, kv := range state.KV {
+		inputs[fmt.Sprintf("kv_%d", i)] = kv
+	}
+	offsetTensor, err := NewTensor([]int64{state.Offset}, []int64{1})
+	if err != nil {
+		return nil, nil, fmt.Errorf("flow_lm_step: build offset tensor: %w", err)
+	}
+	inputs["offset"] = offsetTensor
+
+	outputs, err := runner.Run(ctx, inputs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("flow_lm_step: run: %w", err)
+	}
+
+	lastHidden, found = outputs["last_hidden"]
+	if !found {
+		return nil, nil, fmt.Errorf("flow_lm_step: missing 'last_hidden' in output")
+	}
+	eosLogits, found = outputs["eos_logits"]
+	if !found {
+		return nil, nil, fmt.Errorf("flow_lm_step: missing 'eos_logits' in output")
+	}
+
+	// Update state in-place.
+	for i := range state.KV {
+		key := fmt.Sprintf("kv_%d", i)
+		updated, ok := outputs[key]
+		if !ok {
+			return nil, nil, fmt.Errorf("flow_lm_step: missing '%s' in output", key)
+		}
+		state.KV[i] = updated
+	}
+	updatedOffset, ok := outputs["offset"]
+	if !ok {
+		return nil, nil, fmt.Errorf("flow_lm_step: missing 'offset' in output")
+	}
+	offsetData, err := ExtractInt64(updatedOffset)
+	if err != nil {
+		return nil, nil, fmt.Errorf("flow_lm_step: extract offset: %w", err)
+	}
+	if len(offsetData) == 0 {
+		return nil, nil, fmt.Errorf("flow_lm_step: offset tensor is empty")
+	}
+	state.Offset = offsetData[0]
+
+	return lastHidden, eosLogits, nil
+}
