@@ -7,8 +7,6 @@
     <style>
       :root {
         --bg: #0e1726;
-        --bg-soft: #13223a;
-        --panel: #152842;
         --line: #2f4f75;
         --text: #e3edf9;
         --muted: #9bb2d3;
@@ -32,7 +30,7 @@
       }
 
       main {
-        max-width: 940px;
+        max-width: 900px;
         margin: 1.2rem auto;
         padding: 1rem;
       }
@@ -50,39 +48,24 @@
       }
 
       .subtitle {
-        margin: 0.35rem 0 0;
+        margin: 0.35rem 0 0.9rem;
         color: var(--muted);
       }
 
-      .row {
+      .controls {
         display: flex;
-        gap: 0.7rem;
         flex-wrap: wrap;
+        gap: 0.8rem;
         align-items: center;
+        margin-bottom: 0.8rem;
       }
 
-      .row + .row {
-        margin-top: 0.7rem;
+      .controls label {
+        color: var(--muted);
       }
 
-      .grow {
-        flex: 1;
-      }
-
-      textarea {
-        width: 100%;
-        min-height: 120px;
-        margin-top: 0.7rem;
-        background: #091427;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        color: var(--text);
-        padding: 0.75rem;
-        font: inherit;
-      }
-
-      button,
-      select {
+      select,
+      button {
         background: #0f1c33;
         color: var(--text);
         border: 1px solid var(--line);
@@ -91,7 +74,28 @@
         font: inherit;
       }
 
+      input[type="range"] {
+        width: 150px;
+        accent-color: var(--accent);
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 140px;
+        background: #091427;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        color: var(--text);
+        padding: 0.75rem;
+        font: inherit;
+      }
+
+      .synth-row {
+        margin-top: 0.8rem;
+      }
+
       button.primary {
+        width: 100%;
         background: var(--accent);
         color: var(--accent-ink);
         border-color: #9ee4ff;
@@ -109,19 +113,13 @@
         cursor: not-allowed;
       }
 
-      .icon-btn {
-        min-width: 2.25rem;
-        padding: 0.48rem 0.6rem;
-        text-align: center;
-        text-decoration: none;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
+      audio {
+        width: 100%;
+        margin-top: 0.8rem;
       }
 
-      .info,
-      pre {
-        margin: 0.7rem 0 0;
+      .info {
+        margin-top: 0.8rem;
         background: #081122;
         border: 1px solid var(--line);
         border-radius: 10px;
@@ -130,25 +128,9 @@
         white-space: pre-wrap;
       }
 
-      progress {
-        margin-top: 0.25rem;
-        width: 100%;
-        height: 12px;
-      }
-
-      audio {
-        width: 100%;
-        margin-top: 0.7rem;
-      }
-
-      .muted {
+      .temp-value {
         color: var(--muted);
-      }
-
-      input[type="range"] {
-        width: 120px;
-        accent-color: var(--accent);
-        vertical-align: middle;
+        min-width: 3ch;
       }
     </style>
   </head>
@@ -156,37 +138,26 @@
     <main>
       <section class="panel">
         <h1>PocketTTS Web Demo</h1>
-        <p class="subtitle">Single-path demo using the Go WASM kernel with the native PocketTTS generation pipeline.</p>
+        <p class="subtitle">Go WASM + native safetensors pipeline.</p>
 
-        <div id="startup-info" class="info">Starting...</div>
+        <div class="controls">
+          <label for="voice">Voice</label>
+          <select id="voice"></select>
 
-        <div class="row">
-          <button id="load-model" type="button">Load Model</button>
-          <label class="muted" for="voice">Voice</label>
-          <select id="voice">
-            <option value="">No voice</option>
-          </select>
-          <span id="model-state" class="muted">Model: not loaded</span>
-        </div>
-
-        <div class="row">
-          <label class="muted" for="temperature">Temperature</label>
+          <label for="temperature">Temperature</label>
           <input type="range" id="temperature" min="0" max="1.5" step="0.05" value="0.7" />
-          <span id="temperature-value" class="muted">0.70</span>
+          <span id="temperature-value" class="temp-value">0.70</span>
         </div>
 
         <textarea id="text" placeholder="Type text here">Hello from PocketTTS in the browser.</textarea>
 
-        <div class="row">
-          <button id="synthesize" class="primary grow" type="button" disabled>Synthesize</button>
-          <a id="download" class="icon-btn" href="#" download="pockettts.wav" title="Download WAV" aria-label="Download WAV">⬇</a>
+        <div class="synth-row">
+          <button id="synthesize" class="primary" type="button" disabled>Synthesize</button>
         </div>
 
-        <div id="synth-progress-text" class="muted">Idle</div>
-        <progress id="synth-progress" value="0" max="100"></progress>
-
         <audio id="player" controls></audio>
-        <pre id="log">Ready.</pre>
+
+        <div id="info" class="info">Starting...</div>
       </section>
     </main>
 
