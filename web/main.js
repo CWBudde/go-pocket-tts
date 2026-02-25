@@ -12,6 +12,7 @@ const state = {
   modelPhase: "idle",
   modelLoaded: false,
   modelError: "",
+  modelBytesPromise: null,
   isSynthesizing: false,
   activeAudioURL: "",
   voiceManifest: null,
@@ -279,27 +280,46 @@ async function downloadSelectedVoiceIfNeeded() {
   }
 }
 
+function ensureModelBytesFetched() {
+  if (state.modelBytesPromise) {
+    return state.modelBytesPromise;
+  }
+
+  state.modelPhase = "downloading";
+  state.modelError = "";
+  setAction("Downloading model...");
+  setSynthesizeEnabled();
+
+  let lastPct = -1;
+  state.modelBytesPromise = fetchBytesWithProgress(modelAssetPath, (received, total) => {
+    const pct = total > 0 ? Math.round((received / total) * 100) : 0;
+    if (pct !== lastPct && pct % 10 === 0) {
+      lastPct = pct;
+      setAction(`Downloading model (${pct}%)...`);
+    }
+  }).catch((err) => {
+    state.modelPhase = "error";
+    state.modelError = formatError(err);
+    state.modelBytesPromise = null;
+    setAction(`Model download failed: ${state.modelError}`);
+    renderInfo();
+    setSynthesizeEnabled();
+    throw err;
+  });
+
+  return state.modelBytesPromise;
+}
+
 async function autoLoadModel() {
-  if (!state.kernelReady || state.modelLoaded || state.modelPhase === "downloading" || state.modelPhase === "initializing") {
+  if (!state.kernelReady || state.modelLoaded || state.modelPhase === "initializing") {
     return;
   }
 
   try {
-    state.modelPhase = "downloading";
-    state.modelError = "";
-    setAction("Downloading model...");
-    setSynthesizeEnabled();
-
-    let lastPct = -1;
-    const modelBytes = await fetchBytesWithProgress(modelAssetPath, (received, total) => {
-      const pct = total > 0 ? Math.round((received / total) * 100) : 0;
-      if (pct !== lastPct && pct % 10 === 0) {
-        lastPct = pct;
-        setAction(`Downloading model (${pct}%)...`);
-      }
-    });
+    const modelBytes = await ensureModelBytesFetched();
 
     state.modelPhase = "initializing";
+    setAction("Initializing model...");
     renderInfo();
 
     const result = await globalThis.PocketTTSKernel.loadModel(modelBytes, (evt) => {
@@ -394,6 +414,12 @@ async function initApp() {
   renderInfo();
   setSynthesizeEnabled();
 
+  // Start model download immediately so network transfer overlaps wasm startup.
+  void ensureModelBytesFetched();
+
+  // Voice manifest/voice download can also run in parallel with kernel boot.
+  const voicesPromise = loadVoiceManifestAndPrefetch();
+
   try {
     await bootKernel();
   } catch (err) {
@@ -402,7 +428,7 @@ async function initApp() {
     return;
   }
 
-  await Promise.allSettled([autoLoadModel(), loadVoiceManifestAndPrefetch()]);
+  await Promise.allSettled([autoLoadModel(), voicesPromise]);
   renderInfo();
   setSynthesizeEnabled();
 }
