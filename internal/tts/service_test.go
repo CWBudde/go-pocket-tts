@@ -120,7 +120,7 @@ func TestNewService_NativeSafetensors_NoORTRequired(t *testing.T) {
 	modelPath, tokPath := requireNativeSafetensorsAssetsForUnit(t)
 
 	cfg := config.DefaultConfig()
-	cfg.TTS.Backend = config.BackendNativeSafetensors
+	cfg.TTS.Backend = config.BackendNative
 	cfg.Paths.ModelPath = modelPath
 	cfg.Paths.TokenizerModel = tokPath
 	// Must not be consulted for native-safetensors path.

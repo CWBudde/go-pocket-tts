@@ -41,6 +41,18 @@ func NewService(cfg config.Config) (*Service, error) {
 	var rt Runtime
 	switch backend {
 	case config.BackendNative:
+		modelPath, err := resolveNativeModelPath(cfg)
+		if err != nil {
+			return nil, err
+		}
+		model, err := nativemodel.LoadModelFromSafetensors(modelPath, nativemodel.DefaultConfig())
+		if err != nil {
+			return nil, fmt.Errorf("init safetensors-native model: %w", err)
+		}
+		slog.Info("loaded safetensors model", "path", modelPath)
+		rt = newNativeSafetensorsRuntime(model)
+		slog.Info("created native runtime", "backend", config.BackendNative)
+	case config.BackendNativeONNX:
 		rcfg := onnx.RunnerConfig{
 			LibraryPath: cfg.Runtime.ORTLibraryPath,
 			APIVersion:  23,
@@ -58,18 +70,6 @@ func NewService(cfg config.Config) (*Service, error) {
 			return nil, fmt.Errorf("init onnx engine: %w", err)
 		}
 		rt = newONNXRuntime(engine)
-	case config.BackendNativeSafetensors:
-		modelPath, err := resolveNativeModelPath(cfg)
-		if err != nil {
-			return nil, err
-		}
-		model, err := nativemodel.LoadModelFromSafetensors(modelPath, nativemodel.DefaultConfig())
-		if err != nil {
-			return nil, fmt.Errorf("init safetensors-native model: %w", err)
-		}
-		slog.Info("loaded safetensors model", "path", modelPath)
-		rt = newNativeSafetensorsRuntime(model)
-		slog.Info("created native runtime", "backend", config.BackendNativeSafetensors)
 	default:
 		return nil, fmt.Errorf("unsupported tts service backend %q", backend)
 	}

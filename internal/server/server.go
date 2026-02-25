@@ -334,7 +334,7 @@ func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, err
 	voices := loadVoiceLister()
 
 	switch backend {
-	case config.BackendNative, config.BackendNativeSafetensors:
+	case config.BackendNative, config.BackendNativeONNX:
 		svc := s.tts
 		if svc == nil {
 			var err error
