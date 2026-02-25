@@ -68,6 +68,57 @@ def clone_model_state(state: dict[str, dict[str, torch.Tensor]]) -> dict[str, di
     return out
 
 
+def extract_kv_tensors(
+    flow_lm: "torch.nn.Module",
+    state: "dict[str, dict[str, torch.Tensor]]",
+    t_written: int,
+) -> "tuple[list[torch.Tensor], torch.Tensor]":
+    """Extract per-layer KV tensors and offset from model_state after prefill.
+
+    Returns (kv_list, offset_tensor) where:
+    - kv_list[i] is the [2, B, t_written, H, Dh] slice of layer i's cache
+    - offset_tensor is int64[1] = t_written
+    """
+    kv_list = []
+    for _module_name, module in flow_lm.named_modules():
+        if not hasattr(module, "_cache_backend"):
+            continue
+        layer_state = state[module._module_absolute_name]
+        # cache shape: [2, B, max_seq, H, Dh]; slice to written portion
+        kv = layer_state["cache"][:, :, :t_written, :, :]
+        kv_list.append(kv)
+    offset = torch.tensor([t_written], dtype=torch.long)
+    return kv_list, offset
+
+
+def rebuild_state_from_kv(
+    flow_lm: "torch.nn.Module",
+    kv_list: "list[torch.Tensor]",
+    offset: "torch.Tensor",
+    max_seq: int,
+) -> "dict[str, dict[str, torch.Tensor]]":
+    """Reconstruct a model_state dict from per-layer KV tensors.
+
+    Pads the cache back to [2, B, max_seq, H, Dh] with NaN.
+    """
+    state: dict[str, dict[str, torch.Tensor]] = {}
+    kv_iter = iter(kv_list)
+    for _module_name, module in flow_lm.named_modules():
+        if not hasattr(module, "_cache_backend"):
+            continue
+        kv = next(kv_iter)  # [2, B, t_written, H, Dh]
+        t_written_local = kv.shape[2]
+        b, h, dh = kv.shape[1], kv.shape[3], kv.shape[4]
+        cache = torch.full((2, b, max_seq, h, dh), float("nan"), dtype=kv.dtype)
+        cache[:, :, :t_written_local, :, :] = kv
+        abs_name = module._module_absolute_name
+        state[abs_name] = {
+            "cache": cache,
+            "offset": offset.expand(b).clone(),
+        }
+    return state
+
+
 class TextConditionerWrapper(torch.nn.Module):
     def __init__(self, model: TTSModel):
         super().__init__()
@@ -97,6 +148,102 @@ class FlowLMMainWrapper(torch.nn.Module):
         last_hidden = hidden[:, -1, :]
         eos_logits = self.flow_lm.out_eos(last_hidden)
         return last_hidden, eos_logits
+
+
+class FlowLMPrefillWrapper(torch.nn.Module):
+    """Runs text embeddings through the FlowLM transformer backbone once and
+    returns per-layer KV-cache tensors for use in incremental AR generation.
+
+    Called once per synthesis chunk before the AR loop. Returns kv_0..kv_{N-1}
+    (each [2, 1, T, H, Dh]) and offset (int64[1]=T).
+    """
+
+    def __init__(self, model: TTSModel, max_sequence_length: int = 256):
+        super().__init__()
+        self.flow_lm = model.flow_lm
+        self.max_sequence_length = max_sequence_length
+        self._num_kv_layers = sum(
+            1 for _, m in model.flow_lm.named_modules() if hasattr(m, "_cache_backend")
+        )
+
+    def forward(self, text_embeddings: torch.Tensor) -> tuple:
+        """
+        Args:
+            text_embeddings: [1, T, 1024]
+        Returns:
+            kv_0, kv_1, ..., kv_{N-1}: [2, 1, T, H, Dh] each
+            offset: int64[1] = T
+        """
+        T = text_embeddings.shape[1]
+        state = init_states(self.flow_lm, batch_size=1, sequence_length=self.max_sequence_length)
+
+        # Run backbone with text-only (empty sequence input).
+        # backbone() does: input_ = cat([text_embeddings, sequence_input], dim=1)
+        # then transformer, then strips the sequence prefix from output.
+        # With empty sequence the stripped portion is empty, so no output is needed.
+        empty_seq = torch.zeros(1, 0, self.flow_lm.ldim, dtype=text_embeddings.dtype)
+        projected = self.flow_lm.input_linear(empty_seq)
+        self.flow_lm.backbone(projected, text_embeddings, empty_seq, model_state=state)
+
+        kv_list, offset = extract_kv_tensors(self.flow_lm, state, T)
+        return tuple(kv_list) + (offset,)
+
+
+class FlowLMStepWrapper(torch.nn.Module):
+    """Runs a single autoregressive step with explicit KV-cache I/O.
+
+    Accepts sequence_frame [1, 1, 32], per-layer KV tensors, and offset as inputs.
+    Returns last_hidden [1, 1024], eos_logits [1, 1], updated KV tensors, and
+    updated offset. The Go caller maintains the KV state between steps.
+    """
+
+    def __init__(self, model: TTSModel, max_sequence_length: int = 256):
+        super().__init__()
+        self.flow_lm = model.flow_lm
+        self.max_sequence_length = max_sequence_length
+        self.register_buffer("bos_emb", model.flow_lm.bos_emb.detach().clone())
+        self._num_kv_layers = sum(
+            1 for _, m in model.flow_lm.named_modules() if hasattr(m, "_cache_backend")
+        )
+
+    def forward(self, sequence_frame: torch.Tensor, *args: torch.Tensor) -> tuple:
+        """
+        Args:
+            sequence_frame: [1, 1, 32] — NaN for BOS, latent frame thereafter
+            *args: kv_0, kv_1, ..., kv_{N-1}, offset
+                   kv_i: [2, 1, S, H, Dh]
+                   offset: int64[1]
+        Returns:
+            last_hidden: [1, 1024]
+            eos_logits: [1, 1]
+            kv_0, ..., kv_{N-1}: updated [2, 1, S+1, H, Dh]
+            offset: updated int64[1]
+        """
+        kv_list = list(args[:-1])
+        offset = args[-1]
+
+        # Reconstruct state dict from KV tensors + offset.
+        state = rebuild_state_from_kv(
+            self.flow_lm, kv_list, offset, self.max_sequence_length
+        )
+
+        # Replace NaN BOS positions with the learned bos_emb embedding.
+        frame = torch.where(torch.isnan(sequence_frame), self.bos_emb, sequence_frame)
+
+        # Run single AR step: empty text embeddings (already in KV cache from prefill).
+        projected = self.flow_lm.input_linear(frame)
+        empty_text = torch.zeros(1, 0, self.flow_lm.dim, dtype=frame.dtype)
+        hidden = self.flow_lm.backbone(projected, empty_text, frame, model_state=state)
+
+        if self.flow_lm.out_norm:
+            hidden = self.flow_lm.out_norm(hidden)
+        last_hidden = hidden[:, -1, :]
+        eos_logits = self.flow_lm.out_eos(last_hidden)
+
+        # Extract updated KV (offset is now offset+1).
+        new_t = int(offset.item()) + 1
+        new_kv_list, new_offset = extract_kv_tensors(self.flow_lm, state, new_t)
+        return (last_hidden, eos_logits) + tuple(new_kv_list) + (new_offset,)
 
 
 class FlowLMFlowWrapper(torch.nn.Module):
@@ -215,6 +362,19 @@ def inspect_onnx(path: Path) -> dict[str, Any]:
 
 
 def build_specs(model: TTSModel, max_sequence_length: int = 256) -> list[ExportSpec]:
+    # Determine KV-cache layer count and dimensions for prefill/step specs.
+    _num_kv_layers = sum(
+        1 for _, m in model.flow_lm.named_modules() if hasattr(m, "_cache_backend")
+    )
+    _num_heads = model.flow_lm.transformer.layers[0].self_attn.num_heads
+    _head_dim = model.flow_lm.transformer.layers[0].self_attn.dim_per_head
+    _T_ex = 8  # example text token count for tracing
+    _example_kv = [
+        torch.zeros(2, 1, _T_ex, _num_heads, _head_dim) for _ in range(_num_kv_layers)
+    ]
+    _example_offset = torch.tensor([_T_ex], dtype=torch.long)
+    _kv_names = [f"kv_{i}" for i in range(_num_kv_layers)]
+
     return [
         ExportSpec(
             name="text_conditioner",
@@ -244,6 +404,33 @@ def build_specs(model: TTSModel, max_sequence_length: int = 256) -> list[ExportS
                 torch.randn(1, 8, 1024, dtype=torch.float32),
             ),
             module=FlowLMMainWrapper(model, max_sequence_length=max_sequence_length),
+        ),
+        ExportSpec(
+            name="flow_lm_prefill",
+            filename="flow_lm_prefill.onnx",
+            input_names=["text_embeddings"],
+            output_names=_kv_names + ["offset"],
+            dynamic_axes={
+                "text_embeddings": {1: "text_tokens"},
+                **{f"kv_{i}": {2: "text_tokens"} for i in range(_num_kv_layers)},
+            },
+            example_inputs=(torch.randn(1, _T_ex, 1024),),
+            module=FlowLMPrefillWrapper(model, max_sequence_length=max_sequence_length),
+        ),
+        ExportSpec(
+            name="flow_lm_step",
+            filename="flow_lm_step.onnx",
+            input_names=["sequence_frame"] + _kv_names + ["offset"],
+            output_names=["last_hidden", "eos_logits"] + _kv_names + ["offset"],
+            dynamic_axes={
+                **{f"kv_{i}": {2: "seq_len"} for i in range(_num_kv_layers)},
+            },
+            example_inputs=(
+                torch.full((1, 1, 32), float("nan")),
+                *_example_kv,
+                _example_offset,
+            ),
+            module=FlowLMStepWrapper(model, max_sequence_length=max_sequence_length),
         ),
         ExportSpec(
             name="flow_lm_flow",
