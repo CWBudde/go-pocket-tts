@@ -7,6 +7,116 @@ import (
 	"testing"
 )
 
+// fakeStatefulEngine builds an Engine with fake runners for the stateful path.
+// EOS fires after eosAfterSteps step calls.
+func fakeStatefulEngine(t *testing.T, eosAfterSteps int) *Engine {
+	t.Helper()
+	stepCount := 0
+	const numLayers = 2
+	T := int64(3)
+
+	textCond := &fakeRunner{
+		name: "text_conditioner",
+		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+			tLen := inputs["tokens"].Shape()[1]
+			out, _ := NewTensor(make([]float32, tLen*1024), []int64{1, tLen, 1024})
+			return map[string]*Tensor{"text_embeddings": out}, nil
+		},
+	}
+	prefill := &fakeRunner{
+		name: "flow_lm_prefill",
+		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
+			out := map[string]*Tensor{}
+			for i := range numLayers {
+				kv, _ := NewTensor(make([]float32, 2*1*int(T)*2*4), []int64{2, 1, T, 2, 4})
+				out[fmt.Sprintf("kv_%d", i)] = kv
+			}
+			off, _ := NewTensor([]int64{T}, []int64{1})
+			out["offset"] = off
+			return out, nil
+		},
+	}
+	step := &fakeRunner{
+		name: "flow_lm_step",
+		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+			stepCount++
+			newOff := T + int64(stepCount)
+			out := map[string]*Tensor{}
+			for i := range numLayers {
+				kv, _ := NewTensor(make([]float32, 2*1*int(newOff)*2*4), []int64{2, 1, newOff, 2, 4})
+				out[fmt.Sprintf("kv_%d", i)] = kv
+			}
+			off, _ := NewTensor([]int64{newOff}, []int64{1})
+			out["offset"] = off
+			hidden, _ := NewTensor(make([]float32, 1024), []int64{1, 1024})
+			out["last_hidden"] = hidden
+			eosVal := float32(-10.0)
+			if stepCount >= eosAfterSteps {
+				eosVal = 0.0
+			}
+			eos, _ := NewTensor([]float32{eosVal}, []int64{1, 1})
+			out["eos_logits"] = eos
+			return out, nil
+		},
+	}
+	flowFlow := &fakeRunner{
+		name: "flow_lm_flow",
+		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
+			out, _ := NewTensor(make([]float32, 32), []int64{1, 32})
+			return map[string]*Tensor{"flow_direction": out}, nil
+		},
+	}
+	latentToMimi := &fakeRunner{
+		name: "latent_to_mimi",
+		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+			tLen := inputs["latent"].Shape()[1]
+			out, _ := NewTensor(make([]float32, 512*tLen), []int64{1, 512, tLen})
+			return map[string]*Tensor{"mimi_latent": out}, nil
+		},
+	}
+	mimiDecoder := &fakeRunner{
+		name: "mimi_decoder",
+		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+			tLen := inputs["latent"].Shape()[2]
+			out, _ := NewTensor(make([]float32, tLen*480), []int64{1, 1, tLen * 480})
+			return map[string]*Tensor{"audio": out}, nil
+		},
+	}
+	return engineWithFakeRunners(map[string]runnerIface{
+		"text_conditioner": textCond,
+		"flow_lm_prefill":  prefill,
+		"flow_lm_step":     step,
+		"flow_lm_flow":     flowFlow,
+		"latent_to_mimi":   latentToMimi,
+		"mimi_decoder":     mimiDecoder,
+	})
+}
+
+func TestGenerateAudio_StatefulPath_ProducesNonEmptyPCM(t *testing.T) {
+	e := fakeStatefulEngine(t, 3)
+	cfg := GenerateConfig{Temperature: 0.0, EOSThreshold: -4.0, MaxSteps: 256, LSDDecodeSteps: 1}
+	pcm, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, cfg)
+	if err != nil {
+		t.Fatalf("GenerateAudio (stateful): %v", err)
+	}
+	if len(pcm) == 0 {
+		t.Fatal("expected non-empty PCM from stateful path")
+	}
+}
+
+func TestGenerateAudio_FallbackToStateless_WhenNoPrefillGraph(t *testing.T) {
+	// fakeGenerateEngine only has flow_lm_main (no flow_lm_prefill) → stateless fallback.
+	e := fakeGenerateEngine(t, 3)
+	cfg := GenerateConfig{Temperature: 0.0, EOSThreshold: -4.0, MaxSteps: 256, LSDDecodeSteps: 1}
+	pcm, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, cfg)
+	if err != nil {
+		t.Fatalf("GenerateAudio (stateless fallback): %v", err)
+	}
+	if len(pcm) == 0 {
+		t.Fatal("expected non-empty PCM from stateless fallback")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests for Engine.GenerateAudio — full pipeline orchestration
 // ---------------------------------------------------------------------------
