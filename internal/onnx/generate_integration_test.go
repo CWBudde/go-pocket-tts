@@ -267,3 +267,89 @@ func TestGenerateAudioIntegration_VoiceConditioningDiffersFromUnvoiced(t *testin
 		t.Error("voice-conditioned and unconditioned outputs are identical; voice embedding had no effect")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Phase 32: integration test for stateful KV-cache path (flow_lm_prefill + flow_lm_step)
+// ---------------------------------------------------------------------------
+
+// TestGenerateAudioIntegration_StatefulPath_ProducesPlausibleAudio verifies that
+// the stateful KV-cache generation path (flow_lm_prefill + flow_lm_step) produces
+// correct audio when the re-exported ONNX bundle is available.
+//
+// This test skips when the new graphs are absent, allowing existing ONNX bundles
+// (which only have flow_lm_main) to continue passing the integration suite.
+func TestGenerateAudioIntegration_StatefulPath_ProducesPlausibleAudio(t *testing.T) {
+	libPath := ortLibPath(t)
+	tokPath := tokenizerModelPath(t)
+	manifestPath := textConditionerManifestPath(t)
+
+	tok, err := tokenizer.NewSentencePieceTokenizer(tokPath)
+	if err != nil {
+		t.Fatalf("NewSentencePieceTokenizer: %v", err)
+	}
+
+	engine, err := NewEngine(manifestPath, RunnerConfig{
+		LibraryPath: libPath,
+		APIVersion:  23,
+	})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	defer engine.Close()
+
+	// Skip if the new stateful graphs are not in the manifest.
+	if _, ok := engine.Runner("flow_lm_prefill"); !ok {
+		t.Skip("flow_lm_prefill graph not present in manifest; re-export ONNX with scripts/export_onnx.py to enable this test")
+	}
+	if _, ok := engine.Runner("flow_lm_step"); !ok {
+		t.Skip("flow_lm_step graph not present in manifest; re-export ONNX with scripts/export_onnx.py to enable this test")
+	}
+
+	const inputText = "This is a longer sentence to test that the stateful KV-cache path works correctly."
+	tokenIDs, err := tok.Encode(inputText)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+	if len(tokenIDs) == 0 {
+		t.Fatal("tokenizer returned no token IDs")
+	}
+	t.Logf("tokenized %q → %d tokens", inputText, len(tokenIDs))
+
+	cfg := GenerateConfig{
+		Temperature:    0.7,
+		EOSThreshold:   -4.0,
+		MaxSteps:       256,
+		LSDDecodeSteps: 1,
+	}
+
+	pcm, err := engine.GenerateAudio(context.Background(), tokenIDs, cfg)
+	if err != nil {
+		t.Fatalf("GenerateAudio (stateful): %v", err)
+	}
+
+	const sampleRate = 24000
+	t.Logf("generated %d samples (%.2f s)", len(pcm), float64(len(pcm))/sampleRate)
+
+	if len(pcm) < sampleRate/2 {
+		t.Errorf("too few samples: %d (< 0.5 s)", len(pcm))
+	}
+
+	// Verify all samples are finite.
+	for i, s := range pcm {
+		if math.IsNaN(float64(s)) || math.IsInf(float64(s), 0) {
+			t.Errorf("pcm[%d] = %v — pipeline produced corrupt output", i, s)
+			break
+		}
+	}
+
+	// Verify non-silence: RMS must exceed a minimal floor.
+	var sumSq float64
+	for _, s := range pcm {
+		sumSq += float64(s) * float64(s)
+	}
+	rms := math.Sqrt(sumSq / float64(len(pcm)))
+	t.Logf("rms=%.6f", rms)
+	if rms < 0.01 {
+		t.Errorf("audio RMS=%.6f — output appears to be silence or corrupt (garbled beginning would show as low RMS)", rms)
+	}
+}
