@@ -160,3 +160,56 @@ func EOSDetected(eosLogits *Tensor, threshold float64) bool {
 	}
 	return float64(data[0]) > threshold
 }
+
+// FlowLMKVState holds the KV-cache accumulated during prefill and updated each
+// AR step. KV[i] has shape [2, 1, S, H, Dh] where dim-0 is K(0)/V(1).
+// Offset is the current write position (equals the number of tokens processed).
+type FlowLMKVState struct {
+	KV     []*Tensor
+	Offset int64
+}
+
+// FlowLMPrefill runs the flow_lm_prefill graph on text_embeddings (which may
+// include prepended voice embeddings) and returns the resulting KV-cache state.
+// The returned state is ready to be passed to FlowLMStepStateful for AR generation.
+func (e *Engine) FlowLMPrefill(ctx context.Context, textEmbeddings *Tensor) (*FlowLMKVState, error) {
+	runner, ok := e.runners["flow_lm_prefill"]
+	if !ok {
+		return nil, fmt.Errorf("flow_lm_prefill graph not found in manifest")
+	}
+
+	outputs, err := runner.Run(ctx, map[string]*Tensor{
+		"text_embeddings": textEmbeddings,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("flow_lm_prefill: run: %w", err)
+	}
+
+	// Unpack kv_0, kv_1, ... until a key is missing.
+	var kvTensors []*Tensor
+	for i := 0; ; i++ {
+		key := fmt.Sprintf("kv_%d", i)
+		kv, ok := outputs[key]
+		if !ok {
+			break
+		}
+		kvTensors = append(kvTensors, kv)
+	}
+	if len(kvTensors) == 0 {
+		return nil, fmt.Errorf("flow_lm_prefill: no kv_N outputs in result")
+	}
+
+	offsetTensor, ok := outputs["offset"]
+	if !ok {
+		return nil, fmt.Errorf("flow_lm_prefill: missing 'offset' in output")
+	}
+	offsetData, err := ExtractInt64(offsetTensor)
+	if err != nil {
+		return nil, fmt.Errorf("flow_lm_prefill: extract offset: %w", err)
+	}
+	if len(offsetData) == 0 {
+		return nil, fmt.Errorf("flow_lm_prefill: offset tensor is empty")
+	}
+
+	return &FlowLMKVState{KV: kvTensors, Offset: offsetData[0]}, nil
+}
