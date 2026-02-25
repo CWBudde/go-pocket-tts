@@ -19,6 +19,7 @@ const state = {
   activeAudioURL: "",
   voiceManifest: null,
   voiceBytes: new Map(),
+  voiceDownloads: new Map(),
 };
 
 const modelConfig = {
@@ -26,6 +27,7 @@ const modelConfig = {
 };
 
 const modelAssetPath = "./models/tts_b6369a24.safetensors";
+const preferredVoiceId = "alba";
 
 function formatError(err) {
   if (!err) return "unknown error";
@@ -73,11 +75,44 @@ function updateProgress(evt) {
   synthProgressText.textContent = `${Math.round(percent)}% - ${stage}${detail}`;
 }
 
+function selectedVoiceId() {
+  return String(voiceSelect.value || "");
+}
+
+function selectedVoiceState() {
+  const voiceId = selectedVoiceId();
+  if (!voiceId) {
+    return "none";
+  }
+  if (state.voiceBytes.has(voiceId)) {
+    return "ready";
+  }
+  if (state.voiceDownloads.has(voiceId)) {
+    return "downloading";
+  }
+  return "missing";
+}
+
 function renderStartupInfo() {
+  const voiceId = selectedVoiceId();
+  const voiceState = selectedVoiceState();
+
+  let voiceLine = "Voice: none";
+  if (voiceId) {
+    if (voiceState === "ready") {
+      voiceLine = `Voice: ${voiceId} (downloaded)`;
+    } else if (voiceState === "downloading") {
+      voiceLine = `Voice: ${voiceId} (downloading)`;
+    } else {
+      voiceLine = `Voice: ${voiceId} (not downloaded)`;
+    }
+  }
+
   const lines = [
     `Kernel: ${state.kernelReady ? `ready (${state.kernelVersion})` : "unavailable"}`,
     `Model asset: ${modelAssetPath}`,
     `Loaded: ${state.modelLoaded ? "yes" : "no"}`,
+    voiceLine,
     "Runtime: Go native-safetensors (pure wasm)",
     "Pipeline: Go wasm orchestration (CLI-aligned)",
   ];
@@ -89,8 +124,14 @@ function renderModelState() {
   modelState.textContent = state.modelLoaded ? "Model: loaded" : "Model: not loaded";
 }
 
+function canSynthesize() {
+  return state.kernelReady && state.modelLoaded && selectedVoiceState() !== "downloading" && selectedVoiceState() !== "missing";
+}
+
 function setSynthesizeEnabled() {
-  synthBtn.disabled = !(state.kernelReady && state.modelLoaded);
+  const enabled = canSynthesize();
+  synthBtn.disabled = !enabled;
+  synthBtn.classList.toggle("ready", enabled);
 }
 
 async function fetchBytesWithProgress(url, onProgress) {
@@ -148,25 +189,78 @@ async function bootKernel() {
   state.kernelVersion = String(kernel.version || "unknown");
 }
 
-async function getSelectedVoiceSafetensors() {
-  const voiceId = voiceSelect.value;
-  if (!voiceId) return null;
+function findVoiceByID(voiceId) {
+  return (state.voiceManifest?.voices || []).find((v) => v.id === voiceId) || null;
+}
 
+async function ensureVoiceDownloaded(voiceId) {
+  if (!voiceId) return null;
   if (state.voiceBytes.has(voiceId)) {
     return state.voiceBytes.get(voiceId);
   }
-
-  const voice = (state.voiceManifest?.voices || []).find((v) => v.id === voiceId);
-  if (!voice) return null;
-
-  const res = await fetch(`./voices/${voice.path}`);
-  if (!res.ok) {
-    throw new Error(`fetch voice ${voice.path} failed (${res.status})`);
+  if (state.voiceDownloads.has(voiceId)) {
+    return state.voiceDownloads.get(voiceId);
   }
 
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  state.voiceBytes.set(voiceId, bytes);
-  return bytes;
+  const voice = findVoiceByID(voiceId);
+  if (!voice) {
+    throw new Error(`voice ${voiceId} not found in manifest`);
+  }
+
+  const promise = (async () => {
+    const bytes = await fetchBytesWithProgress(`./voices/${voice.path}`);
+    state.voiceBytes.set(voiceId, bytes);
+    return bytes;
+  })();
+
+  state.voiceDownloads.set(voiceId, promise);
+  renderStartupInfo();
+  setSynthesizeEnabled();
+
+  try {
+    const bytes = await promise;
+    return bytes;
+  } finally {
+    state.voiceDownloads.delete(voiceId);
+    renderStartupInfo();
+    setSynthesizeEnabled();
+  }
+}
+
+async function downloadSelectedVoiceIfNeeded() {
+  const voiceId = selectedVoiceId();
+  if (!voiceId) {
+    renderStartupInfo();
+    setSynthesizeEnabled();
+    return null;
+  }
+
+  if (state.voiceBytes.has(voiceId)) {
+    renderStartupInfo();
+    setSynthesizeEnabled();
+    return state.voiceBytes.get(voiceId);
+  }
+
+  synthProgressText.textContent = `Preparing voice ${voiceId}...`;
+  try {
+    const bytes = await ensureVoiceDownloaded(voiceId);
+    if (selectedVoiceId() === voiceId) {
+      synthProgressText.textContent = `Voice ${voiceId} ready`;
+    }
+    return bytes;
+  } catch (err) {
+    if (selectedVoiceId() === voiceId) {
+      synthProgressText.textContent = `Voice download failed: ${formatError(err)}`;
+      log.textContent = `Voice download failed (${voiceId}): ${formatError(err)}`;
+    }
+    return null;
+  }
+}
+
+async function getSelectedVoiceSafetensors() {
+  const voiceId = selectedVoiceId();
+  if (!voiceId) return null;
+  return ensureVoiceDownloaded(voiceId);
 }
 
 async function handleLoadModel() {
@@ -211,6 +305,8 @@ async function handleLoadModel() {
     setSynthesizeEnabled();
     renderStartupInfo();
     log.textContent = `Model loaded (${(modelBytes.length / 1048576).toFixed(1)} MB safetensors).`;
+
+    void downloadSelectedVoiceIfNeeded();
   } catch (err) {
     state.modelLoaded = false;
     renderModelState();
@@ -230,6 +326,7 @@ async function handleSynthesize() {
 
   try {
     synthBtn.disabled = true;
+    synthBtn.classList.remove("ready");
     resetProgress();
     log.textContent = "Synthesis started (Go WASM kernel)...";
 
@@ -240,9 +337,13 @@ async function handleSynthesize() {
     }
 
     const t0 = performance.now();
-    const result = await globalThis.PocketTTSKernel.synthesize(textArea.value, (evt) => {
-      updateProgress(evt);
-    }, options);
+    const result = await globalThis.PocketTTSKernel.synthesize(
+      textArea.value,
+      (evt) => {
+        updateProgress(evt);
+      },
+      options,
+    );
     const elapsedMs = (performance.now() - t0).toFixed(1);
 
     if (!result?.ok) {
@@ -281,6 +382,15 @@ function populateVoiceDropdown() {
     opt.textContent = v.id;
     voiceSelect.appendChild(opt);
   }
+
+  if (voices.some((v) => v.id === preferredVoiceId)) {
+    voiceSelect.value = preferredVoiceId;
+    return;
+  }
+
+  if (voices.length > 0) {
+    voiceSelect.value = voices[0].id;
+  }
 }
 
 async function initApp() {
@@ -301,6 +411,7 @@ async function initApp() {
     if (res.ok) {
       state.voiceManifest = await res.json();
       populateVoiceDropdown();
+      void downloadSelectedVoiceIfNeeded();
     }
   } catch (_) {
     // Voice manifest is optional.
@@ -312,6 +423,11 @@ async function initApp() {
 
 loadModelBtn.addEventListener("click", handleLoadModel);
 synthBtn.addEventListener("click", handleSynthesize);
+voiceSelect.addEventListener("change", () => {
+  renderStartupInfo();
+  setSynthesizeEnabled();
+  void downloadSelectedVoiceIfNeeded();
+});
 temperatureSlider.addEventListener("input", () => {
   const val = parseFloat(temperatureSlider.value);
   modelConfig.temperature = val;
