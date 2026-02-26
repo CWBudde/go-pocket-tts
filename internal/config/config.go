@@ -26,6 +26,7 @@ type PathsConfig struct {
 type RuntimeConfig struct {
 	Threads        int    `mapstructure:"threads"`
 	InterOpThreads int    `mapstructure:"inter_op_threads"`
+	ConvWorkers    int    `mapstructure:"conv_workers"`
 	ORTLibraryPath string `mapstructure:"ort_library_path"`
 	ORTVersion     string `mapstructure:"ort_version"`
 }
@@ -73,6 +74,7 @@ func DefaultConfig() Config {
 		Runtime: RuntimeConfig{
 			Threads:        4,
 			InterOpThreads: 1,
+			ConvWorkers:    2,
 			ORTLibraryPath: "",
 			ORTVersion:     "",
 		},
@@ -107,6 +109,7 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.String("paths-tokenizer-model", defaults.Paths.TokenizerModel, "Path to SentencePiece tokenizer model")
 	fs.Int("runtime-threads", defaults.Runtime.Threads, "ONNX Runtime intra-op thread count")
 	fs.Int("runtime-inter-op-threads", defaults.Runtime.InterOpThreads, "ONNX Runtime inter-op thread count")
+	fs.Int("conv-workers", defaults.Runtime.ConvWorkers, "Parallel goroutines for Conv1D/ConvTranspose1D (1 = sequential, default 2)")
 	fs.String("runtime-ort-library-path", defaults.Runtime.ORTLibraryPath, "Path to ONNX Runtime shared library")
 	fs.String("ort-lib", defaults.Runtime.ORTLibraryPath, "Path to ONNX Runtime shared library (alias for --runtime-ort-library-path)")
 	fs.String("runtime-ort-version", defaults.Runtime.ORTVersion, "Expected ONNX Runtime version")
@@ -182,6 +185,7 @@ func setDefaults(v *viper.Viper, c Config) {
 	v.SetDefault("paths.tokenizer_model", c.Paths.TokenizerModel)
 	v.SetDefault("runtime.threads", c.Runtime.Threads)
 	v.SetDefault("runtime.inter_op_threads", c.Runtime.InterOpThreads)
+	v.SetDefault("runtime.conv_workers", c.Runtime.ConvWorkers)
 	v.SetDefault("runtime.ort_library_path", c.Runtime.ORTLibraryPath)
 	v.SetDefault("runtime.ort_version", c.Runtime.ORTVersion)
 	v.SetDefault("server.listen_addr", c.Server.ListenAddr)
@@ -210,6 +214,7 @@ func registerAliases(v *viper.Viper) {
 	v.RegisterAlias("paths.tokenizer_model", "paths-tokenizer-model")
 	v.RegisterAlias("runtime.threads", "runtime-threads")
 	v.RegisterAlias("runtime.inter_op_threads", "runtime-inter-op-threads")
+	v.RegisterAlias("runtime.conv_workers", "conv-workers")
 	v.RegisterAlias("runtime.ort_library_path", "runtime-ort-library-path")
 	v.RegisterAlias("runtime.ort_library_path", "ort-lib")
 	v.RegisterAlias("runtime.ort_version", "runtime-ort-version")

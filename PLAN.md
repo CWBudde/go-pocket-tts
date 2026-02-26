@@ -496,3 +496,22 @@ The native-safetensors backend already follows the correct incremental pattern a
   - **Pending:** Re-run `scripts/export_onnx.py` in a Python+PyTorch environment to produce `flow_lm_prefill.onnx` and `flow_lm_step.onnx` and update the manifest
 - [ ] Task 32.2: Superseded by 32.1 (deferred)
 - [ ] Task 32.3: **Evaluate deprecation** — Deferred; ONNX backend kept for compatibility
+
+---
+
+## Phase 33 — MimiDecode Memory & Parallelism Optimizations
+
+> **Goal:** Eliminate the remaining allocation pressure and sequential bottlenecks in the native MimiDecode path (`internal/runtime/ops`), following the Conv1D/ConvTranspose1D im2col+AVX2 work from Phase 31.
+>
+> **Context:** After Phase 31 / Phase 33 preparatory work, `BenchmarkMimiDecode` (20 latent frames) runs in ~1.5 s with ~327 MB/op of transient allocations. Three targeted tasks address the remaining cost.
+
+- [x] Task 33.1: **Pool im2col and kernelT scratch buffers** — Added `scratchPools` (17 size-class `sync.Pool`s, powers of two from 2^10 to 2^26 floats) with `getScratch`/`putScratch` helpers. Replaced all `make([]float32, …)` calls in `conv1DFastGroups1` (imcol), `convTranspose1DGroups1` (kernelT, inputT, temp) with pooled scratch buffers. Oversized requests (>256 MB) fall back to plain allocation. Result: `BenchmarkMimiDecode` allocations dropped from 327 MB/op → 259 MB/op (68 MB saved, 21%); timing stable at ~1.4 s/op.
+  - Files changed: `internal/runtime/ops/ops.go`
+  - No API or correctness changes; pool is internal to the `ops` package.
+
+- [x] Task 33.2: **Precompute `kernelT` at model load time** — Added `ops.RepackConvTransposeKernel` (exported one-time repack function) and `ops.ConvTranspose1DPrePacked` (accepts pre-packed kernelT). `convTr1dLayer` now stores a `kernelT []float32` field, populated in `loadConvTr1D` when `groups == 1`. `convTranspose1DGroups1` accepts `prePackedKernelT` parameter: non-nil skips repack, nil falls back to dynamic repack.
+  - Files changed: `internal/runtime/ops/ops.go`, `internal/native/mimi.go`
+
+- [x] Task 33.3: **Parallelize the `oc` loop in `conv1DFastGroups1`** — Added `--conv-workers` CLI flag (default 1 = sequential; `POCKETTTS_CONV_WORKERS` env). When workers ≥ 2, `parallelFor` splits the output-channel loop across goroutines using `sync.WaitGroup`. Applied to both `conv1DFastGroups1` (oc GEMM loop) and `convTranspose1DGroups1` (restructured from kx→ix→oc to oc-outer for parallelism; each oc range writes to disjoint output rows). Race-detector verified. Benchmark results on i7-1255U: workers=2 gives ~1.3× on MimiDecode, workers=4/8 limited by memory bandwidth (large late-stage im2col matrices overflow L3 cache). Best used for small-to-medium convolutions that fit in cache.
+  - Files changed: `internal/runtime/ops/ops.go` (SetConvWorkers, parallelFor, restructured loops), `internal/config/config.go` (RuntimeConfig.ConvWorkers, --conv-workers flag), `internal/tts/service.go` (wire ops.SetConvWorkers on native backend init)
+  - Tests added: `TestConv1DParallel`, `TestConvTranspose1DParallel`, `BenchmarkConv1DMimiParallel` (all race-clean)

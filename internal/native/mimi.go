@@ -70,10 +70,11 @@ func (c *conv1dLayer) forwardStreamingOnce(x *tensor.Tensor) (*tensor.Tensor, er
 }
 
 type convTr1dLayer struct {
-	weight *tensor.Tensor
-	bias   *tensor.Tensor
-	stride int64
-	groups int64
+	weight  *tensor.Tensor
+	bias    *tensor.Tensor
+	stride  int64
+	groups  int64
+	kernelT []float32 // pre-packed [kSize, outCh, inCh] for groups=1; nil otherwise
 }
 
 func loadConvTr1D(vb *VarBuilder, stride, groups int64, withBias bool) (*convTr1dLayer, error) {
@@ -92,11 +93,22 @@ func loadConvTr1D(vb *VarBuilder, stride, groups int64, withBias bool) (*convTr1
 			b = t
 		}
 	}
-	return &convTr1dLayer{weight: w, bias: b, stride: stride, groups: groups}, nil
+	// Pre-pack the kernel for groups=1 to avoid per-call repack overhead.
+	var kernelT []float32
+	if groups == 1 {
+		kernelT = ops.RepackConvTransposeKernel(w)
+	}
+	return &convTr1dLayer{weight: w, bias: b, stride: stride, groups: groups, kernelT: kernelT}, nil
 }
 
 func (c *convTr1dLayer) forwardStreamingOnce(x *tensor.Tensor) (*tensor.Tensor, error) {
-	y, err := ops.ConvTranspose1D(x, c.weight, c.bias, c.stride, 0, 0, 1, c.groups)
+	var y *tensor.Tensor
+	var err error
+	if c.kernelT != nil {
+		y, err = ops.ConvTranspose1DPrePacked(x, c.weight, c.bias, c.kernelT, c.stride, 0, 0, 1, c.groups)
+	} else {
+		y, err = ops.ConvTranspose1D(x, c.weight, c.bias, c.stride, 0, 0, 1, c.groups)
+	}
 	if err != nil {
 		return nil, err
 	}

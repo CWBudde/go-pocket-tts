@@ -10,6 +10,7 @@ import (
 	"github.com/example/go-pocket-tts/internal/config"
 	nativemodel "github.com/example/go-pocket-tts/internal/native"
 	"github.com/example/go-pocket-tts/internal/onnx"
+	"github.com/example/go-pocket-tts/internal/runtime/ops"
 	"github.com/example/go-pocket-tts/internal/safetensors"
 	"github.com/example/go-pocket-tts/internal/text"
 	"github.com/example/go-pocket-tts/internal/tokenizer"
@@ -41,6 +42,10 @@ func NewService(cfg config.Config) (*Service, error) {
 	var rt Runtime
 	switch backend {
 	case config.BackendNative:
+		if w := cfg.Runtime.ConvWorkers; w > 1 {
+			ops.SetConvWorkers(w)
+			slog.Info("conv parallelism enabled", "workers", w)
+		}
 		modelPath, err := resolveNativeModelPath(cfg)
 		if err != nil {
 			return nil, err

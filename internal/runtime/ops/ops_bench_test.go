@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/example/go-pocket-tts/internal/runtime/tensor"
@@ -58,6 +59,26 @@ func BenchmarkConv1DMimi(b *testing.B) {
 		if err != nil {
 			b.Fatalf("conv1d: %v", err)
 		}
+	}
+}
+
+func BenchmarkConv1DMimiParallel(b *testing.B) {
+	for _, workers := range []int{1, 2, 4, 8} {
+		b.Run(fmt.Sprintf("workers=%d", workers), func(b *testing.B) {
+			SetConvWorkers(workers)
+			defer SetConvWorkers(1)
+			input := mustTensor(b, seqData(1*256*128), []int64{1, 256, 128})
+			kernel := mustTensor(b, seqData(512*256*3), []int64{512, 256, 3})
+			bias := mustTensor(b, seqData(512), []int64{512})
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err := Conv1D(input, kernel, bias, 1, 1, 1, 1)
+				if err != nil {
+					b.Fatalf("conv1d: %v", err)
+				}
+			}
+		})
 	}
 }
 
