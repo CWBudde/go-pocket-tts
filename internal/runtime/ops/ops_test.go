@@ -101,6 +101,63 @@ func TestConvTranspose1D(t *testing.T) {
 	}
 }
 
+func TestConv1DParallel(t *testing.T) {
+	SetConvWorkers(4)
+	defer SetConvWorkers(1)
+
+	// Larger tensor so there is real work to split across goroutines.
+	input, _ := tensor.New(seqDataT(1*16*64), []int64{1, 16, 64})
+	kernel, _ := tensor.New(seqDataT(32*16*3), []int64{32, 16, 3})
+	bias, _ := tensor.New(seqDataT(32), []int64{32})
+
+	// Compute with workers=4.
+	got, err := Conv1D(input, kernel, bias, 1, 1, 1, 1)
+	if err != nil {
+		t.Fatalf("conv1d parallel: %v", err)
+	}
+
+	// Compute sequentially for reference.
+	SetConvWorkers(1)
+	want, err := Conv1D(input, kernel, bias, 1, 1, 1, 1)
+	if err != nil {
+		t.Fatalf("conv1d sequential: %v", err)
+	}
+	if !equalApprox(got.Data(), want.Data(), 1e-4) {
+		t.Fatalf("parallel conv1d differs from sequential")
+	}
+}
+
+func TestConvTranspose1DParallel(t *testing.T) {
+	SetConvWorkers(4)
+	defer SetConvWorkers(1)
+
+	input, _ := tensor.New(seqDataT(1*16*32), []int64{1, 16, 32})
+	kernel, _ := tensor.New(seqDataT(16*8*5), []int64{16, 8, 5})
+	bias, _ := tensor.New(seqDataT(8), []int64{8})
+
+	got, err := ConvTranspose1D(input, kernel, bias, 2, 0, 0, 1, 1)
+	if err != nil {
+		t.Fatalf("convtranspose1d parallel: %v", err)
+	}
+
+	SetConvWorkers(1)
+	want, err := ConvTranspose1D(input, kernel, bias, 2, 0, 0, 1, 1)
+	if err != nil {
+		t.Fatalf("convtranspose1d sequential: %v", err)
+	}
+	if !equalApprox(got.Data(), want.Data(), 1e-4) {
+		t.Fatalf("parallel convtranspose1d differs from sequential")
+	}
+}
+
+func seqDataT(n int) []float32 {
+	out := make([]float32, n)
+	for i := range out {
+		out[i] = float32((i%17)-8) / 17
+	}
+	return out
+}
+
 func TestKernelTolerance(t *testing.T) {
 	keys := []string{"matmul", "linear", "softmax", "layer_norm", "causal_mask", "rope", "attention", "mlp", "conv1d", "convtranspose1d"}
 	for _, key := range keys {

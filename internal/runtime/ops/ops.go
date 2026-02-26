@@ -3,9 +3,124 @@ package ops
 import (
 	"fmt"
 	"math"
+	"sync"
+	"sync/atomic"
 
 	"github.com/example/go-pocket-tts/internal/runtime/tensor"
 )
+
+// convWorkers controls the number of goroutines used by the parallel Conv1D
+// and ConvTranspose1D fast paths.  A value of 0 or 1 means sequential
+// (default).  Values ≥ 2 enable parallel execution.
+//
+// Set via SetConvWorkers, typically wired to --conv-workers.
+var convWorkers atomic.Int32
+
+// SetConvWorkers sets the maximum number of goroutines used for parallel
+// Conv1D / ConvTranspose1D execution.  n ≤ 1 disables parallelism.
+func SetConvWorkers(n int) {
+	if n < 0 {
+		n = 0
+	}
+	convWorkers.Store(int32(n))
+}
+
+// getConvWorkers returns the current worker count (0 or 1 → sequential).
+func getConvWorkers() int { return int(convWorkers.Load()) }
+
+// parallelFor splits the range [0, n) into chunks and runs fn(lo, hi)
+// concurrently.  When workers ≤ 1 the call is sequential (no goroutines).
+func parallelFor(n, workers int, fn func(lo, hi int)) {
+	if workers <= 1 || n <= 1 {
+		fn(0, n)
+		return
+	}
+	if workers > n {
+		workers = n
+	}
+	var wg sync.WaitGroup
+	chunk := (n + workers - 1) / workers
+	for lo := 0; lo < n; lo += chunk {
+		hi := lo + chunk
+		if hi > n {
+			hi = n
+		}
+		wg.Add(1)
+		go func(lo, hi int) {
+			defer wg.Done()
+			fn(lo, hi)
+		}(lo, hi)
+	}
+	wg.Wait()
+}
+
+// scratchPool is a size-class pool for reusable []float32 scratch buffers.
+// It avoids the multi-MB per-call allocations in the im2col and kernel-repack
+// paths (conv1DFastGroups1, convTranspose1DGroups1).
+//
+// Size classes are powers of two from 2^10 (1 Ki) to 2^26 (64 Mi floats ≈ 256 MB).
+// A request for n floats rounds up to the next power-of-two class.
+var scratchPools [17]sync.Pool // indices 10..26 → pools[0..16]
+
+// getScratch returns a zeroed []float32 of exactly n elements from the pool.
+// The caller MUST call putScratch when done.
+func getScratch(n int) []float32 {
+	cls := scratchClass(n)
+	sz := 1 << (cls + 10)
+	// If the rounded-up class size is smaller than n (overflow past maxPoolClass),
+	// fall back to a plain allocation — it will not be pooled on return.
+	if sz < n {
+		return make([]float32, n)
+	}
+	if v := scratchPools[cls].Get(); v != nil {
+		buf := *v.(*[]float32)
+		// The backing array may be larger than n; re-slice and zero.
+		buf = buf[:n]
+		for i := range buf {
+			buf[i] = 0
+		}
+		return buf
+	}
+	// Allocate at the class size so the buffer is reusable for smaller requests
+	// in the same class.
+	buf := make([]float32, sz)
+	return buf[:n]
+}
+
+// putScratch returns a buffer obtained from getScratch back to the pool.
+// Oversized buffers (that bypassed the pool in getScratch) are silently dropped.
+func putScratch(buf []float32) {
+	c := cap(buf)
+	cls := scratchClass(c)
+	if 1<<(cls+10) < c {
+		return // oversized — let GC reclaim it
+	}
+	// Restore full backing-array capacity so the next getScratch can re-slice.
+	buf = buf[:c]
+	scratchPools[cls].Put(&buf)
+}
+
+// scratchClass returns the pool index for a buffer of n elements.
+func scratchClass(n int) int {
+	if n <= 1<<10 {
+		return 0
+	}
+	// Bit length of (n-1) gives the exponent for the next power of two.
+	bits := 0
+	v := n - 1
+	for v > 0 {
+		v >>= 1
+		bits++
+	}
+	cls := bits - 10
+	if cls < 0 {
+		cls = 0
+	}
+	if cls > 16 {
+		cls = 16
+	}
+	return cls
+}
 
 // conv1DFastGroups1 is the im2col fast path for Conv1D with groups=1.
 //
@@ -24,7 +139,9 @@ func conv1DFastGroups1(
 	outData []float32,
 ) {
 	patchLen := int(inCh * kSize)
-	imcol := make([]float32, int(outLen)*patchLen) // [outLen, inCh*kSize]
+	imcolSize := int(outLen) * patchLen
+	imcol := getScratch(imcolSize) // [outLen, inCh*kSize]
+	defer putScratch(imcol)
 
 	kSizeI := int(kSize)
 	outChI := int(outCh)
@@ -33,8 +150,11 @@ func conv1DFastGroups1(
 
 	for b := int64(0); b < batch; b++ {
 		// Zero im2col (ensures padding positions stay 0).
-		for i := range imcol {
-			imcol[i] = 0
+		// getScratch already zeroed, but we must re-zero for b > 0.
+		if b > 0 {
+			for i := range imcol {
+				imcol[i] = 0
+			}
 		}
 
 		// Build im2col: for each (ic, kx) column, copy valid input positions.
@@ -55,26 +175,110 @@ func conv1DFastGroups1(
 		}
 
 		// GEMM: kernel [outCh, patchLen] × imcol^T [patchLen, outLen] → out [outCh, outLen].
+		// The oc loop is embarrassingly parallel: each output channel writes to
+		// a disjoint slice of outData and reads shared (immutable) imcol + kernel.
 		outBase := int(b) * outChI * outLenI
-		for oc := 0; oc < outChI; oc++ {
-			kernelRow := kernelData[oc*patchLen : (oc+1)*patchLen]
-			biasVal := float32(0)
-			if biasData != nil {
-				biasVal = biasData[oc]
+		parallelFor(outChI, getConvWorkers(), func(ocLo, ocHi int) {
+			for oc := ocLo; oc < ocHi; oc++ {
+				kernelRow := kernelData[oc*patchLen : (oc+1)*patchLen]
+				biasVal := float32(0)
+				if biasData != nil {
+					biasVal = biasData[oc]
+				}
+				outOC := outData[outBase+oc*outLenI : outBase+(oc+1)*outLenI]
+				for ox := 0; ox < outLenI; ox++ {
+					outOC[ox] = tensor.DotProduct(kernelRow, imcol[ox*patchLen:(ox+1)*patchLen]) + biasVal
+				}
 			}
-			outOC := outData[outBase+oc*outLenI : outBase+(oc+1)*outLenI]
-			for ox := 0; ox < outLenI; ox++ {
-				outOC[ox] = tensor.DotProduct(kernelRow, imcol[ox*patchLen:(ox+1)*patchLen]) + biasVal
+		})
+	}
+}
+
+// RepackConvTransposeKernel repacks a ConvTranspose1D weight tensor from the
+// standard [inCh, outCh, kSize] layout to [kSize, outCh, inCh] so that each
+// (kx, oc) slice is contiguous for AVX2 dot-product acceleration.
+//
+// Call this once at model load time and pass the result to ConvTranspose1DPrePacked
+// to avoid the per-call repack cost.
+func RepackConvTransposeKernel(kernel *tensor.Tensor) []float32 {
+	s := kernel.Shape() // [inCh, outCh, kSize]
+	inChI := int(s[0])
+	outChI := int(s[1])
+	kSizeI := int(s[2])
+	data := kernel.RawData()
+	kernelT := make([]float32, kSizeI*outChI*inChI)
+	for ic := 0; ic < inChI; ic++ {
+		for oc := 0; oc < outChI; oc++ {
+			for kx := 0; kx < kSizeI; kx++ {
+				kernelT[(kx*outChI+oc)*inChI+ic] = data[(ic*outChI+oc)*kSizeI+kx]
 			}
 		}
 	}
+	return kernelT
+}
+
+// ConvTranspose1DPrePacked is like ConvTranspose1D but accepts a pre-packed
+// kernelT (from RepackConvTransposeKernel). Only valid for groups=1.
+func ConvTranspose1DPrePacked(input, kernel, bias *tensor.Tensor, kernelT []float32, stride, padding, outputPadding, dilation, groups int64) (*tensor.Tensor, error) {
+	if groups != 1 {
+		return nil, fmt.Errorf("ops: ConvTranspose1DPrePacked requires groups=1, got %d", groups)
+	}
+	if kernelT == nil {
+		return ConvTranspose1D(input, kernel, bias, stride, padding, outputPadding, dilation, groups)
+	}
+	// Validate shapes (same as ConvTranspose1D).
+	if input == nil || kernel == nil {
+		return nil, fmt.Errorf("ops: convtranspose1d requires non-nil input/kernel")
+	}
+	if stride <= 0 || dilation <= 0 {
+		return nil, fmt.Errorf("ops: convtranspose1d stride/dilation must be > 0")
+	}
+	if outputPadding < 0 || outputPadding >= stride {
+		return nil, fmt.Errorf("ops: convtranspose1d output_padding must be in [0, stride), got %d", outputPadding)
+	}
+	inShape := input.Shape()
+	kShape := kernel.Shape()
+	if len(inShape) != 3 || len(kShape) != 3 {
+		return nil, fmt.Errorf("ops: convtranspose1d expects input/kernel rank 3, got %v and %v", inShape, kShape)
+	}
+	batch, inChannels, inLength := inShape[0], inShape[1], inShape[2]
+	kInChannels, outPerGroup, kernelSize := kShape[0], kShape[1], kShape[2]
+	if kInChannels != inChannels {
+		return nil, fmt.Errorf("ops: convtranspose1d kernel in_channels mismatch %d vs %d", kInChannels, inChannels)
+	}
+	outChannels := outPerGroup // groups=1
+	if bias != nil {
+		bShape := bias.Shape()
+		if len(bShape) != 1 || bShape[0] != outChannels {
+			return nil, fmt.Errorf("ops: convtranspose1d bias shape %v does not match out_channels %d", bShape, outChannels)
+		}
+	}
+	outLength := (inLength-1)*stride - 2*padding + dilation*(kernelSize-1) + outputPadding + 1
+	if outLength <= 0 {
+		return nil, fmt.Errorf("ops: convtranspose1d produced non-positive output length %d", outLength)
+	}
+	out, err := tensor.Zeros([]int64{batch, outChannels, outLength})
+	if err != nil {
+		return nil, err
+	}
+	var biasData []float32
+	if bias != nil {
+		biasData = bias.RawData()
+	}
+	convTranspose1DGroups1(input.RawData(), nil, biasData, kernelT,
+		batch, inChannels, inLength, outChannels, kernelSize, outLength,
+		stride, padding, dilation, out.RawData())
+	return out, nil
 }
 
 // convTranspose1DGroups1 is the fast path for ConvTranspose1D with groups=1.
 //
+// If prePackedKernelT is non-nil, it is used directly (skipping the repack).
+// Otherwise the kernel is repacked from kernelData on the fly.
+//
 // To enable AVX2 dot-product acceleration the function:
-//  1. Repacks the kernel from [inCh, outCh, kSize] → kernelT [kSize, outCh, inCh]
-//     so that kernelT[kx, oc, :] is a contiguous float32 slice of length inCh.
+//  1. Uses kernelT in [kSize, outCh, inCh] layout so that kernelT[kx, oc, :]
+//     is a contiguous float32 slice of length inCh.
 //  2. Transposes the input from [batch, inCh, inLen] → inputT [batch, inLen, inCh]
 //     so that inputT[b, ix, :] is contiguous.
 //  3. For each (kx, ix) pair computes a GEMV (outCh dot-products of length inCh)
@@ -83,6 +287,7 @@ func conv1DFastGroups1(
 // Bias (if non-nil) is added in a final vectorised pass.
 func convTranspose1DGroups1(
 	inputData, kernelData, biasData []float32,
+	prePackedKernelT []float32,
 	batch, inCh, inLen, outCh, kSize, outLen,
 	stride, padding, dilation int64,
 	outData []float32,
@@ -93,21 +298,34 @@ func convTranspose1DGroups1(
 	outLenI := int(outLen)
 	inLenI := int(inLen)
 
-	// Step 1: repack kernel [inCh, outCh, kSize] → kernelT [kSize, outCh, inCh].
-	kernelT := make([]float32, kSizeI*outChI*inChI)
-	for ic := 0; ic < inChI; ic++ {
-		for oc := 0; oc < outChI; oc++ {
-			for kx := 0; kx < kSizeI; kx++ {
-				kernelT[(kx*outChI+oc)*inChI+ic] = kernelData[(ic*outChI+oc)*kSizeI+kx]
+	// Step 1: use pre-packed kernel or repack on the fly.
+	kernelT := prePackedKernelT
+	if kernelT == nil {
+		kernelTSize := kSizeI * outChI * inChI
+		kernelT = getScratch(kernelTSize)
+		defer putScratch(kernelT)
+		for ic := 0; ic < inChI; ic++ {
+			for oc := 0; oc < outChI; oc++ {
+				for kx := 0; kx < kSizeI; kx++ {
+					kernelT[(kx*outChI+oc)*inChI+ic] = kernelData[(ic*outChI+oc)*kSizeI+kx]
+				}
 			}
 		}
 	}
 
-	temp := make([]float32, outChI)
+	// Allocate inputT once and reuse across batch elements.
+	inputTSize := inLenI * inChI
+	inputT := getScratch(inputTSize)
+	defer putScratch(inputT)
 
 	for b := 0; b < int(batch); b++ {
 		// Step 2: transpose input [inCh, inLen] → inputT [inLen, inCh].
-		inputT := make([]float32, inLenI*inChI)
+		// Zero first (getScratch zeroes on first use, but re-zero for b > 0).
+		if b > 0 {
+			for i := range inputT {
+				inputT[i] = 0
+			}
+		}
 		for ic := 0; ic < inChI; ic++ {
 			src := inputData[(b*inChI+ic)*inLenI : (b*inChI+ic+1)*inLenI]
 			for ix, v := range src {
@@ -115,39 +333,34 @@ func convTranspose1DGroups1(
 			}
 		}
 
-		// Step 3: GEMV scatter — for each valid (kx, ix) pair:
-		//   temp[oc] = dot(kernelT[kx, oc, :], inputT[ix, :])
-		//   out[oc, outPos] += temp[oc]
+		// Step 3: GEMV scatter with oc as the outer dimension.
+		// Each oc range writes only to outBatch[oc*outLenI : (oc+1)*outLenI],
+		// so the loop is embarrassingly parallel across output channels.
 		outBatch := outData[b*outChI*outLenI : (b+1)*outChI*outLenI]
-		for kx := 0; kx < kSizeI; kx++ {
-			kxBase := kx * outChI * inChI
-			for ix := 0; ix < inLenI; ix++ {
-				outPos := int64(ix)*stride - padding + int64(kx)*dilation
-				if outPos < 0 || outPos >= outLen {
-					continue
+		parallelFor(outChI, getConvWorkers(), func(ocLo, ocHi int) {
+			for oc := ocLo; oc < ocHi; oc++ {
+				outRow := outBatch[oc*outLenI : (oc+1)*outLenI]
+				for kx := 0; kx < kSizeI; kx++ {
+					kOff := (kx*outChI + oc) * inChI
+					kernelTRow := kernelT[kOff : kOff+inChI]
+					for ix := 0; ix < inLenI; ix++ {
+						outPos := int64(ix)*stride - padding + int64(kx)*dilation
+						if outPos < 0 || outPos >= outLen {
+							continue
+						}
+						inputRow := inputT[ix*inChI : (ix+1)*inChI]
+						outRow[outPos] += tensor.DotProduct(kernelTRow, inputRow)
+					}
 				}
-				inputRow := inputT[ix*inChI : (ix+1)*inChI]
-				for oc := 0; oc < outChI; oc++ {
-					temp[oc] = tensor.DotProduct(kernelT[kxBase+oc*inChI:kxBase+(oc+1)*inChI], inputRow)
-				}
-				// Scatter accumulated values into the output column.
-				iOutPos := int(outPos)
-				for oc := 0; oc < outChI; oc++ {
-					outBatch[oc*outLenI+iOutPos] += temp[oc]
-				}
-			}
-		}
-
-		// Add bias (final vectorised pass over each output channel row).
-		if biasData != nil {
-			for oc := 0; oc < outChI; oc++ {
-				bv := biasData[oc]
-				row := outBatch[oc*outLenI : (oc+1)*outLenI]
-				for i := range row {
-					row[i] += bv
+				// Add bias for this channel.
+				if biasData != nil {
+					bv := biasData[oc]
+					for i := range outRow {
+						outRow[i] += bv
+					}
 				}
 			}
-		}
+		})
 	}
 }
 
@@ -509,7 +722,7 @@ func ConvTranspose1D(input, kernel, bias *tensor.Tensor, stride, padding, output
 
 	// Fast path: groups=1 uses kernel-repack + GEMV scatter with AVX2 dot-products.
 	if groups == 1 {
-		convTranspose1DGroups1(inputData, kernelData, biasData,
+		convTranspose1DGroups1(inputData, kernelData, biasData, nil,
 			batch, inChannels, inLength, outChannels, kernelSize, outLength,
 			stride, padding, dilation, outData)
 		return out, nil
