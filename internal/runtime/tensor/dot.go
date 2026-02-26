@@ -9,3 +9,9 @@ func dotF32Generic(a, b []float32) float32 {
 	}
 	return sum
 }
+
+// DotProduct returns the dot product of a and b.
+// len(a) must equal len(b); the caller is responsible for this.
+func DotProduct(a, b []float32) float32 {
+	return dotF32(a, b)
+}

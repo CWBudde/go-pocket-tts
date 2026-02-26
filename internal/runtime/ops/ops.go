@@ -7,6 +7,200 @@ import (
 	"github.com/example/go-pocket-tts/internal/runtime/tensor"
 )
 
+// conv1DFastGroups1 is the im2col fast path for Conv1D with groups=1.
+//
+// It rearranges the convolution into a GEMM by building a patch matrix
+// (im2col) of shape [outLength, inChannels*kernelSize] where each row contains
+// the gathered input values for one output position.  The GEMM then becomes:
+//
+//	out[oc, ox] = dotProduct(kernel[oc, :], imcol[ox, :]) + bias[oc]
+//
+// Both the kernel row and the im2col row are contiguous in memory, so the
+// AVX2/FMA dotProduct kernel runs at full throughput.
+func conv1DFastGroups1(
+	inputData, kernelData, biasData []float32,
+	batch, inCh, length, outCh, kSize, outLen,
+	stride, padding, dilation int64,
+	outData []float32,
+) {
+	patchLen := int(inCh * kSize)
+	imcol := make([]float32, int(outLen)*patchLen) // [outLen, inCh*kSize]
+
+	kSizeI := int(kSize)
+	outChI := int(outCh)
+	outLenI := int(outLen)
+	lenI := int(length)
+
+	for b := int64(0); b < batch; b++ {
+		// Zero im2col (ensures padding positions stay 0).
+		for i := range imcol {
+			imcol[i] = 0
+		}
+
+		// Build im2col: for each (ic, kx) column, copy valid input positions.
+		// Iterating (ic, kx) in outer loops and ox in inner loop keeps the
+		// writes to imcol sequential (stride = patchLen across rows, consecutive
+		// columns within a row).
+		for ic := int64(0); ic < inCh; ic++ {
+			inBase := int(b*inCh+ic) * lenI
+			for kx := int64(0); kx < kSize; kx++ {
+				col := int(ic)*kSizeI + int(kx)
+				for ox := int64(0); ox < outLen; ox++ {
+					inPos := ox*stride - padding + kx*dilation
+					if inPos >= 0 && inPos < length {
+						imcol[int(ox)*patchLen+col] = inputData[inBase+int(inPos)]
+					}
+				}
+			}
+		}
+
+		// GEMM: kernel [outCh, patchLen] × imcol^T [patchLen, outLen] → out [outCh, outLen].
+		outBase := int(b) * outChI * outLenI
+		for oc := 0; oc < outChI; oc++ {
+			kernelRow := kernelData[oc*patchLen : (oc+1)*patchLen]
+			biasVal := float32(0)
+			if biasData != nil {
+				biasVal = biasData[oc]
+			}
+			outOC := outData[outBase+oc*outLenI : outBase+(oc+1)*outLenI]
+			for ox := 0; ox < outLenI; ox++ {
+				outOC[ox] = tensor.DotProduct(kernelRow, imcol[ox*patchLen:(ox+1)*patchLen]) + biasVal
+			}
+		}
+	}
+}
+
+// convTranspose1DGroups1 is the fast path for ConvTranspose1D with groups=1.
+//
+// To enable AVX2 dot-product acceleration the function:
+//  1. Repacks the kernel from [inCh, outCh, kSize] → kernelT [kSize, outCh, inCh]
+//     so that kernelT[kx, oc, :] is a contiguous float32 slice of length inCh.
+//  2. Transposes the input from [batch, inCh, inLen] → inputT [batch, inLen, inCh]
+//     so that inputT[b, ix, :] is contiguous.
+//  3. For each (kx, ix) pair computes a GEMV (outCh dot-products of length inCh)
+//     and scatters the result into the output column outPos = ix*stride + kx*dilation − padding.
+//
+// Bias (if non-nil) is added in a final vectorised pass.
+func convTranspose1DGroups1(
+	inputData, kernelData, biasData []float32,
+	batch, inCh, inLen, outCh, kSize, outLen,
+	stride, padding, dilation int64,
+	outData []float32,
+) {
+	inChI := int(inCh)
+	outChI := int(outCh)
+	kSizeI := int(kSize)
+	outLenI := int(outLen)
+	inLenI := int(inLen)
+
+	// Step 1: repack kernel [inCh, outCh, kSize] → kernelT [kSize, outCh, inCh].
+	kernelT := make([]float32, kSizeI*outChI*inChI)
+	for ic := 0; ic < inChI; ic++ {
+		for oc := 0; oc < outChI; oc++ {
+			for kx := 0; kx < kSizeI; kx++ {
+				kernelT[(kx*outChI+oc)*inChI+ic] = kernelData[(ic*outChI+oc)*kSizeI+kx]
+			}
+		}
+	}
+
+	temp := make([]float32, outChI)
+
+	for b := 0; b < int(batch); b++ {
+		// Step 2: transpose input [inCh, inLen] → inputT [inLen, inCh].
+		inputT := make([]float32, inLenI*inChI)
+		for ic := 0; ic < inChI; ic++ {
+			src := inputData[(b*inChI+ic)*inLenI : (b*inChI+ic+1)*inLenI]
+			for ix, v := range src {
+				inputT[ix*inChI+ic] = v
+			}
+		}
+
+		// Step 3: GEMV scatter — for each valid (kx, ix) pair:
+		//   temp[oc] = dot(kernelT[kx, oc, :], inputT[ix, :])
+		//   out[oc, outPos] += temp[oc]
+		outBatch := outData[b*outChI*outLenI : (b+1)*outChI*outLenI]
+		for kx := 0; kx < kSizeI; kx++ {
+			kxBase := kx * outChI * inChI
+			for ix := 0; ix < inLenI; ix++ {
+				outPos := int64(ix)*stride - padding + int64(kx)*dilation
+				if outPos < 0 || outPos >= outLen {
+					continue
+				}
+				inputRow := inputT[ix*inChI : (ix+1)*inChI]
+				for oc := 0; oc < outChI; oc++ {
+					temp[oc] = tensor.DotProduct(kernelT[kxBase+oc*inChI:kxBase+(oc+1)*inChI], inputRow)
+				}
+				// Scatter accumulated values into the output column.
+				iOutPos := int(outPos)
+				for oc := 0; oc < outChI; oc++ {
+					outBatch[oc*outLenI+iOutPos] += temp[oc]
+				}
+			}
+		}
+
+		// Add bias (final vectorised pass over each output channel row).
+		if biasData != nil {
+			for oc := 0; oc < outChI; oc++ {
+				bv := biasData[oc]
+				row := outBatch[oc*outLenI : (oc+1)*outLenI]
+				for i := range row {
+					row[i] += bv
+				}
+			}
+		}
+	}
+}
+
+// convTranspose1DFastDepthwise is the fast path for ConvTranspose1D when
+// groups == inChannels (pure depthwise transposed convolution).
+// Each channel is completely independent, so the inner loops collapse to a
+// simple scatter-accumulate with a per-channel kernel of length kSize.
+func convTranspose1DFastDepthwise(
+	inputData, kernelData, biasData []float32,
+	batch, inCh, inLen, outPerGroup, kSize, outLen,
+	stride, padding, dilation int64,
+	outData []float32,
+) {
+	outChI := int(inCh * outPerGroup)
+	inLenI := int(inLen)
+	outLenI := int(outLen)
+	kSizeI := int(kSize)
+
+	for b := int64(0); b < batch; b++ {
+		for g := int64(0); g < inCh; g++ {
+			ocBase := int(g * outPerGroup)
+			inBase := int(b*inCh+g) * inLenI
+			for ix := int64(0); ix < inLen; ix++ {
+				inVal := inputData[inBase+int(ix)]
+				if inVal == 0 {
+					continue
+				}
+				for ocg := int64(0); ocg < outPerGroup; ocg++ {
+					oc := int(g*outPerGroup + ocg)
+					kBase := oc * kSizeI
+					outSlice := outData[int(b)*outChI*outLenI+(ocBase+int(ocg))*outLenI:]
+					for kx := 0; kx < kSizeI; kx++ {
+						outPos := ix*stride - padding + int64(kx)*dilation
+						if outPos >= 0 && outPos < outLen {
+							outSlice[outPos] += inVal * kernelData[kBase+kx]
+						}
+					}
+				}
+			}
+		}
+		// Add bias after scatter.
+		if biasData != nil {
+			for oc := 0; oc < outChI; oc++ {
+				outSlice := outData[int(b)*outChI*outLenI+oc*outLenI : int(b)*outChI*outLenI+(oc+1)*outLenI]
+				bv := biasData[oc]
+				for i := range outSlice {
+					outSlice[i] += bv
+				}
+			}
+		}
+	}
+}
+
 // CausalMask sets positions where key index > query index + offset to -Inf.
 // Expected input shape: [..., query, key].
 func CausalMask(scores *tensor.Tensor, offset int64) (*tensor.Tensor, error) {
@@ -220,6 +414,14 @@ func Conv1D(input, kernel, bias *tensor.Tensor, stride, padding, dilation, group
 		biasData = bias.RawData()
 	}
 
+	// Fast path: groups=1 uses im2col + AVX2 dot-product GEMM.
+	if groups == 1 {
+		conv1DFastGroups1(inputData, kernelData, biasData,
+			batch, inChannels, length, outChannels, kernelSize, outLength,
+			stride, padding, dilation, outData)
+		return out, nil
+	}
+
 	inPerGroup := inChannels / groups
 	outPerGroup := outChannels / groups
 	for b := int64(0); b < batch; b++ {
@@ -303,6 +505,22 @@ func ConvTranspose1D(input, kernel, bias *tensor.Tensor, stride, padding, output
 	var biasData []float32
 	if bias != nil {
 		biasData = bias.RawData()
+	}
+
+	// Fast path: groups=1 uses kernel-repack + GEMV scatter with AVX2 dot-products.
+	if groups == 1 {
+		convTranspose1DGroups1(inputData, kernelData, biasData,
+			batch, inChannels, inLength, outChannels, kernelSize, outLength,
+			stride, padding, dilation, outData)
+		return out, nil
+	}
+
+	// Fast path: depthwise (groups == inChannels) avoids redundant group arithmetic.
+	if groups == inChannels {
+		convTranspose1DFastDepthwise(inputData, kernelData, biasData,
+			batch, inChannels, inLength, outPerGroup, kernelSize, outLength,
+			stride, padding, dilation, outData)
+		return out, nil
 	}
 
 	for b := int64(0); b < batch; b++ {
