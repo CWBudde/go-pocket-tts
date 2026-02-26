@@ -260,6 +260,8 @@ func (f *FlowLM) LSDDecode(condition, x0 *tensor.Tensor, steps int) (*tensor.Ten
 	}
 	b := shape[0]
 	current := x0.Clone()
+	curData := current.RawData()
+	inv := 1.0 / float32(steps)
 	for i := 0; i < steps; i++ {
 		sVal := float32(i) / float32(steps)
 		tVal := float32(i+1) / float32(steps)
@@ -275,10 +277,11 @@ func (f *FlowLM) LSDDecode(condition, x0 *tensor.Tensor, steps int) (*tensor.Ten
 		if err != nil {
 			return nil, err
 		}
-		step := scaleTensor(flow, 1.0/float32(steps))
-		current, err = addSameShape(current, step)
-		if err != nil {
-			return nil, err
+		// Update current in-place: current += flow * (1/steps).
+		// Avoids two extra Clone allocations (scaleTensor + addSameShape).
+		flowData := flow.RawData()
+		for j := range curData {
+			curData[j] += flowData[j] * inv
 		}
 	}
 	return current, nil

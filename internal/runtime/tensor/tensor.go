@@ -26,6 +26,14 @@ func New(data []float32, shape []int64) (*Tensor, error) {
 	return &Tensor{shape: s, data: d}, nil
 }
 
+// newOwned creates a Tensor taking ownership of the provided data and shape
+// slices without copying. The caller must not retain or modify data or shape
+// after this call. len(data) must equal the product of shape elements; this is
+// the caller's responsibility and is not validated here.
+func newOwned(data []float32, shape []int64) *Tensor {
+	return &Tensor{shape: shape, data: data}
+}
+
 // Zeros creates a zero-initialized tensor.
 func Zeros(shape []int64) (*Tensor, error) {
 	total, err := shapeElemCount(shape)
@@ -522,15 +530,12 @@ func Linear(x, weight, bias *Tensor) (*Tensor, error) {
 	outData := make([]float32, batch*int(out))
 	inI := int(in)
 	outI := int(out)
+	wData := weight.data
 	for bIdx := 0; bIdx < batch; bIdx++ {
-		xBase := bIdx * inI
+		xSlice := x.data[bIdx*inI : bIdx*inI+inI]
 		yBase := bIdx * outI
 		for o := 0; o < outI; o++ {
-			wBase := o * inI
-			var sum float32
-			for i := 0; i < inI; i++ {
-				sum += x.data[xBase+i] * weight.data[wBase+i]
-			}
+			sum := dotF32(xSlice, wData[o*inI:(o+1)*inI])
 			if bias != nil {
 				sum += bias.data[o]
 			}
@@ -538,9 +543,11 @@ func Linear(x, weight, bias *Tensor) (*Tensor, error) {
 		}
 	}
 
-	outShape := append([]int64(nil), x.shape[:x.Rank()-1]...)
-	outShape = append(outShape, out)
-	return New(outData, outShape)
+	// Build outShape in-place; reuse the first (rank-1) elements of x.shape.
+	outShape := make([]int64, x.Rank())
+	copy(outShape, x.shape[:x.Rank()-1])
+	outShape[x.Rank()-1] = out
+	return newOwned(outData, outShape), nil
 }
 
 func broadcastBinary(a, b *Tensor, fn func(x, y float32) float32, opName string) (*Tensor, error) {
