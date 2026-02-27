@@ -52,18 +52,6 @@
         color: var(--muted);
       }
 
-      .controls {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.8rem;
-        align-items: center;
-        margin-bottom: 0.8rem;
-      }
-
-      .controls label {
-        color: var(--muted);
-      }
-
       select,
       button {
         background: #0f1c33;
@@ -90,16 +78,28 @@
         font: inherit;
       }
 
-      .synth-row {
+      .controls-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.8rem;
+        align-items: center;
         margin-top: 0.8rem;
       }
 
+      .controls-row label {
+        color: var(--muted);
+      }
+
+      .controls-row .spacer {
+        flex: 1;
+      }
+
       button.primary {
-        width: 100%;
         background: var(--accent);
         color: var(--accent-ink);
         border-color: #9ee4ff;
         font-weight: 700;
+        padding: 0.55rem 1.6rem;
       }
 
       button.primary.ready {
@@ -132,6 +132,42 @@
         color: var(--muted);
         min-width: 3ch;
       }
+
+      .progress-wrap {
+        margin-top: 0.8rem;
+        display: none;
+      }
+
+      .progress-wrap.visible {
+        display: block;
+      }
+
+      .progress-label {
+        color: var(--muted);
+        font-size: 0.85rem;
+        margin-bottom: 0.3rem;
+      }
+
+      .progress-bar {
+        width: 100%;
+        height: 6px;
+        background: #091427;
+        border: 1px solid var(--line);
+        border-radius: 4px;
+        overflow: hidden;
+      }
+
+      .progress-bar-fill {
+        height: 100%;
+        width: 0%;
+        background: var(--accent);
+        border-radius: 4px;
+        transition: width 0.15s ease;
+      }
+
+      .progress-bar-fill.done {
+        background: #35cf70;
+      }
     </style>
   </head>
   <body>
@@ -140,19 +176,24 @@
         <h1>PocketTTS Web Demo</h1>
         <p class="subtitle">Go WASM + native safetensors pipeline.</p>
 
-        <div class="controls">
+        <textarea id="text" placeholder="Type text here">Hello from PocketTTS in the browser.</textarea>
+
+        <div class="controls-row">
           <label for="voice">Voice</label>
           <select id="voice"></select>
 
           <label for="temperature">Temperature</label>
           <input type="range" id="temperature" min="0" max="1.5" step="0.05" value="0.7" />
           <span id="temperature-value" class="temp-value">0.70</span>
+
+          <span class="spacer"></span>
+
+          <button id="synthesize" class="primary" type="button" disabled>Synthesize</button>
         </div>
 
-        <textarea id="text" placeholder="Type text here">Hello from PocketTTS in the browser.</textarea>
-
-        <div class="synth-row">
-          <button id="synthesize" class="primary" type="button" disabled>Synthesize</button>
+        <div id="progress-wrap" class="progress-wrap">
+          <div class="progress-label" id="progress-label">Loading model...</div>
+          <div class="progress-bar"><div class="progress-bar-fill" id="progress-fill"></div></div>
         </div>
 
         <audio id="player" controls></audio>

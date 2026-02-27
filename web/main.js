@@ -5,6 +5,9 @@ const player = document.getElementById("player");
 const voiceSelect = document.getElementById("voice");
 const temperatureSlider = document.getElementById("temperature");
 const temperatureValue = document.getElementById("temperature-value");
+const progressWrap = document.getElementById("progress-wrap");
+const progressLabel = document.getElementById("progress-label");
+const progressFill = document.getElementById("progress-fill");
 
 const state = {
   kernelReady: false,
@@ -111,6 +114,17 @@ function renderInfo() {
 function setAction(message) {
   state.action = message;
   renderInfo();
+}
+
+function showProgress(label, pct, done) {
+  progressWrap.classList.add("visible");
+  progressLabel.textContent = label;
+  progressFill.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+  progressFill.classList.toggle("done", !!done);
+}
+
+function hideProgress() {
+  progressWrap.classList.remove("visible");
 }
 
 function canSynthesize() {
@@ -290,17 +304,16 @@ function ensureModelBytesFetched() {
   setAction("Downloading model...");
   setSynthesizeEnabled();
 
-  let lastPct = -1;
+  showProgress("Downloading model...", 0, false);
   state.modelBytesPromise = fetchBytesWithProgress(modelAssetPath, (received, total) => {
     const pct = total > 0 ? Math.round((received / total) * 100) : 0;
-    if (pct !== lastPct && pct % 10 === 0) {
-      lastPct = pct;
-      setAction(`Downloading model (${pct}%)...`);
-    }
+    showProgress(`Downloading model... ${pct}%`, pct, false);
+    setAction(`Downloading model (${pct}%)...`);
   }).catch((err) => {
     state.modelPhase = "error";
     state.modelError = formatError(err);
     state.modelBytesPromise = null;
+    hideProgress();
     setAction(`Model download failed: ${state.modelError}`);
     renderInfo();
     setSynthesizeEnabled();
@@ -319,12 +332,14 @@ async function autoLoadModel() {
     const modelBytes = await ensureModelBytesFetched();
 
     state.modelPhase = "initializing";
+    showProgress("Initializing model...", 0, false);
     setAction("Initializing model...");
     renderInfo();
 
     const result = await globalThis.PocketTTSKernel.loadModel(modelBytes, (evt) => {
       const stage = evt?.stage || "load";
       const pct = Math.round(Math.max(0, Math.min(100, Number(evt?.percent || 0))));
+      showProgress(`Initializing model (${stage})... ${pct}%`, pct, false);
       setAction(`Initializing model (${stage} ${pct}%)...`);
     });
 
@@ -334,13 +349,16 @@ async function autoLoadModel() {
 
     state.modelLoaded = true;
     state.modelPhase = "ready";
+    showProgress("Model ready", 100, true);
     setAction("Model ready.");
+    setTimeout(hideProgress, 2000);
 
     await downloadSelectedVoiceIfNeeded();
   } catch (err) {
     state.modelLoaded = false;
     state.modelPhase = "error";
     state.modelError = formatError(err);
+    hideProgress();
     setAction(`Model load failed: ${state.modelError}`);
   } finally {
     renderInfo();
