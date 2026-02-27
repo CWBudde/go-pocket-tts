@@ -40,86 +40,19 @@ func newSynthCmd() *cobra.Command {
 				return err
 			}
 
-			selectedBackend, err := resolveSynthBackend(backend, cfg.TTS.Backend)
-			if err != nil {
-				return err
-			}
-
-			inputText, err := readSynthText(text, os.Stdin)
-			if err != nil {
-				return err
-			}
-
-			selectedVoice := cfg.TTS.Voice
-			if voice != "" {
-				selectedVoice = voice
-			}
-
-			chunks, err := buildSynthesisChunks(inputText, chunk, maxChunkChars)
-			if err != nil {
-				return err
-			}
-
-			var result []byte
-
-			switch selectedBackend {
-			case config.BackendNative, config.BackendNativeONNX:
-				if len(ttsArgs) > 0 {
-					return errors.New("--tts-arg is only supported with --backend cli")
-				}
-				var resolvedVoice string
-
-				resolvedVoice, err = resolveVoiceForNative(selectedVoice)
-				if err != nil {
-					return err
-				}
-
-				nativeCfg := cfg
-				nativeCfg.TTS.Backend = selectedBackend
-				result, err = synthesizeNative(cmd.Context(), nativeCfg, chunks, resolvedVoice)
-			case config.BackendCLI:
-				var resolvedVoice string
-
-				resolvedVoice, err = resolveVoiceOrPath(selectedVoice)
-				if err != nil {
-					return err
-				}
-
-				result, err = synthesizeChunks(cmd.Context(), synthChunksOptions{
-					CLI: synthCLIOptions{
-						ExecutablePath: cfg.TTS.CLIPath,
-						ConfigPath:     cfg.TTS.CLIConfigPath,
-						Voice:          resolvedVoice,
-						Quiet:          cfg.TTS.Quiet,
-						ExtraArgs:      ttsArgs,
-						Stderr:         os.Stderr,
-					},
-					Chunks:    chunks,
-					ChunkMode: chunk,
-				})
-			default:
-				return fmt.Errorf("unsupported backend %q", selectedBackend)
-			}
-
-			if err != nil {
-				return mapSynthError(err)
-			}
-
-			if normalize || dcBlock || fadeInMS > 0 || fadeOutMS > 0 {
-				processed, err := applyDSPToWAV(result, synthDSPOptions{
-					Normalize: normalize,
-					DCBlock:   dcBlock,
-					FadeInMS:  fadeInMS,
-					FadeOutMS: fadeOutMS,
-				})
-				if err != nil {
-					return err
-				}
-
-				result = processed
-			}
-
-			return writeSynthOutput(out, result, os.Stdout)
+			return runSynthCommand(cmd.Context(), cfg, synthRunOptions{
+				Text:          text,
+				Out:           out,
+				Voice:         voice,
+				TTSArgs:       ttsArgs,
+				Backend:       backend,
+				Chunk:         chunk,
+				MaxChunkChars: maxChunkChars,
+				Normalize:     normalize,
+				DCBlock:       dcBlock,
+				FadeInMS:      fadeInMS,
+				FadeOutMS:     fadeOutMS,
+			}, os.Stdin, os.Stdout, os.Stderr)
 		},
 	}
 
@@ -153,6 +86,20 @@ type synthCLIOptions struct {
 	Stderr         io.Writer
 }
 
+type synthRunOptions struct {
+	Text          string
+	Out           string
+	Voice         string
+	TTSArgs       []string
+	Backend       string
+	Chunk         bool
+	MaxChunkChars int
+	Normalize     bool
+	DCBlock       bool
+	FadeInMS      float64
+	FadeOutMS     float64
+}
+
 type synthChunksOptions struct {
 	CLI       synthCLIOptions
 	Chunks    []string
@@ -167,6 +114,97 @@ type synthDSPOptions struct {
 }
 
 var runChunkSynthesis = synthesizeViaCLI
+
+func runSynthCommand(ctx context.Context, cfg config.Config, opts synthRunOptions, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
+	selectedBackend, err := resolveSynthBackend(opts.Backend, cfg.TTS.Backend)
+	if err != nil {
+		return err
+	}
+
+	inputText, err := readSynthText(opts.Text, stdin)
+	if err != nil {
+		return err
+	}
+
+	selectedVoice := cfg.TTS.Voice
+	if opts.Voice != "" {
+		selectedVoice = opts.Voice
+	}
+
+	chunks, err := buildSynthesisChunks(inputText, opts.Chunk, opts.MaxChunkChars)
+	if err != nil {
+		return err
+	}
+
+	result, err := synthesizeForBackend(ctx, cfg, selectedBackend, selectedVoice, chunks, opts.TTSArgs, opts.Chunk, stderr)
+	if err != nil {
+		return mapSynthError(err)
+	}
+
+	if opts.Normalize || opts.DCBlock || opts.FadeInMS > 0 || opts.FadeOutMS > 0 {
+		processed, err := applyDSPToWAV(result, synthDSPOptions{
+			Normalize: opts.Normalize,
+			DCBlock:   opts.DCBlock,
+			FadeInMS:  opts.FadeInMS,
+			FadeOutMS: opts.FadeOutMS,
+		})
+		if err != nil {
+			return err
+		}
+
+		result = processed
+	}
+
+	return writeSynthOutput(opts.Out, result, stdout)
+}
+
+func synthesizeForBackend(
+	ctx context.Context,
+	cfg config.Config,
+	selectedBackend string,
+	selectedVoice string,
+	chunks []string,
+	ttsArgs []string,
+	chunk bool,
+	stderr io.Writer,
+) ([]byte, error) {
+	switch selectedBackend {
+	case config.BackendNative, config.BackendNativeONNX:
+		if len(ttsArgs) > 0 {
+			return nil, errors.New("--tts-arg is only supported with --backend cli")
+		}
+
+		resolvedVoice, err := resolveVoiceForNative(selectedVoice)
+		if err != nil {
+			return nil, err
+		}
+
+		nativeCfg := cfg
+		nativeCfg.TTS.Backend = selectedBackend
+
+		return synthesizeNative(ctx, nativeCfg, chunks, resolvedVoice)
+	case config.BackendCLI:
+		resolvedVoice, err := resolveVoiceOrPath(selectedVoice)
+		if err != nil {
+			return nil, err
+		}
+
+		return synthesizeChunks(ctx, synthChunksOptions{
+			CLI: synthCLIOptions{
+				ExecutablePath: cfg.TTS.CLIPath,
+				ConfigPath:     cfg.TTS.CLIConfigPath,
+				Voice:          resolvedVoice,
+				Quiet:          cfg.TTS.Quiet,
+				ExtraArgs:      ttsArgs,
+				Stderr:         stderr,
+			},
+			Chunks:    chunks,
+			ChunkMode: chunk,
+		})
+	default:
+		return nil, fmt.Errorf("unsupported backend %q", selectedBackend)
+	}
+}
 
 func synthesizeViaCLI(ctx context.Context, opts synthCLIOptions) ([]byte, error) {
 	exe := opts.ExecutablePath
@@ -277,7 +315,7 @@ func synthesizeNative(ctx context.Context, cfg config.Config, chunks []string, v
 			return nil, err
 		}
 
-		samples, err := svc.Synthesize(chunkText, voicePath)
+		samples, err := svc.SynthesizeCtx(ctx, chunkText, voicePath)
 		if err != nil {
 			return nil, fmt.Errorf("native chunk %d synthesis failed: %w", i+1, err)
 		}
