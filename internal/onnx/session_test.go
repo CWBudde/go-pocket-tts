@@ -113,11 +113,13 @@ func TestLoadSessionsOnceKeepsFirstManifest(t *testing.T) {
 	firstManifest := filepath.Join(tmp, "first.json")
 	secondManifest := filepath.Join(tmp, "second.json")
 
-	if err := os.WriteFile(firstManifest, []byte(`{"graphs":[{"name":"a","filename":"a.onnx","inputs":[],"outputs":[]}]}`), 0o644); err != nil {
+	err = os.WriteFile(firstManifest, []byte(`{"graphs":[{"name":"a","filename":"a.onnx","inputs":[],"outputs":[]}]}`), 0o644)
+	if err != nil {
 		t.Fatalf("write first manifest: %v", err)
 	}
 
-	if err := os.WriteFile(secondManifest, []byte(`{"graphs":[{"name":"b","filename":"b.onnx","inputs":[],"outputs":[]}]}`), 0o644); err != nil {
+	err = os.WriteFile(secondManifest, []byte(`{"graphs":[{"name":"b","filename":"b.onnx","inputs":[],"outputs":[]}]}`), 0o644)
+	if err != nil {
 		t.Fatalf("write second manifest: %v", err)
 	}
 

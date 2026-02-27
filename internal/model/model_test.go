@@ -170,6 +170,7 @@ func TestFileSHA256_KnownContent(t *testing.T) {
 	p := filepath.Join(tmp, "f.bin")
 
 	content := []byte("test content")
+
 	err := os.WriteFile(p, content, 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -199,6 +200,7 @@ func TestFileSHA256_EmptyFile(t *testing.T) {
 	tmp := t.TempDir()
 
 	p := filepath.Join(tmp, "empty.bin")
+
 	err := os.WriteFile(p, []byte{}, 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -540,7 +542,8 @@ func TestDownload_SkipExistingFile(t *testing.T) {
 	}
 
 	lockPath := filepath.Join(outDir, "download-manifest.lock.json")
-	err := writeLockManifest(lockPath, lock)
+
+	err = writeLockManifest(lockPath, lock)
 	if err != nil {
 		t.Fatalf("writeLockManifest: %v", err)
 	}
@@ -549,7 +552,9 @@ func TestDownload_SkipExistingFile(t *testing.T) {
 	// We'll create a file with content "x" and see if SHA256 matches — it won't.
 	// Instead write a file and compute its hash, then update the lock to match.
 	fileContent := []byte("synthetic model data for test")
-	if err := os.WriteFile(localPath, fileContent, 0o644); err != nil {
+
+	err = os.WriteFile(localPath, fileContent, 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -557,7 +562,9 @@ func TestDownload_SkipExistingFile(t *testing.T) {
 
 	// Update the lock with the real hash so existingMatches returns true.
 	lock.Files[firstFile.Filename] = lockRecord{Revision: firstFile.Revision, SHA256: realHash}
-	if err := writeLockManifest(lockPath, lock); err != nil {
+
+	err = writeLockManifest(lockPath, lock)
+	if err != nil {
 		t.Fatalf("writeLockManifest: %v", err)
 	}
 
@@ -632,7 +639,9 @@ func TestDownload_FullDownloadAndLockWrite(t *testing.T) {
 
 	// Lock manifest must have been written.
 	lockPath := filepath.Join(outDir, "download-manifest.lock.json")
-	if _, err := os.Stat(lockPath); err != nil {
+
+	_, err = os.Stat(lockPath)
+	if err != nil {
 		t.Errorf("lock manifest not written: %v", err)
 	}
 
@@ -644,7 +653,9 @@ func TestDownload_FullDownloadAndLockWrite(t *testing.T) {
 	manifest, _ := PinnedManifest("kyutai/pocket-tts")
 	for _, f := range manifest.Files {
 		localPath := filepath.Join(outDir, f.Filename)
-		if _, err := os.Stat(localPath); err != nil {
+
+		_, err = os.Stat(localPath)
+		if err != nil {
 			t.Errorf("downloaded file %q not found: %v", f.Filename, err)
 		}
 	}
@@ -912,7 +923,9 @@ func TestResolveScriptPath_ExistsInCwd(t *testing.T) {
 	scriptName := "test_resolve_script_tmp.py"
 
 	scriptPath := filepath.Join(cwd, scriptName)
-	if err := os.WriteFile(scriptPath, []byte("# test"), 0o644); err != nil {
+
+	err = os.WriteFile(scriptPath, []byte("# test"), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
