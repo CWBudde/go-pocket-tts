@@ -70,13 +70,12 @@ func newDoctorCmd() *cobra.Command {
 				)
 			} else if _, statErr := os.Stat(onnxManifest); os.IsNotExist(statErr) {
 				_, _ = fmt.Fprintf(os.Stdout, "%s model verify: skipped (no manifest at %s)\n", doctor.PassMark, onnxManifest)
-			} else err := model.VerifyONNX(model.VerifyOptions{
-	ManifestPath:	onnxManifest,
-	ORTLibrary:	cfg.Runtime.ORTLibraryPath,
-	Stdout:		os.Stdout,
-	Stderr:		os.Stderr,
-})
-if  err != nil {
+			} else if err := model.VerifyONNX(model.VerifyOptions{
+				ManifestPath: onnxManifest,
+				ORTLibrary:   cfg.Runtime.ORTLibraryPath,
+				Stdout:       os.Stdout,
+				Stderr:       os.Stderr,
+			}); err != nil {
 				result.AddFailure(fmt.Sprintf("model verify: %v", err))
 				_, _ = fmt.Fprintf(os.Stdout, "%s model verify: %v\n", doctor.FailMark, err)
 			} else {
