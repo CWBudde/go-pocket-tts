@@ -28,7 +28,7 @@ func TestFlowLMStep_MissingGraph(t *testing.T) {
 func TestFlowLMStep_PropagatesRunnerError(t *testing.T) {
 	fake := &fakeRunner{
 		name: "flow_lm_main",
-		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
+		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 			return nil, errors.New("ort failure")
 		},
 	}
@@ -57,7 +57,7 @@ func TestFlowLMStep_ReturnsOutputs(t *testing.T) {
 
 	fake := &fakeRunner{
 		name: "flow_lm_main",
-		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
 			// Verify expected input keys.
 			if _, ok := inputs["sequence"]; !ok {
 				t.Error("expected 'sequence' input key")

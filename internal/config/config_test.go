@@ -475,12 +475,13 @@ func TestLoad_FlagOverride_GenerationFields(t *testing.T) {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	RegisterFlags(fs, defaults)
 
-	if err := fs.Parse([]string{
+	err := fs.Parse([]string{
 		"--temperature=0.5",
 		"--eos-threshold=-2.0",
 		"--max-steps=128",
 		"--lsd-steps=3",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 

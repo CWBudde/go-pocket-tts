@@ -114,7 +114,8 @@ func ValidateModelKeys(path string) error {
 	}
 
 	var header map[string]json.RawMessage
-	if err := json.Unmarshal(headerBuf, &header); err != nil {
+	err = json.Unmarshal(headerBuf, &header)
+	if err != nil {
 		return fmt.Errorf("parse header: %w", err)
 	}
 

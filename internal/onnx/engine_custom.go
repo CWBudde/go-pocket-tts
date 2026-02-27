@@ -1,6 +1,9 @@
 package onnx
 
-import "context"
+import (
+	"context"
+	"maps"
+)
 
 // GraphRunner is the minimal runner contract required by Engine methods.
 // It is useful for alternate runtimes (for example js/wasm bridge runners).
@@ -10,12 +13,12 @@ type GraphRunner interface {
 	Close()
 }
 
+type runnerIface = GraphRunner
+
 // NewEngineWithRunners builds an Engine from externally provided graph runners.
 func NewEngineWithRunners(runners map[string]GraphRunner) *Engine {
-	internal := make(map[string]runnerIface, len(runners))
-	for name, r := range runners {
-		internal[name] = r
-	}
+	internal := make(map[string]GraphRunner, len(runners))
+	maps.Copy(internal, runners)
 
 	return &Engine{runners: internal}
 }

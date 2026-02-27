@@ -24,8 +24,8 @@ import (
 
 // RequirePocketTTS skips the test if the pocket-tts binary is not found in
 // PATH or the path given by the POCKETTTS_TTS_CLI_PATH environment variable.
-func RequirePocketTTS(t testing.TB) {
-	t.Helper()
+func RequirePocketTTS(tb testing.TB) {
+	tb.Helper()
 
 	exe := os.Getenv("POCKETTTS_TTS_CLI_PATH")
 	if exe == "" {
@@ -33,15 +33,15 @@ func RequirePocketTTS(t testing.TB) {
 	}
 
 	if _, err := exec.LookPath(exe); err != nil {
-		t.Skipf("pocket-tts binary not available (%q not in PATH); set POCKETTTS_TTS_CLI_PATH to override", exe)
+		tb.Skipf("pocket-tts binary not available (%q not in PATH); set POCKETTTS_TTS_CLI_PATH to override", exe)
 	}
 }
 
 // RequireONNXRuntime skips the test if no ONNX Runtime shared library can be
 // located. It checks (in order): the ORT_LIBRARY_PATH env var, then the
 // POCKETTTS_ORT_LIB env var, then common system library paths.
-func RequireONNXRuntime(t testing.TB) {
-	t.Helper()
+func RequireONNXRuntime(tb testing.TB) {
+	tb.Helper()
 
 	for _, env := range []string{"ORT_LIBRARY_PATH", "POCKETTTS_ORT_LIB"} {
 		if p := os.Getenv(env); p != "" {
@@ -49,7 +49,7 @@ func RequireONNXRuntime(t testing.TB) {
 				return // found
 			}
 
-			t.Skipf("ONNX Runtime library not found at %s=%q", env, p)
+			tb.Skipf("ONNX Runtime library not found at %s=%q", env, p)
 		}
 	}
 	// Fall back to common system locations.
@@ -64,23 +64,23 @@ func RequireONNXRuntime(t testing.TB) {
 		}
 	}
 
-	t.Skip("ONNX Runtime shared library not found; set ORT_LIBRARY_PATH or POCKETTTS_ORT_LIB")
+	tb.Skip("ONNX Runtime shared library not found; set ORT_LIBRARY_PATH or POCKETTTS_ORT_LIB")
 }
 
 // RequireVoiceFile skips the test if the voice identified by id cannot be
 // resolved from voices/manifest.json relative to the current working directory.
-func RequireVoiceFile(t testing.TB, id string) {
-	t.Helper()
+func RequireVoiceFile(tb testing.TB, id string) {
+	tb.Helper()
 
 	manifestPath := filepath.Join("voices", "manifest.json")
 
 	vm, err := tts.NewVoiceManager(manifestPath)
 	if err != nil {
-		t.Skipf("voice manifest not available at %q: %v", manifestPath, err)
+		tb.Skipf("voice manifest not available at %q: %v", manifestPath, err)
 	}
 
 	if _, err := vm.ResolvePath(id); err != nil {
-		t.Skipf("voice %q not available: %v", id, err)
+		tb.Skipf("voice %q not available: %v", id, err)
 	}
 }
 

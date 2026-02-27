@@ -151,7 +151,7 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 				break
 			}
 
-			*eosCountdown = *eosCountdown - 1
+			(*eosCountdown)--
 		}
 
 		sequenceFrame = frame
