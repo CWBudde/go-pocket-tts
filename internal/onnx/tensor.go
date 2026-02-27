@@ -92,6 +92,10 @@ func (t *Tensor) Shape() []int64 {
 }
 
 func (t *Tensor) Data() any {
+	if t == nil {
+		return nil
+	}
+
 	switch v := t.data.(type) {
 	case []float32:
 		return append([]float32(nil), v...)
