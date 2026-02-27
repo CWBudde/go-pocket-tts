@@ -110,7 +110,7 @@ func TestExportVoiceCmd_WritesSafetensorsViaNativeEncoder(t *testing.T) {
 	fake.output[onnx.VoiceEmbeddingDim+1] = -2.5
 
 	var capturedWeightsPath string
-	buildVoiceEncoder = func(cfg config.Config, modelWeightsPath string) (voiceEncoder, error) {
+	buildVoiceEncoder = func(_ config.Config, modelWeightsPath string) (voiceEncoder, error) {
 		capturedWeightsPath = modelWeightsPath
 		return fake, nil
 	}

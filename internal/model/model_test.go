@@ -215,7 +215,7 @@ func TestFileSHA256_EmptyFile(t *testing.T) {
 // readLockManifest / writeLockManifest
 // ---------------------------------------------------------------------------
 
-func TestReadLockManifest_MissingFile(t *testing.T) {
+func TestReadLockManifest_MissingFile(_ *testing.T) {
 	// Missing file returns empty lockManifest without error.
 	lock := readLockManifest("/nonexistent/lock.json")
 	// Files may be nil on error path; caller is responsible for nil-checking.

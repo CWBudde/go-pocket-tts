@@ -21,7 +21,11 @@ func TestResolveBundleFromLock_ByVariant(t *testing.T) {
 		}},
 	}
 
-	data, _ := json.Marshal(lock)
+	data, err := json.Marshal(lock)
+	if err != nil {
+		t.Fatalf("marshal lock: %v", err)
+	}
+
 	if err := os.WriteFile(lockPath, data, 0o644); err != nil {
 		t.Fatalf("write lock: %v", err)
 	}
@@ -59,9 +63,12 @@ func TestVerifyONNXManifestDir(t *testing.T) {
 		},
 	}
 
-	data, _ := json.Marshal(manifest)
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
 
-	err := os.WriteFile(filepath.Join(tmp, "manifest.json"), data, 0o644)
+	err = os.WriteFile(filepath.Join(tmp, "manifest.json"), data, 0o644)
 	if err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}

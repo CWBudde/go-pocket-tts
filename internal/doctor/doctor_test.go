@@ -248,7 +248,7 @@ func TestRun_ValidateSafetensorsCallback(t *testing.T) {
 		SkipPython:      true,
 		NativeModelPath: "doctor_test.go", // exists
 		ValidateSafetensors: func(_ string) error {
-			return sentinelErr("bad keys")
+			return sentinelError("bad keys")
 		},
 	}
 
@@ -290,11 +290,11 @@ func TestRun_ValidateSafetensorsPassesOnSuccess(t *testing.T) {
 // helpers
 // ---------------------------------------------------------------------------
 
-type sentinelErr string
+type sentinelError string
 
-func (e sentinelErr) Error() string { return string(e) }
+func (e sentinelError) Error() string { return string(e) }
 
-var errBinaryNotFound = sentinelErr("binary not found")
+var errBinaryNotFound = sentinelError("binary not found")
 
 func hasFailureContaining(failures []string, substr string) bool {
 	substr = strings.ToLower(substr)

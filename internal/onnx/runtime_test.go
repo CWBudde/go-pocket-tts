@@ -12,7 +12,7 @@ import (
 func resetRuntimeStateForTest() {
 	bootstrapOnce = sync.Once{}
 	bootstrapInfo = RuntimeInfo{}
-	bootstrapErr = nil
+	errBootstrap = nil
 
 	shutdownFlag.Store(false)
 }

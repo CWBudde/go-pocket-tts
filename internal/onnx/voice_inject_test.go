@@ -11,8 +11,9 @@ import (
 
 func TestConcatTensorsDim1_BasicConcat(t *testing.T) {
 	// a [1, 2, 3] + b [1, 3, 3] → [1, 5, 3]
-	aData := []float32{1, 2, 3, 4, 5, 6}
 	bData := []float32{7, 8, 9, 10, 11, 12, 13, 14, 15}
+	aData := make([]float32, 0, 6+len(bData))
+	aData = append(aData, 1, 2, 3, 4, 5, 6)
 	a, _ := NewTensor(aData, []int64{1, 2, 3})
 	b, _ := NewTensor(bData, []int64{1, 3, 3})
 
@@ -28,7 +29,9 @@ func TestConcatTensorsDim1_BasicConcat(t *testing.T) {
 
 	data, _ := ExtractFloat32(result)
 
-	want := append(aData, bData...)
+	aData = append(aData, bData...)
+
+	want := aData
 	if len(data) != len(want) {
 		t.Fatalf("data length = %d, want %d", len(data), len(want))
 	}

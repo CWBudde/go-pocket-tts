@@ -49,7 +49,8 @@ func AppendLatentFrame(sequence, frame *Tensor) (*Tensor, error) {
 		return nil, fmt.Errorf("extract frame data: %w", err)
 	}
 
-	combined := append(seqData, frameData...)
+	seqData = append(seqData, frameData...)
+	combined := seqData
 	newS := seqShape[1] + 1
 
 	return NewTensor(combined, []int64{1, newS, int64(latentDim)})
@@ -154,9 +155,7 @@ func (e *Engine) FlowLMFlow(ctx context.Context, lastHidden *Tensor, temperature
 
 // randNormal returns a standard normal random value.
 // Package-level var to allow deterministic testing.
-var randNormal = func() float64 {
-	return rand.NormFloat64()
-}
+var randNormal = rand.NormFloat64
 
 // EOSDetected returns true if the raw EOS logit exceeds the threshold.
 // The eos_logits tensor has shape [1, 1]; threshold is compared against

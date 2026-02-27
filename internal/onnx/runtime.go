@@ -23,7 +23,7 @@ var versionPattern = regexp.MustCompile(`([0-9]+\.[0-9]+\.[0-9]+)`)
 var (
 	bootstrapOnce sync.Once
 	bootstrapInfo RuntimeInfo
-	bootstrapErr  error
+	errBootstrap  error
 	shutdownFlag  atomic.Bool
 )
 
@@ -31,13 +31,13 @@ func Bootstrap(cfg config.RuntimeConfig) (RuntimeInfo, error) {
 	bootstrapOnce.Do(func() {
 		info, err := DetectRuntime(cfg)
 		if err != nil {
-			bootstrapErr = err
+			errBootstrap = err
 			return
 		}
 
 		// Keep this process-local marker for future ORT bindings.
 		if err := os.Setenv("POCKETTTS_ORT_LIB", info.LibraryPath); err != nil {
-			bootstrapErr = fmt.Errorf("set POCKETTTS_ORT_LIB: %w", err)
+			errBootstrap = fmt.Errorf("set POCKETTTS_ORT_LIB: %w", err)
 			return
 		}
 
@@ -45,8 +45,8 @@ func Bootstrap(cfg config.RuntimeConfig) (RuntimeInfo, error) {
 		bootstrapInfo.Initialized = true
 	})
 
-	if bootstrapErr != nil {
-		return RuntimeInfo{}, bootstrapErr
+	if errBootstrap != nil {
+		return RuntimeInfo{}, errBootstrap
 	}
 
 	return bootstrapInfo, nil

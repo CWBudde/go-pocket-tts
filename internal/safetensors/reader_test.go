@@ -34,7 +34,12 @@ func buildSafetensors(t *testing.T, tensors map[string]struct {
 	// Build header and compute offsets.
 	header := make(map[string]tensorMeta)
 
-	var rawData []byte
+	totalDataLen := 0
+	for _, info := range tensors {
+		totalDataLen += len(info.data)
+	}
+
+	rawData := make([]byte, 0, totalDataLen)
 	for name, info := range tensors {
 		start := len(rawData)
 		rawData = append(rawData, info.data...)
@@ -51,9 +56,9 @@ func buildSafetensors(t *testing.T, tensors map[string]struct {
 	}
 
 	// 8-byte LE header length + JSON header + tensor data.
-	var buf []byte
 	lenBuf := make([]byte, 8)
 	binary.LittleEndian.PutUint64(lenBuf, uint64(len(headerJSON)))
+	buf := make([]byte, 0, len(lenBuf)+len(headerJSON)+len(rawData))
 	buf = append(buf, lenBuf...)
 	buf = append(buf, headerJSON...)
 	buf = append(buf, rawData...)
@@ -203,9 +208,9 @@ func TestLoadFirstTensor_TruncatedHeader(t *testing.T) {
 func TestLoadFirstTensor_NoTensors(t *testing.T) {
 	// Valid header but empty tensor map.
 	headerJSON := []byte("{}")
-	var buf []byte
 	lenBuf := make([]byte, 8)
 	binary.LittleEndian.PutUint64(lenBuf, uint64(len(headerJSON)))
+	buf := make([]byte, 0, len(lenBuf)+len(headerJSON))
 	buf = append(buf, lenBuf...)
 	buf = append(buf, headerJSON...)
 
@@ -246,9 +251,9 @@ func TestLoadFirstTensor_FileNotFound(t *testing.T) {
 func TestLoadFirstTensor_InvalidJSON(t *testing.T) {
 	// Valid length prefix but invalid JSON.
 	headerJSON := []byte("{invalid json")
-	var buf []byte
 	lenBuf := make([]byte, 8)
 	binary.LittleEndian.PutUint64(lenBuf, uint64(len(headerJSON)))
+	buf := make([]byte, 0, len(lenBuf)+len(headerJSON))
 	buf = append(buf, lenBuf...)
 	buf = append(buf, headerJSON...)
 
@@ -455,7 +460,7 @@ func TestLoadFirstTensor_MetadataKeyIgnored(t *testing.T) {
 
 	lenBuf := make([]byte, 8)
 	binary.LittleEndian.PutUint64(lenBuf, uint64(len(headerJSON)))
-	var buf []byte
+	buf := make([]byte, 0, len(lenBuf)+len(headerJSON)+len(rawData))
 	buf = append(buf, lenBuf...)
 	buf = append(buf, headerJSON...)
 	buf = append(buf, rawData...)

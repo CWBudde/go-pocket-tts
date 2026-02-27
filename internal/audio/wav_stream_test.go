@@ -26,7 +26,9 @@ func TestWriteWAVHeaderStreaming_Size(t *testing.T) {
 
 func TestWriteWAVHeaderStreaming_Markers(t *testing.T) {
 	var buf bytes.Buffer
-	if _, err := WriteWAVHeaderStreaming(&buf); err != nil {
+
+	_, err := WriteWAVHeaderStreaming(&buf)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -51,7 +53,9 @@ func TestWriteWAVHeaderStreaming_Markers(t *testing.T) {
 
 func TestWriteWAVHeaderStreaming_UnknownLength(t *testing.T) {
 	var buf bytes.Buffer
-	if _, err := WriteWAVHeaderStreaming(&buf); err != nil {
+
+	_, err := WriteWAVHeaderStreaming(&buf)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -70,7 +74,9 @@ func TestWriteWAVHeaderStreaming_UnknownLength(t *testing.T) {
 
 func TestWriteWAVHeaderStreaming_Format(t *testing.T) {
 	var buf bytes.Buffer
-	if _, err := WriteWAVHeaderStreaming(&buf); err != nil {
+
+	_, err := WriteWAVHeaderStreaming(&buf)
+	if err != nil {
 		t.Fatal(err)
 	}
 

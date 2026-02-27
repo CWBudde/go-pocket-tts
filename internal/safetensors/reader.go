@@ -96,7 +96,9 @@ func ValidateModelKeys(path string) error {
 	}()
 
 	var headerLen uint64
-	if err := binary.Read(f, binary.LittleEndian, &headerLen); err != nil {
+
+	err = binary.Read(f, binary.LittleEndian, &headerLen)
+	if err != nil {
 		return fmt.Errorf("read header length: %w", err)
 	}
 
@@ -105,7 +107,9 @@ func ValidateModelKeys(path string) error {
 	}
 
 	headerBuf := make([]byte, headerLen)
-	if _, err := io.ReadFull(f, headerBuf); err != nil {
+
+	_, err = io.ReadFull(f, headerBuf)
+	if err != nil {
 		return fmt.Errorf("read header: %w", err)
 	}
 

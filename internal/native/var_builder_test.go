@@ -25,7 +25,13 @@ func buildSafetensors(t *testing.T, tensors map[string]struct {
 
 	head := map[string]tensorMeta{}
 	offset := 0
-	blob := make([]byte, 0)
+
+	totalDataLen := 0
+	for _, spec := range tensors {
+		totalDataLen += len(spec.data)
+	}
+
+	blob := make([]byte, 0, totalDataLen)
 
 	for name, spec := range tensors {
 		start := offset

@@ -33,13 +33,13 @@ func TestNewRootCmd_HasPersistentConfigFlag(t *testing.T) {
 	}
 }
 
-func TestSetupLogger_DoesNotPanic(t *testing.T) {
+func TestSetupLogger_DoesNotPanic(_ *testing.T) {
 	for _, level := range []string{"debug", "info", "warn", "error"} {
 		setupLogger(level)
 	}
 }
 
-func TestSetupLogger_InvalidLevelFallsBackToInfo(t *testing.T) {
+func TestSetupLogger_InvalidLevelFallsBackToInfo(_ *testing.T) {
 	// Should not panic on invalid level.
 	setupLogger("not-a-level")
 }

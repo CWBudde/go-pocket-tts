@@ -81,7 +81,8 @@ func Run(cfg Config, w io.Writer) Result {
 		if err != nil {
 			res.fail(fmt.Sprintf("python version: %v", err))
 			_, _ = fmt.Fprintf(w, "%s python version: not found (%v)\n", FailMark, err)
-		} else if pyErr := checkPythonVersion(pyVer); pyErr != nil {
+		} else pyErr := checkPythonVersion(pyVer)
+if  pyErr != nil {
 			res.fail(fmt.Sprintf("python version: %v", pyErr))
 			_, _ = fmt.Fprintf(w, "%s python version %s: %v\n", FailMark, pyVer, pyErr)
 		} else {
@@ -109,7 +110,7 @@ func Run(cfg Config, w io.Writer) Result {
 			// Optionally validate model contents.
 			if cfg.ValidateSafetensors != nil {
 				err := cfg.ValidateSafetensors(cfg.NativeModelPath)
-if  err != nil {
+				if err != nil {
 					res.fail(fmt.Sprintf("safetensors model validation: %v", err))
 					_, _ = fmt.Fprintf(w, "%s safetensors model validation: %v\n", FailMark, err)
 				} else {

@@ -217,7 +217,7 @@ func unwrapData(output any) (any, error) {
 	return nil, fmt.Errorf("nested Data() wrappers exceed max depth %d", maxDepth)
 }
 
-func dtypeFromSlice[T ~int64 | ~float32](data []T) (TensorDType, error) {
+func dtypeFromSlice[T ~int64 | ~float32](_ []T) (TensorDType, error) {
 	var zero T
 	switch any(zero).(type) {
 	case int64:
