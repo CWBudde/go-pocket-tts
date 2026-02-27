@@ -15,18 +15,18 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// ErrAccessDenied
+// AccessDeniedError
 // ---------------------------------------------------------------------------
 
-func TestErrAccessDenied_WithMsg(t *testing.T) {
-	err := &ErrAccessDenied{Repo: "org/repo", Msg: "custom error"}
+func TestAccessDeniedError_WithMsg(t *testing.T) {
+	err := &AccessDeniedError{Repo: "org/repo", Msg: "custom error"}
 	if err.Error() != "custom error" {
 		t.Errorf("Error() = %q; want %q", err.Error(), "custom error")
 	}
 }
 
-func TestErrAccessDenied_WithoutMsg(t *testing.T) {
-	err := &ErrAccessDenied{Repo: "org/repo"}
+func TestAccessDeniedError_WithoutMsg(t *testing.T) {
+	err := &AccessDeniedError{Repo: "org/repo"}
 	if !strings.Contains(err.Error(), "org/repo") {
 		t.Errorf("Error() = %q; should mention repo", err.Error())
 	}
@@ -215,7 +215,7 @@ func TestFileSHA256_EmptyFile(t *testing.T) {
 // readLockManifest / writeLockManifest
 // ---------------------------------------------------------------------------
 
-func TestReadLockManifest_MissingFile(_ *testing.T) {
+func TestReadLockManifest_MissingFile(t *testing.T) {
 	// Missing file returns empty lockManifest without error.
 	lock := readLockManifest("/nonexistent/lock.json")
 	// Files may be nil on error path; caller is responsible for nil-checking.
@@ -690,9 +690,9 @@ func TestDownloadWithProgress_AccessDenied(t *testing.T) {
 				t.Errorf("HTTP %d should return error", code)
 			}
 
-			var denied *ErrAccessDenied
+			var denied *AccessDeniedError
 			if !isAccessDenied(err, &denied) {
-				t.Errorf("expected ErrAccessDenied, got %T: %v", err, err)
+				t.Errorf("expected AccessDeniedError, got %T: %v", err, err)
 			}
 		})
 	}
@@ -779,9 +779,9 @@ func TestResolveChecksumFromMetadata_AccessDenied(t *testing.T) {
 			_, err := resolveChecksumFromMetadata(newHFClient(srv.URL), "org/repo",
 				ModelFile{Filename: "f.bin", Revision: "r1"}, "")
 
-			var denied *ErrAccessDenied
+			var denied *AccessDeniedError
 			if err == nil || !isAccessDenied(err, &denied) {
-				t.Errorf("expected ErrAccessDenied for HTTP %d, got %v", code, err)
+				t.Errorf("expected AccessDeniedError for HTTP %d, got %v", code, err)
 			}
 		})
 	}
@@ -962,13 +962,13 @@ func newHFClient(serverURL string) *http.Client {
 }
 
 // isAccessDenied checks whether err message contains "access denied".
-func isAccessDenied(err error, target **ErrAccessDenied) bool {
+func isAccessDenied(err error, target **AccessDeniedError) bool {
 	if err == nil {
 		return false
 	}
 
 	if strings.Contains(err.Error(), "access denied") {
-		e := &ErrAccessDenied{}
+		e := &AccessDeniedError{}
 		*target = e
 
 		return true

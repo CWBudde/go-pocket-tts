@@ -77,23 +77,26 @@ func Run(cfg Config, w io.Writer) Result {
 	if cfg.SkipPython {
 		_, _ = fmt.Fprintf(w, "%s python version: skipped\n", PassMark)
 	} else {
-		pyVer, err := cfg.PythonVersion()
-		if err != nil {
-			res.fail(fmt.Sprintf("python version: %v", err))
-			_, _ = fmt.Fprintf(w, "%s python version: not found (%v)\n", FailMark, err)
-		} else pyErr := checkPythonVersion(pyVer)
-if  pyErr != nil {
-			res.fail(fmt.Sprintf("python version: %v", pyErr))
-			_, _ = fmt.Fprintf(w, "%s python version %s: %v\n", FailMark, pyVer, pyErr)
+		pyVer, pyGetErr := cfg.PythonVersion()
+		if pyGetErr != nil {
+			res.fail(fmt.Sprintf("python version: %v", pyGetErr))
+			_, _ = fmt.Fprintf(w, "%s python version: not found (%v)\n", FailMark, pyGetErr)
 		} else {
-			_, _ = fmt.Fprintf(w, "%s python version: %s\n", PassMark, pyVer)
+			pyCheckErr := checkPythonVersion(pyVer)
+			if pyCheckErr != nil {
+				res.fail(fmt.Sprintf("python version: %v", pyCheckErr))
+				_, _ = fmt.Fprintf(w, "%s python version %s: %v\n", FailMark, pyVer, pyCheckErr)
+			} else {
+				_, _ = fmt.Fprintf(w, "%s python version: %s\n", PassMark, pyVer)
+			}
 		}
 	}
 
 	// ---- voice files ------------------------------------------------------
 	for _, path := range cfg.VoiceFiles {
-		if _, err := os.Stat(path); err != nil {
-			res.fail(fmt.Sprintf("voice file %q: %v", path, err))
+		_, statErr := os.Stat(path)
+		if statErr != nil {
+			res.fail(fmt.Sprintf("voice file %q: %v", path, statErr))
 			_, _ = fmt.Fprintf(w, "%s voice file %s: not found\n", FailMark, path)
 		} else {
 			_, _ = fmt.Fprintf(w, "%s voice file: %s\n", PassMark, path)
@@ -102,17 +105,18 @@ if  pyErr != nil {
 
 	// ---- native safetensors model -----------------------------------------
 	if cfg.NativeModelPath != "" {
-		if _, err := os.Stat(cfg.NativeModelPath); err != nil {
+		_, statErr := os.Stat(cfg.NativeModelPath)
+		if statErr != nil {
 			res.fail(fmt.Sprintf("safetensors model %q: not found", cfg.NativeModelPath))
 			_, _ = fmt.Fprintf(w, "%s safetensors model: not found (%s)\n", FailMark, cfg.NativeModelPath)
 		} else {
 			_, _ = fmt.Fprintf(w, "%s safetensors model: %s\n", PassMark, cfg.NativeModelPath)
-			// Optionally validate model contents.
+
 			if cfg.ValidateSafetensors != nil {
-				err := cfg.ValidateSafetensors(cfg.NativeModelPath)
-				if err != nil {
-					res.fail(fmt.Sprintf("safetensors model validation: %v", err))
-					_, _ = fmt.Fprintf(w, "%s safetensors model validation: %v\n", FailMark, err)
+				valErr := cfg.ValidateSafetensors(cfg.NativeModelPath)
+				if valErr != nil {
+					res.fail(fmt.Sprintf("safetensors model validation: %v", valErr))
+					_, _ = fmt.Fprintf(w, "%s safetensors model validation: %v\n", FailMark, valErr)
 				} else {
 					_, _ = fmt.Fprintf(w, "%s safetensors model validation: ok\n", PassMark)
 				}
@@ -122,7 +126,8 @@ if  pyErr != nil {
 
 	// ---- tokenizer model --------------------------------------------------
 	if cfg.TokenizerModelPath != "" {
-		if _, err := os.Stat(cfg.TokenizerModelPath); err != nil {
+		_, statErr := os.Stat(cfg.TokenizerModelPath)
+		if statErr != nil {
 			res.fail(fmt.Sprintf("tokenizer model %q: not found", cfg.TokenizerModelPath))
 			_, _ = fmt.Fprintf(w, "%s tokenizer model: not found (%s)\n", FailMark, cfg.TokenizerModelPath)
 		} else {

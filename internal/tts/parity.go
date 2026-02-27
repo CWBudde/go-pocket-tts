@@ -137,7 +137,7 @@ func SaveParitySnapshots(path string, snapshots []ParitySnapshot) error {
 		return fmt.Errorf("marshal parity snapshots: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return fmt.Errorf("write parity snapshots: %w", err)
 	}
 

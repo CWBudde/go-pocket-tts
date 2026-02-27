@@ -9,6 +9,7 @@ import (
 
 func main() {
 	err := NewRootCmd().Execute()
+
 	shutdownErr := onnx.Shutdown()
 	if shutdownErr != nil && err == nil {
 		err = shutdownErr
