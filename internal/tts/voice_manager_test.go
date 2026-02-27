@@ -161,6 +161,7 @@ func TestListVoices_ReturnsCopy(t *testing.T) {
 	tmp := t.TempDir()
 
 	voiceFile := filepath.Join(tmp, "v.bin")
+
 	err := os.WriteFile(voiceFile, []byte("data"), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -169,6 +170,7 @@ func TestListVoices_ReturnsCopy(t *testing.T) {
 	manifestPath := filepath.Join(tmp, "manifest.json")
 
 	manifest := `{"voices":[{"id":"v1","path":"v.bin","license":"MIT"}]}`
+
 	err = os.WriteFile(manifestPath, []byte(manifest), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)

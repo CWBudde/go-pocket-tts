@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -198,13 +199,13 @@ func TestAppendLatentFrame(t *testing.T) {
 		t.Fatalf("ExtractFloat32: %v", err)
 	}
 	// First 32 values are NaN (BOS), next 32 are 0..31.
-	for i := 0; i < 32; i++ {
+	for i := range 32 {
 		if !isNaN(data[i]) {
 			t.Errorf("data[%d] = %v, want NaN", i, data[i])
 		}
 	}
 
-	for i := 0; i < 32; i++ {
+	for i := range 32 {
 		if data[32+i] != float32(i) {
 			t.Errorf("data[%d] = %v, want %v", 32+i, data[32+i], float32(i))
 		}
@@ -215,7 +216,7 @@ func TestAppendLatentFrame_GrowsSequence(t *testing.T) {
 	seq := NewBOSSequence()
 
 	// Append 3 frames → [1, 4, 32].
-	for step := 0; step < 3; step++ {
+	for step := range 3 {
 		frame, _ := NewTensor(make([]float32, 32), []int64{1, 1, 32})
 		var err error
 
@@ -598,14 +599,7 @@ func TestFlowLMStep_NaNOutputIsDetectable(t *testing.T) {
 
 	// Verify that NaN in last_hidden IS detectable (not silently swallowed).
 	hiddenData, _ := ExtractFloat32(lastHidden)
-	hasNaN := false
-
-	for _, v := range hiddenData {
-		if isNaN(v) {
-			hasNaN = true
-			break
-		}
-	}
+	hasNaN := slices.ContainsFunc(hiddenData, isNaN)
 
 	if !hasNaN {
 		t.Error("expected NaN to be detectable in last_hidden output from buggy runner")

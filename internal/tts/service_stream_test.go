@@ -110,10 +110,12 @@ func TestSynthesizeStream_MultipleChunks(t *testing.T) {
 	// wordCountTokenizer creates one token per word, maxTokensPerChunk=50.
 	// PrepareChunks splits on sentence boundaries, so use periods.
 	longSentence := ""
+
 	var longSentenceSb108 strings.Builder
 	for range 30 {
 		longSentenceSb108.WriteString("word ")
 	}
+
 	longSentence += longSentenceSb108.String()
 
 	longText := longSentence + ". " + longSentence + "."

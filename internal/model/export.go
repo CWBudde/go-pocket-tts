@@ -85,6 +85,7 @@ func validateExportTooling(pythonBin string) error {
 	check.Stdout = io.Discard
 
 	check.Stderr = os.Stderr
+
 	err := check.Run()
 	if err != nil {
 		return fmt.Errorf("python tooling dependencies missing for export (need pocket_tts, torch, onnx): %w", err)

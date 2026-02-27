@@ -65,7 +65,7 @@ func BenchmarkSynthesisFullPipeline(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		state, err := m.NewFlowState()
 		if err != nil {
 			b.Fatalf("new flow state: %v", err)
@@ -152,7 +152,7 @@ func BenchmarkFlowStep(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, _, err := m.SampleNextLatentStateful(state, frame, 10, 0.5, 1.0, rng)
 		if err != nil {
 			b.Fatalf("step: %v", err)
@@ -185,7 +185,7 @@ func BenchmarkMimiDecode(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, err := m.MimiDecode(mimiIn)
 		if err != nil {
 			b.Fatalf("mimi decode: %v", err)

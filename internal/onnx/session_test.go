@@ -78,6 +78,7 @@ func TestNewSessionManagerRejectsMissingFile(t *testing.T) {
 }`
 
 	manifestPath := filepath.Join(tmp, "manifest.json")
+
 	err := os.WriteFile(manifestPath, []byte(manifest), 0o644)
 	if err != nil {
 		t.Fatalf("write manifest: %v", err)

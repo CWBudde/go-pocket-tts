@@ -39,6 +39,7 @@ func TestTTS_OversizedTextRejectedAs413(t *testing.T) {
 	}
 
 	var errBody map[string]string
+
 	err := json.NewDecoder(rec.Body).Decode(&errBody)
 	if err != nil {
 		t.Fatalf("decode error body: %v", err)

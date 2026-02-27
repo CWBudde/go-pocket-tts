@@ -327,7 +327,7 @@ func Concat(tensors []*Tensor, dim int) (*Tensor, error) {
 
 	outDim := outShape[dim]
 
-	for o := int64(0); o < outer; o++ {
+	for o := range outer {
 		writePos := int64(0)
 
 		for _, t := range tensors {
@@ -384,8 +384,8 @@ func Softmax(x *Tensor, dim int) (*Tensor, error) {
 
 	out := x.Clone()
 
-	for o := int64(0); o < outer; o++ {
-		for in := int64(0); in < inner; in++ {
+	for o := range outer {
+		for in := range inner {
 			base := o*axis*inner + in
 			maxV := float32(math.Inf(-1))
 

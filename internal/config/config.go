@@ -184,6 +184,7 @@ func Load(opts LoadOptions) (Config, error) {
 	}
 
 	var cfg Config
+
 	err = v.Unmarshal(&cfg)
 	if err != nil {
 		return Config{}, fmt.Errorf("decode config: %w", err)

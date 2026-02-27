@@ -123,11 +123,7 @@ func scratchClass(n int) int {
 		bits++
 	}
 
-	cls := max(bits-10, 0)
-
-	if cls > 16 {
-		cls = 16
-	}
+	cls := min(max(bits-10, 0), 16)
 
 	return cls
 }
@@ -350,7 +346,7 @@ func convTranspose1DGroups1(
 	inputT := getScratch(inputTSize)
 	defer putScratch(inputT)
 
-	for b := 0; b < int(batch); b++ {
+	for b := range batch {
 		// Step 2: transpose input [inCh, inLen] → inputT [inLen, inCh].
 		// Zero first (getScratch zeroes on first use, but re-zero for b > 0).
 		if b > 0 {

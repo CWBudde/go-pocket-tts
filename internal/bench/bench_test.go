@@ -155,6 +155,7 @@ func TestFormatJSON_IsValidJSON(t *testing.T) {
 	bench.FormatJSON(runs, stats, &buf)
 
 	var out any
+
 	err := json.Unmarshal(buf.Bytes(), &out)
 	if err != nil {
 		t.Errorf("FormatJSON produced invalid JSON: %v\n%s", err, buf.String())

@@ -49,9 +49,9 @@ linters:
     presets: [comments, common-false-positives, legacy, std-error-handling]
 
     rules:
-      # cmd/ uses inits for cobra
-      - linters: [gochecknoinits]
-        path: cmd/.*\.go
+      # cmd/ uses inits for cobra, wraps errors less strictly
+      - linters: [gochecknoinits, wrapcheck]
+        path: cmd/
 
       # assembly stubs have empty bodies
       - linters: [revive]
