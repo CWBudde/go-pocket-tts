@@ -351,11 +351,13 @@ func extractTarGz(bundlePath, outDir string) error {
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
+			// #nosec G703 -- targetPath is constrained by safeExtractPath to remain within outDir.
 			err := os.MkdirAll(targetPath, 0o755)
 			if err != nil {
 				return fmt.Errorf("create dir %s: %w", targetPath, err)
 			}
 		case tar.TypeReg:
+			// #nosec G703 -- targetPath is constrained by safeExtractPath to remain within outDir.
 			err = os.MkdirAll(filepath.Dir(targetPath), 0o755)
 			if err != nil {
 				return fmt.Errorf("create parent dir for %s: %w", targetPath, err)
