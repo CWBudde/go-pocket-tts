@@ -171,6 +171,7 @@ func fetchBundleArchive(client *http.Client, bundleURL string) (string, string, 
 
 	var reader io.ReadCloser
 
+	//nolint:nestif // Distinct HTTP and local-file acquisition paths with explicit cleanup are intentional.
 	if strings.HasPrefix(bundleURL, "http://") || strings.HasPrefix(bundleURL, "https://") {
 		req, err := http.NewRequest(http.MethodGet, bundleURL, nil)
 		if err != nil {
@@ -294,7 +295,9 @@ func extractZip(bundlePath, outDir string) error {
 			return fmt.Errorf("create extracted file %s: %w", targetPath, err)
 		}
 
-		if _, err := io.Copy(dst, src); err != nil {
+		//nolint:gosec // Bundle size is controlled by trusted lock metadata and verified by checksum before extract.
+		_, err = io.Copy(dst, src)
+		if err != nil {
 			_ = dst.Close()
 			_ = src.Close()
 
@@ -356,7 +359,9 @@ func extractTarGz(bundlePath, outDir string) error {
 				return fmt.Errorf("create extracted file %s: %w", targetPath, err)
 			}
 
-			if _, err := io.Copy(dst, tr); err != nil {
+			//nolint:gosec // Bundle archive is checksum-verified before extraction.
+			_, err = io.Copy(dst, tr)
+			if err != nil {
 				_ = dst.Close()
 				return fmt.Errorf("extract tar entry %s: %w", hdr.Name, err)
 			}

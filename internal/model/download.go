@@ -230,6 +230,7 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 
 	for {
 		n, readErr := resp.Body.Read(buf)
+		//nolint:nestif // Streaming write/progress handling intentionally stays inline in the read loop.
 		if n > 0 {
 			wn, writeErr := mw.Write(buf[:n])
 			if writeErr != nil {

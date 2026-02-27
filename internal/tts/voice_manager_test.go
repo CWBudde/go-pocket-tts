@@ -43,11 +43,13 @@ func TestNewVoiceManager_EmptyVoiceID(t *testing.T) {
 	manifestPath := filepath.Join(tmp, "manifest.json")
 
 	manifest := `{"voices":[{"id":"","path":"v.bin","license":""}]}`
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+
+	err := os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	_, err := NewVoiceManager(manifestPath)
+	_, err = NewVoiceManager(manifestPath)
 	if err == nil {
 		t.Error("NewVoiceManager(empty id) = nil; want error")
 	}
@@ -58,11 +60,13 @@ func TestNewVoiceManager_EmptyVoicePath(t *testing.T) {
 	manifestPath := filepath.Join(tmp, "manifest.json")
 
 	manifest := `{"voices":[{"id":"v1","path":"","license":""}]}`
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+
+	err := os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	_, err := NewVoiceManager(manifestPath)
+	_, err = NewVoiceManager(manifestPath)
 	if err == nil {
 		t.Error("NewVoiceManager(empty path) = nil; want error")
 	}
@@ -76,11 +80,13 @@ func TestNewVoiceManager_DuplicateID(t *testing.T) {
 		{"id":"v1","path":"a.bin","license":""},
 		{"id":"v1","path":"b.bin","license":""}
 	]}`
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+
+	err := os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	_, err := NewVoiceManager(manifestPath)
+	_, err = NewVoiceManager(manifestPath)
 	if err == nil {
 		t.Error("NewVoiceManager(duplicate id) = nil; want error")
 	}
@@ -91,7 +97,9 @@ func TestNewVoiceManager_EmptyVoicesList(t *testing.T) {
 	manifestPath := filepath.Join(tmp, "manifest.json")
 
 	manifest := `{"voices":[]}`
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+
+	err := os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -111,14 +119,18 @@ func TestResolvePath_AbsolutePath(t *testing.T) {
 	tmp := t.TempDir()
 
 	voiceFile := filepath.Join(tmp, "voice.bin")
-	if err := os.WriteFile(voiceFile, []byte("data"), 0o644); err != nil {
+
+	err := os.WriteFile(voiceFile, []byte("data"), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
 	manifestPath := filepath.Join(tmp, "manifest.json")
 
 	manifest := `{"voices":[{"id":"v1","path":"` + voiceFile + `","license":""}]}`
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+
+	err = os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -142,7 +154,9 @@ func TestResolvePath_MissingVoiceFile(t *testing.T) {
 	manifestPath := filepath.Join(tmp, "manifest.json")
 	// Path is relative but the file does not exist on disk.
 	manifest := `{"voices":[{"id":"v1","path":"missing.bin","license":""}]}`
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+
+	err := os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 

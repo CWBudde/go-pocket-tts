@@ -163,6 +163,7 @@ func Load(opts LoadOptions) (Config, error) {
 
 	v.AutomaticEnv()
 
+	//nolint:nestif // Distinguish explicit config-file errors from optional auto-discovery behavior.
 	if opts.ConfigFile != "" {
 		v.SetConfigFile(opts.ConfigFile)
 
@@ -177,7 +178,7 @@ func Load(opts LoadOptions) (Config, error) {
 		err := v.ReadInConfig()
 		if err != nil {
 			var configFileNotFoundError viper.ConfigFileNotFoundError
-			if errors.As(err, &configFileNotFoundError) {
+			if !errors.As(err, &configFileNotFoundError) {
 				return Config{}, fmt.Errorf("read config file: %w", err)
 			}
 		}

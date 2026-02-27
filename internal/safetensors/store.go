@@ -60,6 +60,7 @@ func OpenStore(path string, opts StoreOptions) (*Store, error) {
 	return OpenStoreFromBytes(data, opts)
 }
 
+//nolint:gocognit,cyclop,funlen // Header parsing/validation must stay explicit for robustness.
 func OpenStoreFromBytes(data []byte, opts StoreOptions) (*Store, error) {
 	keyMapper := opts.KeyMapper
 	if keyMapper == nil {
@@ -241,12 +242,18 @@ func (s *Store) Close() {
 	s.names = nil
 }
 
+//nolint:gosec // Header length is bounds-checked against available data and platform int range.
 func decodeHeader(data []byte) (int, map[string]json.RawMessage, error) {
 	if len(data) < 8 {
 		return 0, nil, fmt.Errorf("safetensors: file too short (%d bytes)", len(data))
 	}
 
 	headerLen := binary.LittleEndian.Uint64(data[:8])
+
+	maxInt := int(^uint(0) >> 1)
+	if headerLen > uint64(maxInt-8) {
+		return 0, nil, fmt.Errorf("safetensors: header length %d exceeds supported range", headerLen)
+	}
 
 	headerEnd := 8 + int(headerLen)
 	if headerEnd > len(data) {
@@ -387,15 +394,14 @@ func float16ToFloat32(h uint16) float32 {
 			bits = sign << 31
 		} else {
 			// Subnormal: normalize.
-			e := int32(-14)
+			exp32 := uint32(113)
 
 			for (frac & 0x0400) == 0 {
 				frac <<= 1
-				e--
+				exp32--
 			}
 
 			frac &= 0x03ff
-			exp32 := uint32(e + 127)
 			bits = (sign << 31) | (exp32 << 23) | (frac << 13)
 		}
 	case 0x1f:

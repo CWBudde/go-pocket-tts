@@ -166,7 +166,8 @@ func TestApplyDSPToWAV_DCBlock(t *testing.T) {
 		t.Fatalf("applyDSPToWAV with DCBlock: %v", err)
 	}
 
-	if _, err := audio.DecodeWAV(out); err != nil {
+	_, err = audio.DecodeWAV(out)
+	if err != nil {
 		t.Fatalf("output is not valid WAV: %v", err)
 	}
 }

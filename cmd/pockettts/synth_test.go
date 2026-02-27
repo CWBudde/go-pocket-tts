@@ -201,7 +201,9 @@ func TestDSPAndWritePipeline_NoSubprocess(t *testing.T) {
 	}
 
 	var stdout bytes.Buffer
-	if err := writeSynthOutput("-", processed, &stdout); err != nil {
+
+	err = writeSynthOutput("-", processed, &stdout)
+	if err != nil {
 		t.Fatalf("writeSynthOutput stdout returned error: %v", err)
 	}
 
@@ -209,7 +211,8 @@ func TestDSPAndWritePipeline_NoSubprocess(t *testing.T) {
 		t.Fatal("expected stdout bytes")
 	}
 
-	if _, err := audio.DecodeWAV(stdout.Bytes()); err != nil {
+	_, err = audio.DecodeWAV(stdout.Bytes())
+	if err != nil {
 		t.Fatalf("stdout bytes are not a valid WAV: %v", err)
 	}
 }
@@ -223,7 +226,8 @@ func TestWriteSynthOutput_File(t *testing.T) {
 		t.Fatalf("EncodeWAV returned error: %v", err)
 	}
 
-	if err := writeSynthOutput(out, in, nil); err != nil {
+	err = writeSynthOutput(out, in, nil)
+	if err != nil {
 		t.Fatalf("writeSynthOutput file returned error: %v", err)
 	}
 
@@ -236,7 +240,8 @@ func TestWriteSynthOutput_File(t *testing.T) {
 		t.Fatal("expected written file bytes")
 	}
 
-	if _, err := audio.DecodeWAV(got); err != nil {
+	_, err = audio.DecodeWAV(got)
+	if err != nil {
 		t.Fatalf("written file is not a valid WAV: %v", err)
 	}
 }

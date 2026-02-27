@@ -15,7 +15,8 @@ func TestVerifyONNXRunsNativeVerifier(t *testing.T) {
 	modelPath := filepath.Join(tmp, "tiny.onnx")
 	manifestPath := filepath.Join(tmp, "manifest.json")
 
-	if err := os.WriteFile(modelPath, []byte("fake-onnx"), 0o644); err != nil {
+	err := os.WriteFile(modelPath, []byte("fake-onnx"), 0o644)
+	if err != nil {
 		t.Fatalf("write model file: %v", err)
 	}
 
@@ -29,7 +30,9 @@ func TestVerifyONNXRunsNativeVerifier(t *testing.T) {
     }
   ]
 }`
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+
+	err = os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 
@@ -54,7 +57,7 @@ func TestVerifyONNXRunsNativeVerifier(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := VerifyONNX(VerifyOptions{
+	err = VerifyONNX(VerifyOptions{
 		ManifestPath: manifestPath,
 		ORTLibrary:   "/tmp/libonnxruntime.so",
 		Stdout:       &out,
@@ -74,7 +77,8 @@ func TestVerifyONNXRejectsInvalidInputShape(t *testing.T) {
 	modelPath := filepath.Join(tmp, "tiny.onnx")
 	manifestPath := filepath.Join(tmp, "manifest.json")
 
-	if err := os.WriteFile(modelPath, []byte("fake-onnx"), 0o644); err != nil {
+	err := os.WriteFile(modelPath, []byte("fake-onnx"), 0o644)
+	if err != nil {
 		t.Fatalf("write model file: %v", err)
 	}
 
@@ -88,7 +92,9 @@ func TestVerifyONNXRejectsInvalidInputShape(t *testing.T) {
     }
   ]
 }`
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+
+	err = os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 
@@ -98,7 +104,7 @@ func TestVerifyONNXRejectsInvalidInputShape(t *testing.T) {
 
 	runNativeVerify = func(_ []onnx.Session, _ VerifyOptions) error { return nil }
 
-	err := VerifyONNX(VerifyOptions{ManifestPath: manifestPath})
+	err = VerifyONNX(VerifyOptions{ManifestPath: manifestPath})
 	if err == nil {
 		t.Fatal("expected shape validation error")
 	}

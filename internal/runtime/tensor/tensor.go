@@ -268,6 +268,8 @@ func (t *Tensor) Transpose(dim1, dim2 int) (*Tensor, error) {
 }
 
 // Concat concatenates tensors along dim.
+//
+//nolint:funlen // Keep full shape validation and copy loop together for correctness/readability.
 func Concat(tensors []*Tensor, dim int) (*Tensor, error) {
 	if len(tensors) == 0 {
 		return nil, errors.New("tensor: concat requires at least one tensor")
@@ -495,6 +497,8 @@ func LayerNorm(x, weight, bias *Tensor, eps float32) (*Tensor, error) {
 }
 
 // MatMul performs batched matrix multiplication with broadcasting over batch dims.
+//
+//nolint:funlen // Broadcasting and indexing logic is intentionally explicit.
 func MatMul(a, b *Tensor) (*Tensor, error) {
 	if a == nil || b == nil {
 		return nil, errors.New("tensor: matmul requires non-nil inputs")
