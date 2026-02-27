@@ -122,7 +122,12 @@ func TestRuntimeDeps_InvalidBackend(t *testing.T) {
 	cfg := config.DefaultConfig()
 	s := New(cfg, nil)
 
-	_, _, _, _, err := s.runtimeDeps("unknown")
+	synth, voices, workers, streamer, err := s.runtimeDeps("unknown")
+	_ = synth
+	_ = voices
+	_ = workers
+	_ = streamer
+
 	if err == nil {
 		t.Error("runtimeDeps(unknown) = nil; want error")
 	}
