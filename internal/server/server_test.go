@@ -51,6 +51,7 @@ func TestHealth_Returns200WithStatusOK(t *testing.T) {
 	}
 
 	var body map[string]string
+
 	err := json.NewDecoder(rec.Body).Decode(&body)
 	if err != nil {
 		t.Fatalf("decode body: %v", err)
@@ -85,6 +86,7 @@ func TestVoices_ReturnsJSONArray(t *testing.T) {
 	}
 
 	var got []tts.Voice
+
 	err := json.NewDecoder(rec.Body).Decode(&got)
 	if err != nil {
 		t.Fatalf("decode body: %v", err)
@@ -111,6 +113,7 @@ func TestVoices_ReturnsEmptyArrayWhenNoVoices(t *testing.T) {
 	}
 
 	var got []tts.Voice
+
 	err := json.NewDecoder(rec.Body).Decode(&got)
 	if err != nil {
 		t.Fatalf("decode body: %v", err)
@@ -138,6 +141,7 @@ func TestTTS_ReturnsMissingBodyAs400(t *testing.T) {
 	}
 
 	var body map[string]string
+
 	err := json.NewDecoder(rec.Body).Decode(&body)
 	if err != nil {
 		t.Fatalf("decode error body: %v", err)
@@ -201,6 +205,7 @@ func TestTTS_SynthesizerErrorReturns500(t *testing.T) {
 	}
 
 	var errBody map[string]string
+
 	err := json.NewDecoder(rec.Body).Decode(&errBody)
 	if err != nil {
 		t.Fatalf("decode error body: %v", err)

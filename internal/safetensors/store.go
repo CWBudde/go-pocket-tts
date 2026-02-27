@@ -253,6 +253,7 @@ func decodeHeader(data []byte) (int, map[string]json.RawMessage, error) {
 	}
 
 	var header map[string]json.RawMessage
+
 	err := json.Unmarshal(data[8:headerEnd], &header)
 	if err != nil {
 		return 0, nil, fmt.Errorf("safetensors: parse header: %w", err)
@@ -263,6 +264,7 @@ func decodeHeader(data []byte) (int, map[string]json.RawMessage, error) {
 
 func parseHeaderEntry(raw json.RawMessage) (storeHeaderEntry, error) {
 	var e storeHeaderEntry
+
 	err := json.Unmarshal(raw, &e)
 	if err != nil {
 		return storeHeaderEntry{}, err

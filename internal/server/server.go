@@ -277,6 +277,7 @@ func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req ttsRequest
+
 	err := json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())

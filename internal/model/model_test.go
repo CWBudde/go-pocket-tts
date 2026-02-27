@@ -228,6 +228,7 @@ func TestReadLockManifest_InvalidJSON(t *testing.T) {
 	tmp := t.TempDir()
 
 	p := filepath.Join(tmp, "lock.json")
+
 	err := os.WriteFile(p, []byte("{bad"), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -244,6 +245,7 @@ func TestReadLockManifest_ValidFile(t *testing.T) {
 	p := filepath.Join(tmp, "lock.json")
 
 	content := `{"repo":"org/repo","generated":"2026-01-01T00:00:00Z","files":{"a.bin":{"revision":"r1","sha256":"` + strings.Repeat("1", 64) + `"}}}`
+
 	err := os.WriteFile(p, []byte(content), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -987,6 +989,7 @@ func TestWriteLockManifest_ValidContent(t *testing.T) {
 			"a.bin": {Revision: "rev1", SHA256: strings.Repeat("1", 64)},
 		},
 	}
+
 	err := writeLockManifest(p, lock)
 	if err != nil {
 		t.Fatalf("writeLockManifest error = %v", err)
@@ -995,6 +998,7 @@ func TestWriteLockManifest_ValidContent(t *testing.T) {
 	raw, _ := os.ReadFile(p)
 
 	var got lockManifest
+
 	err = json.Unmarshal(raw, &got)
 	if err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)

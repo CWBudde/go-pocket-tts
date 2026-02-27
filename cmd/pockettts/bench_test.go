@@ -32,12 +32,14 @@ func writeFakeTTSScript(t *testing.T, wavData []byte) string {
 	// Simpler: write a Go binary that just writes the file would need build; use
 	// a script that cat's a pre-written WAV file instead.
 	wavFile := filepath.Join(tmp, "out.wav")
+
 	err := os.WriteFile(wavFile, wavData, 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile wav: %v", err)
 	}
 
 	scriptContent := "#!/bin/sh\ncat " + wavFile + "\n"
+
 	err = os.WriteFile(script, []byte(scriptContent), 0o755)
 	if err != nil {
 		t.Fatalf("WriteFile script: %v", err)

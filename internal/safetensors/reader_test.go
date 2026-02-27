@@ -76,6 +76,7 @@ func writeTempSafetensors(t *testing.T, data []byte) string {
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "test.safetensors")
+
 	err := os.WriteFile(path, data, 0o644)
 	if err != nil {
 		t.Fatalf("write temp safetensors: %v", err)

@@ -176,6 +176,7 @@ func TestProbeHTTP_Success(t *testing.T) {
 
 	// ProbeHTTP uses "http://" prefix + addr, so strip the scheme.
 	addr := srv.Listener.Addr().String()
+
 	err := ProbeHTTP(addr)
 	if err != nil {
 		t.Errorf("ProbeHTTP(%q) = %v; want nil", addr, err)
@@ -189,6 +190,7 @@ func TestProbeHTTP_NonOKStatus(t *testing.T) {
 	defer srv.Close()
 
 	addr := srv.Listener.Addr().String()
+
 	err := ProbeHTTP(addr)
 	if err == nil {
 		t.Error("ProbeHTTP() = nil; want error for non-200 response")

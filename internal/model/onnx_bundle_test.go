@@ -60,6 +60,7 @@ func TestVerifyONNXManifestDir(t *testing.T) {
 	}
 
 	data, _ := json.Marshal(manifest)
+
 	err := os.WriteFile(filepath.Join(tmp, "manifest.json"), data, 0o644)
 	if err != nil {
 		t.Fatalf("write manifest: %v", err)

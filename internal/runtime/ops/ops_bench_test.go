@@ -13,7 +13,7 @@ func BenchmarkMatMulFlowLM(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, err := tensor.MatMul(a, w)
 		if err != nil {
 			b.Fatalf("matmul: %v", err)
@@ -28,7 +28,7 @@ func BenchmarkLayerNormFlowLM(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, err := tensor.LayerNorm(x, w, bias, 1e-5)
 		if err != nil {
 			b.Fatalf("layernorm: %v", err)
@@ -43,7 +43,7 @@ func BenchmarkAttentionFlowLM(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, err := Attention(q, k, v, true, 0)
 		if err != nil {
 			b.Fatalf("attention: %v", err)
@@ -58,7 +58,7 @@ func BenchmarkConv1DMimi(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		_, err := Conv1D(input, kernel, bias, 1, 1, 1, 1)
 		if err != nil {
 			b.Fatalf("conv1d: %v", err)
@@ -78,7 +78,7 @@ func BenchmarkConv1DMimiParallel(b *testing.B) {
 			b.ReportAllocs()
 			b.ResetTimer()
 
-			for i := 0; i < b.N; i++ {
+			for range b.N {
 				_, err := Conv1D(input, kernel, bias, 1, 1, 1, 1)
 				if err != nil {
 					b.Fatalf("conv1d: %v", err)
@@ -100,7 +100,7 @@ func BenchmarkFrameDecodeThroughput(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for range b.N {
 		h, err := tensor.Linear(latent, projW, projB)
 		if err != nil {
 			b.Fatalf("proj linear: %v", err)
