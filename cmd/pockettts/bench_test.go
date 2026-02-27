@@ -12,10 +12,12 @@ import (
 // makeMinimalWAV returns a valid WAV byte slice with a few samples.
 func makeMinimalWAV(t *testing.T) []byte {
 	t.Helper()
+
 	data, err := audio.EncodeWAV([]float32{0.1, 0.2, 0.3, 0.4})
 	if err != nil {
 		t.Fatalf("EncodeWAV: %v", err)
 	}
+
 	return data
 }
 
@@ -30,13 +32,17 @@ func writeFakeTTSScript(t *testing.T, wavData []byte) string {
 	// Simpler: write a Go binary that just writes the file would need build; use
 	// a script that cat's a pre-written WAV file instead.
 	wavFile := filepath.Join(tmp, "out.wav")
-	if err := os.WriteFile(wavFile, wavData, 0o644); err != nil {
+	err := os.WriteFile(wavFile, wavData, 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile wav: %v", err)
 	}
+
 	scriptContent := "#!/bin/sh\ncat " + wavFile + "\n"
-	if err := os.WriteFile(script, []byte(scriptContent), 0o755); err != nil {
+	err = os.WriteFile(script, []byte(scriptContent), 0o755)
+	if err != nil {
 		t.Fatalf("WriteFile script: %v", err)
 	}
+
 	return script
 }
 
@@ -52,12 +58,15 @@ func TestRunBench_SingleRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runBench: %v", err)
 	}
+
 	if len(results) != 1 {
 		t.Fatalf("expected 1 result, got %d", len(results))
 	}
+
 	if !results[0].Cold {
 		t.Error("first run should be marked Cold")
 	}
+
 	if results[0].Duration <= 0 {
 		t.Error("expected positive duration")
 	}
@@ -75,6 +84,7 @@ func TestRunBench_MultipleRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runBench: %v", err)
 	}
+
 	if len(results) != 3 {
 		t.Fatalf("expected 3 results, got %d", len(results))
 	}
@@ -88,6 +98,7 @@ func TestRunBench_MultipleRuns(t *testing.T) {
 
 func TestRunBench_SynthesisFailure(t *testing.T) {
 	tmp := t.TempDir()
+
 	script := filepath.Join(tmp, "pocket-tts")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -109,10 +120,12 @@ func TestRunBench_WAVDurationCalculated(t *testing.T) {
 	for i := range samples {
 		samples[i] = 0.1
 	}
+
 	wavData, err := audio.EncodeWAV(samples)
 	if err != nil {
 		t.Fatalf("EncodeWAV: %v", err)
 	}
+
 	exe := writeFakeTTSScript(t, wavData)
 
 	results, err := runBench(context.Background(), benchOptions{
@@ -123,6 +136,7 @@ func TestRunBench_WAVDurationCalculated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runBench: %v", err)
 	}
+
 	if results[0].WAVDuration <= 0 {
 		t.Errorf("expected positive WAVDuration, got %v", results[0].WAVDuration)
 	}

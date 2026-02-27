@@ -47,16 +47,20 @@ func TestPinnedManifest_KnownRepos(t *testing.T) {
 			if err != nil {
 				t.Fatalf("PinnedManifest(%q) error = %v", repo, err)
 			}
+
 			if m.Repo != repo {
 				t.Errorf("Repo = %q; want %q", m.Repo, repo)
 			}
+
 			if len(m.Files) == 0 {
 				t.Error("Files is empty")
 			}
+
 			for _, f := range m.Files {
 				if f.Filename == "" {
 					t.Error("File has empty Filename")
 				}
+
 				if f.Revision == "" {
 					t.Error("File has empty Revision")
 				}
@@ -77,10 +81,12 @@ func TestPinnedManifest_WithoutVoiceCloning_HasChecksums(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PinnedManifest error = %v", err)
 	}
+
 	for _, f := range m.Files {
 		if f.SHA256 == "" {
 			t.Errorf("file %q has empty SHA256; expected pinned checksum", f.Filename)
 		}
+
 		if !isSHA256Hex(f.SHA256) {
 			t.Errorf("file %q SHA256 %q is not valid hex", f.Filename, f.SHA256)
 		}
@@ -96,6 +102,7 @@ func TestExistingMatches_NoFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("existingMatches(missing) error = %v", err)
 	}
+
 	if ok {
 		t.Error("existingMatches(missing) = true; want false")
 	}
@@ -103,6 +110,7 @@ func TestExistingMatches_NoFile(t *testing.T) {
 
 func TestExistingMatches_Directory(t *testing.T) {
 	dir := t.TempDir()
+
 	_, err := existingMatches(dir, "abc")
 	if err == nil {
 		t.Error("existingMatches(directory) = nil; want error")
@@ -111,6 +119,7 @@ func TestExistingMatches_Directory(t *testing.T) {
 
 func TestExistingMatches_ChecksumMismatch(t *testing.T) {
 	tmp := t.TempDir()
+
 	p := filepath.Join(tmp, "f.bin")
 	if err := os.WriteFile(p, []byte("data"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -120,6 +129,7 @@ func TestExistingMatches_ChecksumMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("existingMatches error = %v", err)
 	}
+
 	if ok {
 		t.Error("existingMatches(mismatch) = true; want false")
 	}
@@ -128,6 +138,7 @@ func TestExistingMatches_ChecksumMismatch(t *testing.T) {
 func TestExistingMatches_ChecksumMatch(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "f.bin")
+
 	content := []byte("hello world")
 	if err := os.WriteFile(p, content, 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -140,6 +151,7 @@ func TestExistingMatches_ChecksumMatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("existingMatches error = %v", err)
 	}
+
 	if !ok {
 		t.Error("existingMatches(match) = false; want true")
 	}
@@ -152,6 +164,7 @@ func TestExistingMatches_ChecksumMatch(t *testing.T) {
 func TestFileSHA256_KnownContent(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "f.bin")
+
 	content := []byte("test content")
 	if err := os.WriteFile(p, content, 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -164,6 +177,7 @@ func TestFileSHA256_KnownContent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fileSHA256 error = %v", err)
 	}
+
 	if got != want {
 		t.Errorf("fileSHA256 = %q; want %q", got, want)
 	}
@@ -178,6 +192,7 @@ func TestFileSHA256_MissingFile(t *testing.T) {
 
 func TestFileSHA256_EmptyFile(t *testing.T) {
 	tmp := t.TempDir()
+
 	p := filepath.Join(tmp, "empty.bin")
 	if err := os.WriteFile(p, []byte{}, 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -190,6 +205,7 @@ func TestFileSHA256_EmptyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fileSHA256(empty) error = %v", err)
 	}
+
 	if got != want {
 		t.Errorf("fileSHA256(empty) = %q; want %q", got, want)
 	}
@@ -210,8 +226,10 @@ func TestReadLockManifest_MissingFile(t *testing.T) {
 
 func TestReadLockManifest_InvalidJSON(t *testing.T) {
 	tmp := t.TempDir()
+
 	p := filepath.Join(tmp, "lock.json")
-	if err := os.WriteFile(p, []byte("{bad"), 0o644); err != nil {
+	err := os.WriteFile(p, []byte("{bad"), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -224,8 +242,10 @@ func TestReadLockManifest_InvalidJSON(t *testing.T) {
 func TestReadLockManifest_ValidFile(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "lock.json")
+
 	content := `{"repo":"org/repo","generated":"2026-01-01T00:00:00Z","files":{"a.bin":{"revision":"r1","sha256":"` + strings.Repeat("1", 64) + `"}}}`
-	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+	err := os.WriteFile(p, []byte(content), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -233,13 +253,16 @@ func TestReadLockManifest_ValidFile(t *testing.T) {
 	if lock.Repo != "org/repo" {
 		t.Errorf("Repo = %q; want org/repo", lock.Repo)
 	}
+
 	if lock.Files == nil {
 		t.Fatal("Files is nil")
 	}
+
 	rec, ok := lock.Files["a.bin"]
 	if !ok {
 		t.Fatal("Files[a.bin] not found")
 	}
+
 	if rec.Revision != "r1" {
 		t.Errorf("Revision = %q; want r1", rec.Revision)
 	}
@@ -260,7 +283,8 @@ func TestWriteReadLockManifest_RoundTrip(t *testing.T) {
 		},
 	}
 
-	if err := writeLockManifest(p, original); err != nil {
+	err := writeLockManifest(p, original)
+	if err != nil {
 		t.Fatalf("writeLockManifest error = %v", err)
 	}
 
@@ -268,13 +292,16 @@ func TestWriteReadLockManifest_RoundTrip(t *testing.T) {
 	if got.Repo != original.Repo {
 		t.Errorf("Repo = %q; want %q", got.Repo, original.Repo)
 	}
+
 	if got.Generated != original.Generated {
 		t.Errorf("Generated = %q; want %q", got.Generated, original.Generated)
 	}
+
 	rec, ok := got.Files["model.safetensors"]
 	if !ok {
 		t.Fatal("Files[model.safetensors] not found")
 	}
+
 	if rec.Revision != "abc123" {
 		t.Errorf("Revision = %q; want abc123", rec.Revision)
 	}
@@ -298,6 +325,7 @@ func TestWriteLockManifest_CreatesFile(t *testing.T) {
 func TestResolveURL(t *testing.T) {
 	f := ModelFile{Filename: "model.safetensors", Revision: "abc123"}
 	got := resolveURL("org/repo", f)
+
 	want := "https://huggingface.co/org/repo/resolve/abc123/model.safetensors"
 	if got != want {
 		t.Errorf("resolveURL = %q; want %q", got, want)
@@ -311,6 +339,7 @@ func TestResolveURL(t *testing.T) {
 func TestSetAuth_WithToken(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com", nil)
 	setAuth(req, "mytoken")
+
 	got := req.Header.Get("Authorization")
 	if got != "Bearer mytoken" {
 		t.Errorf("Authorization = %q; want %q", got, "Bearer mytoken")
@@ -320,6 +349,7 @@ func TestSetAuth_WithToken(t *testing.T) {
 func TestSetAuth_EmptyToken(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, "http://example.com", nil)
 	setAuth(req, "")
+
 	got := req.Header.Get("Authorization")
 	if got != "" {
 		t.Errorf("Authorization = %q; want empty for empty token", got)
@@ -411,8 +441,10 @@ func sha256hex(data []byte) string {
 // test server without modifying production code.
 func withHFTransport(t *testing.T, serverURL string) {
 	t.Helper()
+
 	orig := http.DefaultTransport
 	http.DefaultTransport = &hfTransport{target: serverURL, delegate: orig}
+
 	t.Cleanup(func() { http.DefaultTransport = orig })
 }
 
@@ -452,6 +484,7 @@ func TestDownload_SkipsExistingFileWithMatchingChecksum(t *testing.T) {
 		_, _ = w.Write([]byte("wrong content"))
 	}))
 	defer srv.Close()
+
 	withHFTransport(t, srv.URL)
 
 	err = Download(DownloadOptions{
@@ -463,6 +496,7 @@ func TestDownload_SkipsExistingFileWithMatchingChecksum(t *testing.T) {
 	if err == nil {
 		t.Error("Download with wrong content should fail checksum verification")
 	}
+
 	if !strings.Contains(err.Error(), "checksum mismatch") {
 		t.Errorf("error %q should mention checksum mismatch", err.Error())
 	}
@@ -475,6 +509,7 @@ func TestDownload_SkipExistingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("PinnedManifest: %v", err)
 	}
+
 	if len(manifest.Files) == 0 {
 		t.Skip("no files in manifest")
 	}
@@ -495,6 +530,7 @@ func TestDownload_SkipExistingFile(t *testing.T) {
 			firstFile.Filename: {Revision: firstFile.Revision, SHA256: firstFile.SHA256},
 		},
 	}
+
 	lockPath := filepath.Join(outDir, "download-manifest.lock.json")
 	if err := writeLockManifest(lockPath, lock); err != nil {
 		t.Fatalf("writeLockManifest: %v", err)
@@ -507,6 +543,7 @@ func TestDownload_SkipExistingFile(t *testing.T) {
 	if err := os.WriteFile(localPath, fileContent, 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	realHash := sha256hex(fileContent)
 
 	// Update the lock with the real hash so existingMatches returns true.
@@ -522,6 +559,7 @@ func TestDownload_SkipExistingFile(t *testing.T) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	defer srv.Close()
+
 	withHFTransport(t, srv.URL)
 
 	var out strings.Builder
@@ -553,7 +591,6 @@ func TestDownload_FullDownloadAndLockWrite(t *testing.T) {
 	// This causes Download to resolve the checksum via HEAD (metadata) request.
 	// We return a valid SHA256 from the HEAD response, then serve matching
 	// content from the GET response.
-
 	fileContent := []byte("synthetic onnx model data for test")
 	contentHash := sha256hex(fileContent)
 
@@ -561,6 +598,7 @@ func TestDownload_FullDownloadAndLockWrite(t *testing.T) {
 		if r.Method == http.MethodHead {
 			w.Header().Set("X-Linked-Etag", `"`+contentHash+`"`)
 			w.WriteHeader(http.StatusOK)
+
 			return
 		}
 		// GET: serve the file content
@@ -568,6 +606,7 @@ func TestDownload_FullDownloadAndLockWrite(t *testing.T) {
 		_, _ = w.Write(fileContent)
 	}))
 	defer srv.Close()
+
 	withHFTransport(t, srv.URL)
 
 	outDir := t.TempDir()
@@ -587,6 +626,7 @@ func TestDownload_FullDownloadAndLockWrite(t *testing.T) {
 	if _, err := os.Stat(lockPath); err != nil {
 		t.Errorf("lock manifest not written: %v", err)
 	}
+
 	if !strings.Contains(out.String(), "wrote lock manifest") {
 		t.Errorf("output %q should mention lock manifest", out.String())
 	}
@@ -619,6 +659,7 @@ func TestDownloadWithProgress_Success(t *testing.T) {
 	if err != nil {
 		t.Fatalf("downloadWithProgress error = %v", err)
 	}
+
 	if got != expectedSum {
 		t.Errorf("checksum = %q; want %q", got, expectedSum)
 	}
@@ -627,6 +668,7 @@ func TestDownloadWithProgress_Success(t *testing.T) {
 	if readErr != nil {
 		t.Fatalf("ReadFile: %v", readErr)
 	}
+
 	if string(data) != string(content) {
 		t.Errorf("file content = %q; want %q", data, content)
 	}
@@ -645,6 +687,7 @@ func TestDownloadWithProgress_AccessDenied(t *testing.T) {
 			if err == nil {
 				t.Errorf("HTTP %d should return error", code)
 			}
+
 			var denied *ErrAccessDenied
 			if !isAccessDenied(err, &denied) {
 				t.Errorf("expected ErrAccessDenied, got %T: %v", err, err)
@@ -672,6 +715,7 @@ func TestDownloadWithProgress_HTTPError(t *testing.T) {
 
 func TestResolveChecksumFromMetadata_LinkedEtag(t *testing.T) {
 	checksum := strings.Repeat("a", 64)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Linked-Etag", `"`+checksum+`"`)
 		w.WriteHeader(http.StatusOK)
@@ -683,6 +727,7 @@ func TestResolveChecksumFromMetadata_LinkedEtag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveChecksumFromMetadata error = %v", err)
 	}
+
 	if got != checksum {
 		t.Errorf("checksum = %q; want %q", got, checksum)
 	}
@@ -690,6 +735,7 @@ func TestResolveChecksumFromMetadata_LinkedEtag(t *testing.T) {
 
 func TestResolveChecksumFromMetadata_EtagFallback(t *testing.T) {
 	checksum := strings.Repeat("b", 64)
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Etag", `"`+checksum+`"`)
 		w.WriteHeader(http.StatusOK)
@@ -701,6 +747,7 @@ func TestResolveChecksumFromMetadata_EtagFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveChecksumFromMetadata error = %v", err)
 	}
+
 	if got != checksum {
 		t.Errorf("checksum = %q; want %q", got, checksum)
 	}
@@ -729,6 +776,7 @@ func TestResolveChecksumFromMetadata_AccessDenied(t *testing.T) {
 
 			_, err := resolveChecksumFromMetadata(newHFClient(srv.URL), "org/repo",
 				ModelFile{Filename: "f.bin", Revision: "r1"}, "")
+
 			var denied *ErrAccessDenied
 			if err == nil || !isAccessDenied(err, &denied) {
 				t.Errorf("expected ErrAccessDenied for HTTP %d, got %v", code, err)
@@ -752,6 +800,7 @@ func TestResolveChecksumFromMetadata_HTTPError(t *testing.T) {
 
 func TestResolveChecksumFromMetadata_WithToken(t *testing.T) {
 	var gotAuth string
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		w.Header().Set("X-Linked-Etag", strings.Repeat("c", 64))
@@ -813,12 +862,14 @@ func TestValidateExportTooling_PythonFoundButMissingPackages(t *testing.T) {
 	if err != nil {
 		t.Skip("python3 not on PATH; skipping")
 	}
+
 	err = validateExportTooling(python3)
 	// Should fail because pocket_tts (and likely torch/onnx) is not installed.
 	// If for some reason all packages are present, skip.
 	if err == nil {
 		t.Skip("pocket_tts/torch/onnx are all installed; skipping negative test")
 	}
+
 	if !strings.Contains(err.Error(), "missing") {
 		t.Errorf("error %q should mention 'missing'", err.Error())
 	}
@@ -848,17 +899,21 @@ func TestResolveScriptPath_ExistsInCwd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
+
 	scriptName := "test_resolve_script_tmp.py"
+
 	scriptPath := filepath.Join(cwd, scriptName)
 	if err := os.WriteFile(scriptPath, []byte("# test"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	t.Cleanup(func() { _ = os.Remove(scriptPath) })
 
 	got, err := resolveScriptPath(scriptName)
 	if err != nil {
 		t.Fatalf("resolveScriptPath error = %v", err)
 	}
+
 	if got != scriptPath {
 		t.Errorf("resolveScriptPath = %q; want %q", got, scriptPath)
 	}
@@ -894,6 +949,7 @@ func (t *hfTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	clone := req.Clone(req.Context())
 	clone.URL.Scheme = "http"
 	clone.URL.Host = strings.TrimPrefix(t.target, "http://")
+
 	return t.delegate.RoundTrip(clone)
 }
 
@@ -908,11 +964,14 @@ func isAccessDenied(err error, target **ErrAccessDenied) bool {
 	if err == nil {
 		return false
 	}
+
 	if strings.Contains(err.Error(), "access denied") {
 		e := &ErrAccessDenied{}
 		*target = e
+
 		return true
 	}
+
 	return false
 }
 
@@ -928,18 +987,23 @@ func TestWriteLockManifest_ValidContent(t *testing.T) {
 			"a.bin": {Revision: "rev1", SHA256: strings.Repeat("1", 64)},
 		},
 	}
-	if err := writeLockManifest(p, lock); err != nil {
+	err := writeLockManifest(p, lock)
+	if err != nil {
 		t.Fatalf("writeLockManifest error = %v", err)
 	}
 
 	raw, _ := os.ReadFile(p)
+
 	var got lockManifest
-	if err := json.Unmarshal(raw, &got); err != nil {
+	err = json.Unmarshal(raw, &got)
+	if err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
+
 	if got.Repo != lock.Repo {
 		t.Errorf("Repo = %q; want %q", got.Repo, lock.Repo)
 	}
+
 	if got.Files["a.bin"].Revision != "rev1" {
 		t.Errorf("Revision = %q; want rev1", got.Files["a.bin"].Revision)
 	}

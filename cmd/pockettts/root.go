@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"log/slog"
 	"os"
 
@@ -30,8 +30,10 @@ func NewRootCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
 			activeCfg = loaded
 			setupLogger(loaded.LogLevel)
+
 			return nil
 		},
 	}
@@ -56,13 +58,15 @@ func setupLogger(levelStr string) {
 	if err != nil {
 		lvl = slog.LevelInfo
 	}
+
 	h := slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: lvl})
 	slog.SetDefault(slog.New(h))
 }
 
 func requireConfig() (config.Config, error) {
 	if activeCfg.Paths.ModelPath == "" {
-		return config.Config{}, fmt.Errorf("configuration not loaded")
+		return config.Config{}, errors.New("configuration not loaded")
 	}
+
 	return activeCfg, nil
 }

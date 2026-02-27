@@ -4,6 +4,7 @@ package bench
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -36,17 +37,22 @@ func ComputeStats(durations []time.Duration) Stats {
 	if len(durations) == 0 {
 		return Stats{}
 	}
+
 	mn, mx := durations[0], durations[0]
 	var sum time.Duration
+
 	for _, d := range durations {
 		if d < mn {
 			mn = d
 		}
+
 		if d > mx {
 			mx = d
 		}
+
 		sum += d
 	}
+
 	return Stats{
 		Min:  mn,
 		Max:  mx,
@@ -64,6 +70,7 @@ func CalcRTF(synthDur, audioDur time.Duration) float64 {
 	if audioDur <= 0 {
 		return 0
 	}
+
 	return float64(synthDur) / float64(audioDur)
 }
 
@@ -74,20 +81,24 @@ func WAVDuration(wav []byte) (time.Duration, error) {
 	if len(wav) < 44 {
 		return 0, fmt.Errorf("wav too short (%d bytes)", len(wav))
 	}
+
 	if string(wav[0:4]) != "RIFF" || string(wav[8:12]) != "WAVE" {
-		return 0, fmt.Errorf("not a RIFF/WAVE file")
+		return 0, errors.New("not a RIFF/WAVE file")
 	}
 
 	// Walk chunks to find "fmt " — it may not always be at offset 12.
 	pos := 12
 	for pos+8 <= len(wav) {
 		chunkID := string(wav[pos : pos+4])
+
 		chunkSize := int(binary.LittleEndian.Uint32(wav[pos+4 : pos+8]))
 		if chunkID == "fmt " {
 			if pos+8+16 > len(wav) {
-				return 0, fmt.Errorf("fmt chunk too short")
+				return 0, errors.New("fmt chunk too short")
 			}
+
 			sampleRate := int64(binary.LittleEndian.Uint32(wav[pos+8+4 : pos+8+8]))
+
 			blockAlign := int64(binary.LittleEndian.Uint16(wav[pos+8+12 : pos+8+14]))
 			if sampleRate == 0 || blockAlign == 0 {
 				return 0, fmt.Errorf("invalid fmt chunk: sampleRate=%d blockAlign=%d", sampleRate, blockAlign)
@@ -101,30 +112,36 @@ func WAVDuration(wav []byte) (time.Duration, error) {
 
 			numSamples := dataSize / blockAlign
 			nanos := numSamples * int64(time.Second) / sampleRate
+
 			return time.Duration(nanos), nil
 		}
+
 		pos += 8 + chunkSize
 		if chunkSize%2 != 0 {
 			pos++ // RIFF pad byte
 		}
 	}
-	return 0, fmt.Errorf("fmt chunk not found")
+
+	return 0, errors.New("fmt chunk not found")
 }
 
 func findDataChunkSize(wav []byte) (int64, error) {
 	pos := 12
 	for pos+8 <= len(wav) {
 		chunkID := string(wav[pos : pos+4])
+
 		chunkSize := int64(binary.LittleEndian.Uint32(wav[pos+4 : pos+8]))
 		if chunkID == "data" {
 			return chunkSize, nil
 		}
+
 		pos += 8 + int(chunkSize)
 		if chunkSize%2 != 0 {
 			pos++
 		}
 	}
-	return 0, fmt.Errorf("data chunk not found")
+
+	return 0, errors.New("data chunk not found")
 }
 
 // ---------------------------------------------------------------------------
@@ -137,9 +154,11 @@ func CheckRTFThreshold(meanRTF, threshold float64) error {
 	if threshold <= 0 {
 		return nil
 	}
+
 	if meanRTF > threshold {
 		return fmt.Errorf("mean RTF %.3f exceeds threshold %.3f", meanRTF, threshold)
 	}
+
 	return nil
 }
 
@@ -159,6 +178,7 @@ func FormatTable(runs []RunResult, stats Stats, w io.Writer) {
 		if r.Cold {
 			cold = "yes"
 		}
+
 		fmt.Fprintf(sb, "%-5d  %-5s  %10.1f  %12.1f  %8.3f\n",
 			r.Index+1,
 			cold,
@@ -215,6 +235,7 @@ func FormatJSON(runs []RunResult, stats Stats, w io.Writer) {
 			RTF:        r.RTF,
 		}
 	}
+
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(jr)

@@ -27,10 +27,12 @@ func TestConcatTensorsDim1_BasicConcat(t *testing.T) {
 	}
 
 	data, _ := ExtractFloat32(result)
+
 	want := append(aData, bData...)
 	if len(data) != len(want) {
 		t.Fatalf("data length = %d, want %d", len(data), len(want))
 	}
+
 	for i := range want {
 		if data[i] != want[i] {
 			t.Errorf("data[%d] = %v, want %v", i, data[i], want[i])
@@ -83,7 +85,6 @@ func TestGenerateAudio_WithVoiceEmbedding_PrependsToTextEmb(t *testing.T) {
 	// voice: [1, 2, 1024]
 	// text:  [1, 5, 1024] (from 5 tokens)
 	// expected combined: [1, 7, 1024]
-
 	var capturedTextEmbShape []int64
 
 	textCond := &fakeRunner{
@@ -93,6 +94,7 @@ func TestGenerateAudio_WithVoiceEmbedding_PrependsToTextEmb(t *testing.T) {
 			T := tokTensor.Shape()[1]
 			data := make([]float32, T*1024)
 			out, _ := NewTensor(data, []int64{1, T, 1024})
+
 			return map[string]*Tensor{"text_embeddings": out}, nil
 		},
 	}
@@ -111,6 +113,7 @@ func TestGenerateAudio_WithVoiceEmbedding_PrependsToTextEmb(t *testing.T) {
 			h, _ := NewTensor(make([]float32, 1024), []int64{1, 1024})
 			// Fire EOS immediately.
 			eos, _ := NewTensor([]float32{0.0}, []int64{1, 1})
+
 			return map[string]*Tensor{"last_hidden": h, "eos_logits": eos}, nil
 		},
 	}
@@ -128,6 +131,7 @@ func TestGenerateAudio_WithVoiceEmbedding_PrependsToTextEmb(t *testing.T) {
 		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 			T := inputs["latent"].Shape()[1]
 			out, _ := NewTensor(make([]float32, 512*T), []int64{1, 512, T})
+
 			return map[string]*Tensor{"mimi_latent": out}, nil
 		},
 	}
@@ -137,6 +141,7 @@ func TestGenerateAudio_WithVoiceEmbedding_PrependsToTextEmb(t *testing.T) {
 		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 			T := inputs["latent"].Shape()[2]
 			out, _ := NewTensor(make([]float32, T*480), []int64{1, 1, T * 480})
+
 			return map[string]*Tensor{"audio": out}, nil
 		},
 	}
@@ -154,6 +159,7 @@ func TestGenerateAudio_WithVoiceEmbedding_PrependsToTextEmb(t *testing.T) {
 	for i := range voiceData {
 		voiceData[i] = 99.0 // distinctive value
 	}
+
 	voiceEmb, _ := NewTensor(voiceData, []int64{1, 2, 1024})
 
 	cfg := GenerateConfig{
@@ -165,6 +171,7 @@ func TestGenerateAudio_WithVoiceEmbedding_PrependsToTextEmb(t *testing.T) {
 	}
 
 	tokens := []int64{1, 2, 3, 4, 5}
+
 	_, err := e.GenerateAudio(context.Background(), tokens, cfg)
 	if err != nil {
 		t.Fatalf("GenerateAudio: %v", err)
@@ -175,6 +182,7 @@ func TestGenerateAudio_WithVoiceEmbedding_PrependsToTextEmb(t *testing.T) {
 	if len(capturedTextEmbShape) != 3 {
 		t.Fatalf("text_embeddings not 3D: %v", capturedTextEmbShape)
 	}
+
 	if capturedTextEmbShape[1] != 7 {
 		t.Errorf("text_embeddings dim1 = %d, want 7 (2 voice + 5 text)", capturedTextEmbShape[1])
 	}
@@ -189,6 +197,7 @@ func TestGenerateAudio_WithoutVoiceEmbedding_Unchanged(t *testing.T) {
 		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 			T := inputs["tokens"].Shape()[1]
 			out, _ := NewTensor(make([]float32, T*1024), []int64{1, T, 1024})
+
 			return map[string]*Tensor{"text_embeddings": out}, nil
 		},
 	}
@@ -201,8 +210,10 @@ func TestGenerateAudio_WithoutVoiceEmbedding_Unchanged(t *testing.T) {
 			if stepCount == 1 {
 				capturedTextEmbShape = inputs["text_embeddings"].Shape()
 			}
+
 			h, _ := NewTensor(make([]float32, 1024), []int64{1, 1024})
 			eos, _ := NewTensor([]float32{0.0}, []int64{1, 1}) // EOS immediately
+
 			return map[string]*Tensor{"last_hidden": h, "eos_logits": eos}, nil
 		},
 	}
@@ -222,6 +233,7 @@ func TestGenerateAudio_WithoutVoiceEmbedding_Unchanged(t *testing.T) {
 			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 				T := inputs["latent"].Shape()[1]
 				out, _ := NewTensor(make([]float32, 512*T), []int64{1, 512, T})
+
 				return map[string]*Tensor{"mimi_latent": out}, nil
 			},
 		},
@@ -230,6 +242,7 @@ func TestGenerateAudio_WithoutVoiceEmbedding_Unchanged(t *testing.T) {
 			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 				T := inputs["latent"].Shape()[2]
 				out, _ := NewTensor(make([]float32, T*480), []int64{1, 1, T * 480})
+
 				return map[string]*Tensor{"audio": out}, nil
 			},
 		},
@@ -244,6 +257,7 @@ func TestGenerateAudio_WithoutVoiceEmbedding_Unchanged(t *testing.T) {
 	}
 
 	tokens := []int64{1, 2, 3}
+
 	_, err := e.GenerateAudio(context.Background(), tokens, cfg)
 	if err != nil {
 		t.Fatalf("GenerateAudio: %v", err)

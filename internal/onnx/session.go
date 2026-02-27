@@ -2,6 +2,7 @@ package onnx
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -49,7 +50,7 @@ type onnxGraph struct {
 
 func NewSessionManager(manifestPath string) (*SessionManager, error) {
 	if manifestPath == "" {
-		return nil, fmt.Errorf("manifest path is required")
+		return nil, errors.New("manifest path is required")
 	}
 
 	data, err := os.ReadFile(manifestPath)
@@ -61,8 +62,9 @@ func NewSessionManager(manifestPath string) (*SessionManager, error) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return nil, fmt.Errorf("decode ONNX manifest: %w", err)
 	}
+
 	if len(manifest.Graphs) == 0 {
-		return nil, fmt.Errorf("ONNX manifest has no graphs")
+		return nil, errors.New("ONNX manifest has no graphs")
 	}
 
 	baseDir := filepath.Dir(manifestPath)
@@ -73,11 +75,13 @@ func NewSessionManager(manifestPath string) (*SessionManager, error) {
 
 	for _, g := range manifest.Graphs {
 		if g.Name == "" {
-			return nil, fmt.Errorf("manifest graph has empty name")
+			return nil, errors.New("manifest graph has empty name")
 		}
+
 		if g.Filename == "" {
 			return nil, fmt.Errorf("manifest graph %q has empty filename", g.Name)
 		}
+
 		if _, exists := sm.sessions[g.Name]; exists {
 			return nil, fmt.Errorf("duplicate session name %q in manifest", g.Name)
 		}
@@ -86,6 +90,7 @@ func NewSessionManager(manifestPath string) (*SessionManager, error) {
 		if !filepath.IsAbs(sessionPath) {
 			sessionPath = filepath.Join(baseDir, g.Filename)
 		}
+
 		sessionPath = filepath.Clean(sessionPath)
 		if _, err := os.Stat(sessionPath); err != nil {
 			return nil, fmt.Errorf("session file for %q: %w", g.Name, err)
@@ -118,16 +123,20 @@ func LoadSessionsOnce(manifestPath string) (*SessionManager, error) {
 	sessionMgrOnce.Do(func() {
 		sessionMgr, sessionMgrErr = NewSessionManager(manifestPath)
 	})
+
 	if sessionMgrErr != nil {
 		return nil, sessionMgrErr
 	}
+
 	return sessionMgr, nil
 }
 
 func (m *SessionManager) Session(name string) (Session, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+
 	s, ok := m.sessions[name]
+
 	return s, ok
 }
 
@@ -142,6 +151,7 @@ func (m *SessionManager) Sessions() []Session {
 		s.Outputs = append([]NodeInfo(nil), s.Outputs...)
 		out = append(out, s)
 	}
+
 	return out
 }
 
@@ -149,9 +159,11 @@ func nodeNames(nodes []NodeInfo) string {
 	if len(nodes) == 0 {
 		return ""
 	}
+
 	names := make([]string, 0, len(nodes))
 	for _, n := range nodes {
 		names = append(names, n.Name)
 	}
+
 	return strings.Join(names, ",")
 }

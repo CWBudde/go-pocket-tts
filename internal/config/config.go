@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -140,38 +141,51 @@ func Load(opts LoadOptions) (Config, error) {
 	v := viper.New()
 
 	setDefaults(v, opts.Defaults)
+
 	if opts.Cmd != nil {
-		if err := v.BindPFlags(opts.Cmd.Flags()); err != nil {
+		err := v.BindPFlags(opts.Cmd.Flags())
+		if err != nil {
 			return Config{}, fmt.Errorf("bind flags: %w", err)
 		}
 	}
+
 	registerAliases(v)
 
 	v.SetEnvPrefix("POCKETTTS")
+
 	replacer := strings.NewReplacer("-", "_", ".", "_", "__", "_")
 	v.SetEnvKeyReplacer(replacer)
-	if err := v.BindEnv("runtime.ort_library_path", "POCKETTTS_ORT_LIB", "ORT_LIBRARY_PATH"); err != nil {
+
+	err := v.BindEnv("runtime.ort_library_path", "POCKETTTS_ORT_LIB", "ORT_LIBRARY_PATH")
+	if err != nil {
 		return Config{}, fmt.Errorf("bind ort env vars: %w", err)
 	}
+
 	v.AutomaticEnv()
 
 	if opts.ConfigFile != "" {
 		v.SetConfigFile(opts.ConfigFile)
-		if err := v.ReadInConfig(); err != nil {
+
+		err := v.ReadInConfig()
+		if err != nil {
 			return Config{}, fmt.Errorf("read config file: %w", err)
 		}
 	} else {
 		v.SetConfigName("pockettts")
 		v.AddConfigPath(".")
-		if err := v.ReadInConfig(); err != nil {
-			if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+
+		err := v.ReadInConfig()
+		if err != nil {
+			var configFileNotFoundError viper.ConfigFileNotFoundError
+			if errors.As(err, &configFileNotFoundError) {
 				return Config{}, fmt.Errorf("read config file: %w", err)
 			}
 		}
 	}
 
 	var cfg Config
-	if err := v.Unmarshal(&cfg); err != nil {
+	err = v.Unmarshal(&cfg)
+	if err != nil {
 		return Config{}, fmt.Errorf("decode config: %w", err)
 	}
 

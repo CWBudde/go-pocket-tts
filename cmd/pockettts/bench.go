@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -30,19 +31,22 @@ func newBenchCmd() *cobra.Command {
 			}
 
 			if strings.TrimSpace(text) == "" {
-				return fmt.Errorf("--text is required for bench")
+				return errors.New("--text is required for bench")
 			}
+
 			if runs < 1 {
-				return fmt.Errorf("--runs must be at least 1")
+				return errors.New("--runs must be at least 1")
 			}
+
 			if format != "table" && format != "json" {
-				return fmt.Errorf("--format must be 'table' or 'json'")
+				return errors.New("--format must be 'table' or 'json'")
 			}
 
 			selectedVoice := cfg.TTS.Voice
 			if voice != "" {
 				selectedVoice = voice
 			}
+
 			resolvedVoice, err := resolveVoiceOrPath(selectedVoice)
 			if err != nil {
 				return err
@@ -64,6 +68,7 @@ func newBenchCmd() *cobra.Command {
 			for i, r := range results {
 				durations[i] = r.Duration
 			}
+
 			stats := bench.ComputeStats(durations)
 
 			switch format {
@@ -78,11 +83,13 @@ func newBenchCmd() *cobra.Command {
 			for _, r := range results {
 				totalRTF += r.RTF
 			}
+
 			meanRTF := totalRTF / float64(len(results))
 
 			if err := bench.CheckRTFThreshold(meanRTF, rtfThreshold); err != nil {
 				return err
 			}
+
 			return nil
 		},
 	}
@@ -110,6 +117,7 @@ func runBench(ctx context.Context, opts benchOptions) ([]bench.RunResult, error)
 
 	for i := range opts.Runs {
 		start := time.Now()
+
 		wavBytes, err := synthesizeViaCLI(ctx, synthCLIOptions{
 			ExecutablePath: opts.ExecutablePath,
 			ConfigPath:     opts.ConfigPath,
@@ -120,6 +128,7 @@ func runBench(ctx context.Context, opts benchOptions) ([]bench.RunResult, error)
 		if err != nil {
 			return nil, fmt.Errorf("run %d failed: %w", i+1, err)
 		}
+
 		dur := time.Since(start)
 
 		audioDur, err := bench.WAVDuration(wavBytes)

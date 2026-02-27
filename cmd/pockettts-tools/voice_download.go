@@ -16,6 +16,7 @@ func newVoiceDownloadCmd() *cobra.Command {
 		Short: "Download voice embeddings from Hugging Face",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			manifest := model.VoiceManifest()
+
 			err := model.DownloadManifest(model.DownloadOptions{
 				OutDir: outDir,
 				Stdout: os.Stdout,
@@ -24,6 +25,7 @@ func newVoiceDownloadCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("voice download failed: %w", err)
 			}
+
 			return nil
 		},
 	}

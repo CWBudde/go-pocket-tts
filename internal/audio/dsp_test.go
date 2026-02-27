@@ -46,8 +46,10 @@ func TestPeakNormalize(t *testing.T) {
 				if peak != 0.0 {
 					t.Errorf("expected silence, got peak %f", peak)
 				}
+
 				return
 			}
+
 			if math.Abs(float64(peak-tt.wantPeak)) > 1e-6 {
 				t.Errorf("peak = %f, want %f", peak, tt.wantPeak)
 			}
@@ -90,6 +92,7 @@ func TestDCBlock(t *testing.T) {
 		for i := range input {
 			input[i] = float32(math.Sin(2 * math.Pi * 1000 * float64(i) / float64(sr)))
 		}
+
 		inputRMS := rmsOf(input)
 
 		got := DCBlock(input, sr)
@@ -111,6 +114,7 @@ func TestFadeIn(t *testing.T) {
 		for i := range input {
 			input[i] = 1.0
 		}
+
 		got := FadeIn(input, sr, 10) // 10ms fade
 		if got[0] != 0.0 {
 			t.Errorf("first sample = %f, want 0.0", got[0])
@@ -122,7 +126,9 @@ func TestFadeIn(t *testing.T) {
 		for i := range input {
 			input[i] = 1.0
 		}
+
 		got := FadeIn(input, sr, 10)
+
 		fadeSamples := int(10.0 / 1000.0 * float64(sr)) // 240 samples
 		if got[fadeSamples] != 1.0 {
 			t.Errorf("sample at fade end = %f, want 1.0", got[fadeSamples])
@@ -134,7 +140,9 @@ func TestFadeIn(t *testing.T) {
 		for i := range input {
 			input[i] = 1.0
 		}
+
 		got := FadeIn(input, sr, 50) // 50ms
+
 		fadeSamples := int(50.0 / 1000.0 * float64(sr))
 		for i := 1; i < fadeSamples; i++ {
 			if got[i] < got[i-1] {
@@ -152,6 +160,7 @@ func TestFadeOut(t *testing.T) {
 		for i := range input {
 			input[i] = 1.0
 		}
+
 		got := FadeOut(input, sr, 10)
 		if got[len(got)-1] != 0.0 {
 			t.Errorf("last sample = %f, want 0.0", got[len(got)-1])
@@ -163,8 +172,10 @@ func TestFadeOut(t *testing.T) {
 		for i := range input {
 			input[i] = 1.0
 		}
+
 		got := FadeOut(input, sr, 10)
 		fadeSamples := int(10.0 / 1000.0 * float64(sr))
+
 		idx := len(got) - fadeSamples - 1
 		if got[idx] != 1.0 {
 			t.Errorf("sample before fade = %f, want 1.0", got[idx])
@@ -176,8 +187,10 @@ func TestFadeOut(t *testing.T) {
 		for i := range input {
 			input[i] = 1.0
 		}
+
 		got := FadeOut(input, sr, 50)
 		fadeSamples := int(50.0 / 1000.0 * float64(sr))
+
 		start := len(got) - fadeSamples
 		for i := start + 1; i < len(got); i++ {
 			if got[i] > got[i-1] {
@@ -196,6 +209,7 @@ func peakOf(s []float32) float32 {
 			peak = a
 		}
 	}
+
 	return peak
 }
 
@@ -204,6 +218,7 @@ func meanOf(s []float32) float32 {
 	for _, v := range s {
 		sum += float64(v)
 	}
+
 	return float32(sum / float64(len(s)))
 }
 
@@ -212,5 +227,6 @@ func rmsOf(s []float32) float32 {
 	for _, v := range s {
 		sum += float64(v) * float64(v)
 	}
+
 	return float32(math.Sqrt(sum / float64(len(s))))
 }

@@ -36,6 +36,7 @@ func newModelDownloadONNXCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("download ONNX bundle failed: %w", err)
 			}
+
 			return nil
 		},
 	}

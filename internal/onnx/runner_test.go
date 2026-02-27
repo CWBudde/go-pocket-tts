@@ -12,6 +12,7 @@ func TestRunnerRoundTrip(t *testing.T) {
 	if libPath == "" {
 		libPath = os.Getenv("ORT_LIBRARY_PATH")
 	}
+
 	if libPath == "" {
 		t.Skip("no ORT library available; set POCKETTTS_ORT_LIB")
 	}
@@ -55,13 +56,16 @@ func TestRunnerRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatal("missing 'output' key in results")
 	}
+
 	data, err := ExtractFloat32(out)
 	if err != nil {
 		t.Fatalf("ExtractFloat32: %v", err)
 	}
+
 	if len(data) != 3 {
 		t.Fatalf("expected 3 elements, got %d", len(data))
 	}
+
 	for i, want := range []float32{1.0, 2.0, 3.0} {
 		if data[i] != want {
 			t.Errorf("data[%d] = %f, want %f", i, data[i], want)
@@ -74,6 +78,7 @@ func TestRunnerCloseIsIdempotent(t *testing.T) {
 	if libPath == "" {
 		t.Skip("no ORT library available")
 	}
+
 	identityModel := filepath.Join("..", "model", "testdata", "identity_float32.onnx")
 	if _, err := os.Stat(identityModel); err != nil {
 		t.Skipf("identity model not found: %v", err)
@@ -94,6 +99,7 @@ func TestRunnerCloseIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRunner: %v", err)
 	}
+
 	runner.Close()
 	runner.Close() // second close should not panic
 }

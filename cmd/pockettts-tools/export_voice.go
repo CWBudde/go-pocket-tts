@@ -26,16 +26,20 @@ func newExportVoiceCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
 			if audioPath == "" {
-				return fmt.Errorf("--audio is required")
+				return errors.New("--audio is required")
 			}
+
 			if outPath == "" {
-				return fmt.Errorf("--out is required")
+				return errors.New("--out is required")
 			}
+
 			exe := cfg.TTS.CLIPath
 			if exe == "" {
 				exe = "pocket-tts"
 			}
+
 			if _, err := exec.LookPath(exe); err != nil {
 				return fmt.Errorf(
 					"export-voice requires the pocket-tts CLI (Python tooling) on PATH or --tts-cli-path: %w",
@@ -57,6 +61,7 @@ func newExportVoiceCmd() *cobra.Command {
 						err,
 					)
 				}
+
 				return err
 			}
 

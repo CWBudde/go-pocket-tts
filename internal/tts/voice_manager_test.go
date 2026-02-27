@@ -24,10 +24,12 @@ func TestNewVoiceManager_MissingFile(t *testing.T) {
 
 func TestNewVoiceManager_InvalidJSON(t *testing.T) {
 	tmp := t.TempDir()
+
 	manifestPath := filepath.Join(tmp, "manifest.json")
 	if err := os.WriteFile(manifestPath, []byte("{bad json"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	_, err := NewVoiceManager(manifestPath)
 	if err == nil {
 		t.Error("NewVoiceManager(invalid json) = nil; want error")
@@ -37,10 +39,12 @@ func TestNewVoiceManager_InvalidJSON(t *testing.T) {
 func TestNewVoiceManager_EmptyVoiceID(t *testing.T) {
 	tmp := t.TempDir()
 	manifestPath := filepath.Join(tmp, "manifest.json")
+
 	manifest := `{"voices":[{"id":"","path":"v.bin","license":""}]}`
 	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	_, err := NewVoiceManager(manifestPath)
 	if err == nil {
 		t.Error("NewVoiceManager(empty id) = nil; want error")
@@ -50,10 +54,12 @@ func TestNewVoiceManager_EmptyVoiceID(t *testing.T) {
 func TestNewVoiceManager_EmptyVoicePath(t *testing.T) {
 	tmp := t.TempDir()
 	manifestPath := filepath.Join(tmp, "manifest.json")
+
 	manifest := `{"voices":[{"id":"v1","path":"","license":""}]}`
 	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	_, err := NewVoiceManager(manifestPath)
 	if err == nil {
 		t.Error("NewVoiceManager(empty path) = nil; want error")
@@ -63,6 +69,7 @@ func TestNewVoiceManager_EmptyVoicePath(t *testing.T) {
 func TestNewVoiceManager_DuplicateID(t *testing.T) {
 	tmp := t.TempDir()
 	manifestPath := filepath.Join(tmp, "manifest.json")
+
 	manifest := `{"voices":[
 		{"id":"v1","path":"a.bin","license":""},
 		{"id":"v1","path":"b.bin","license":""}
@@ -70,6 +77,7 @@ func TestNewVoiceManager_DuplicateID(t *testing.T) {
 	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	_, err := NewVoiceManager(manifestPath)
 	if err == nil {
 		t.Error("NewVoiceManager(duplicate id) = nil; want error")
@@ -79,14 +87,17 @@ func TestNewVoiceManager_DuplicateID(t *testing.T) {
 func TestNewVoiceManager_EmptyVoicesList(t *testing.T) {
 	tmp := t.TempDir()
 	manifestPath := filepath.Join(tmp, "manifest.json")
+
 	manifest := `{"voices":[]}`
 	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	mgr, err := NewVoiceManager(manifestPath)
 	if err != nil {
 		t.Fatalf("NewVoiceManager(empty list) error = %v", err)
 	}
+
 	if len(mgr.ListVoices()) != 0 {
 		t.Error("expected empty voice list")
 	}
@@ -96,12 +107,14 @@ func TestNewVoiceManager_EmptyVoicesList(t *testing.T) {
 
 func TestResolvePath_AbsolutePath(t *testing.T) {
 	tmp := t.TempDir()
+
 	voiceFile := filepath.Join(tmp, "voice.bin")
 	if err := os.WriteFile(voiceFile, []byte("data"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
 	manifestPath := filepath.Join(tmp, "manifest.json")
+
 	manifest := `{"voices":[{"id":"v1","path":"` + voiceFile + `","license":""}]}`
 	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -116,6 +129,7 @@ func TestResolvePath_AbsolutePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolvePath error = %v", err)
 	}
+
 	if got != voiceFile {
 		t.Errorf("ResolvePath = %q; want %q", got, voiceFile)
 	}
@@ -145,14 +159,18 @@ func TestResolvePath_MissingVoiceFile(t *testing.T) {
 
 func TestListVoices_ReturnsCopy(t *testing.T) {
 	tmp := t.TempDir()
+
 	voiceFile := filepath.Join(tmp, "v.bin")
-	if err := os.WriteFile(voiceFile, []byte("data"), 0o644); err != nil {
+	err := os.WriteFile(voiceFile, []byte("data"), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
 	manifestPath := filepath.Join(tmp, "manifest.json")
+
 	manifest := `{"voices":[{"id":"v1","path":"v.bin","license":"MIT"}]}`
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+	err = os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 

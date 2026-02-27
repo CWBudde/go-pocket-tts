@@ -3,6 +3,7 @@ package safetensors
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -23,10 +24,12 @@ func LoadFirstTensor(path string) (*Tensor, error) {
 		return nil, err
 	}
 	defer store.Close()
+
 	names := store.Names()
 	if len(names) == 0 {
-		return nil, fmt.Errorf("safetensors: no tensors found")
+		return nil, errors.New("safetensors: no tensors found")
 	}
+
 	return store.Tensor(names[0])
 }
 
@@ -38,10 +41,12 @@ func LoadFirstTensorFromBytes(data []byte) (*Tensor, error) {
 		return nil, err
 	}
 	defer store.Close()
+
 	names := store.Names()
 	if len(names) == 0 {
-		return nil, fmt.Errorf("safetensors: no tensors found")
+		return nil, errors.New("safetensors: no tensors found")
 	}
+
 	return store.Tensor(names[0])
 }
 
@@ -53,6 +58,7 @@ func LoadVoiceEmbedding(path string) ([]float32, []int64, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+
 	return normalizeVoiceEmbeddingShape(tensor)
 }
 
@@ -63,6 +69,7 @@ func LoadVoiceEmbeddingFromBytes(data []byte) ([]float32, []int64, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+
 	return normalizeVoiceEmbeddingShape(tensor)
 }
 
@@ -83,12 +90,16 @@ func ValidateModelKeys(path string) error {
 	if err != nil {
 		return fmt.Errorf("open %s: %w", path, err)
 	}
-	defer f.Close()
+
+	defer func() {
+		_ = f.Close()
+	}()
 
 	var headerLen uint64
 	if err := binary.Read(f, binary.LittleEndian, &headerLen); err != nil {
 		return fmt.Errorf("read header length: %w", err)
 	}
+
 	if headerLen > 100*1024*1024 { // sanity: header should not exceed 100 MB
 		return fmt.Errorf("header length %d exceeds 100 MB limit", headerLen)
 	}
@@ -104,14 +115,17 @@ func ValidateModelKeys(path string) error {
 	}
 
 	var missing []string
+
 	for _, key := range requiredModelKeys {
 		if _, ok := header[key]; !ok {
 			missing = append(missing, key)
 		}
 	}
+
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required tensors: %v", missing)
 	}
+
 	return nil
 }
 

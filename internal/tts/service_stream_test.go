@@ -2,6 +2,7 @@ package tts
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ func TestSynthesizeStream_SendsChunksAndCloses(t *testing.T) {
 	}
 
 	ch := make(chan PCMChunk, 4)
+
 	err := svc.SynthesizeStream(context.Background(), "hello", "", ch)
 	if err != nil {
 		t.Fatalf("SynthesizeStream error: %v", err)
@@ -31,6 +33,7 @@ func TestSynthesizeStream_SendsChunksAndCloses(t *testing.T) {
 	if len(chunks) == 0 {
 		t.Fatal("no chunks received")
 	}
+
 	if !chunks[len(chunks)-1].Final {
 		t.Error("last chunk should have Final=true")
 	}
@@ -56,6 +59,7 @@ func TestSynthesizeStream_ContextCancellation(t *testing.T) {
 	ch := make(chan PCMChunk, 4)
 
 	done := make(chan error, 1)
+
 	go func() {
 		done <- svc.SynthesizeStream(ctx, "hello", "", ch)
 	}()
@@ -78,6 +82,7 @@ func TestSynthesizeStream_NilRuntime(t *testing.T) {
 	}
 
 	ch := make(chan PCMChunk, 4)
+
 	err := svc.SynthesizeStream(context.Background(), "hello", "", ch)
 	if err == nil {
 		t.Fatal("expected error for nil runtime")
@@ -105,12 +110,16 @@ func TestSynthesizeStream_MultipleChunks(t *testing.T) {
 	// wordCountTokenizer creates one token per word, maxTokensPerChunk=50.
 	// PrepareChunks splits on sentence boundaries, so use periods.
 	longSentence := ""
-	for i := 0; i < 30; i++ {
-		longSentence += "word "
+	var longSentenceSb108 strings.Builder
+	for range 30 {
+		longSentenceSb108.WriteString("word ")
 	}
+	longSentence += longSentenceSb108.String()
+
 	longText := longSentence + ". " + longSentence + "."
 
 	ch := make(chan PCMChunk, 10)
+
 	err := svc.SynthesizeStream(context.Background(), longText, "", ch)
 	if err != nil {
 		t.Fatalf("SynthesizeStream error: %v", err)
@@ -131,6 +140,7 @@ func TestSynthesizeStream_MultipleChunks(t *testing.T) {
 			t.Errorf("chunk %d should not be Final", i)
 		}
 	}
+
 	if !chunks[len(chunks)-1].Final {
 		t.Error("last chunk should be Final")
 	}

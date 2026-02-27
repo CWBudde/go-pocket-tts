@@ -16,5 +16,6 @@ func NewEngineWithRunners(runners map[string]GraphRunner) *Engine {
 	for name, r := range runners {
 		internal[name] = r
 	}
+
 	return &Engine{runners: internal}
 }

@@ -12,12 +12,14 @@ func TestNewRootCmd_HasExpectedSubcommands(t *testing.T) {
 	want := []string{"synth", "export-voice", "bench", "model", "serve", "health", "doctor"}
 	for _, name := range want {
 		found := false
+
 		for _, sub := range root.Commands() {
 			if sub.Name() == name {
 				found = true
 				break
 			}
 		}
+
 		if !found {
 			t.Errorf("expected subcommand %q not found in root", name)
 		}
@@ -44,6 +46,7 @@ func TestSetupLogger_InvalidLevelFallsBackToInfo(t *testing.T) {
 
 func TestRequireConfig_FailsWhenNotInitialized(t *testing.T) {
 	orig := activeCfg
+
 	t.Cleanup(func() { activeCfg = orig })
 
 	// Zero-value config has empty Paths.ModelPath → requireConfig returns error.
@@ -57,6 +60,7 @@ func TestRequireConfig_FailsWhenNotInitialized(t *testing.T) {
 
 func TestRequireConfig_SucceedsWhenLoaded(t *testing.T) {
 	orig := activeCfg
+
 	t.Cleanup(func() { activeCfg = orig })
 
 	activeCfg = config.Config{
@@ -67,6 +71,7 @@ func TestRequireConfig_SucceedsWhenLoaded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("requireConfig returned unexpected error: %v", err)
 	}
+
 	if got.Paths.ModelPath != "/some/model/path" {
 		t.Errorf("unexpected ModelPath: %q", got.Paths.ModelPath)
 	}

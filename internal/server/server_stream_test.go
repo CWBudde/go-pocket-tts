@@ -25,6 +25,7 @@ type stubStreamingSynthesizer struct {
 
 func (s *stubStreamingSynthesizer) SynthesizeStream(ctx context.Context, _, _ string, out chan<- tts.PCMChunk) error {
 	defer close(out)
+
 	for _, chunk := range s.chunks {
 		if s.delay > 0 {
 			select {
@@ -33,12 +34,14 @@ func (s *stubStreamingSynthesizer) SynthesizeStream(ctx context.Context, _, _ st
 				return ctx.Err()
 			}
 		}
+
 		select {
 		case out <- chunk:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+
 	return s.err
 }
 
@@ -47,6 +50,7 @@ func postStreamJSON(h http.Handler, body any) *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/tts/stream", bytes.NewReader(b))
 	h.ServeHTTP(rec, req)
+
 	return rec
 }
 
@@ -96,6 +100,7 @@ func TestTTSStream_ProducesWAVWithChunkedPCM(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", rec.Code)
 	}
+
 	if ct := rec.Header().Get("Content-Type"); ct != "audio/wav" {
 		t.Errorf("Content-Type = %q; want audio/wav", ct)
 	}
@@ -115,6 +120,7 @@ func TestTTSStream_ProducesWAVWithChunkedPCM(t *testing.T) {
 	// Verify data follows header — check first sample
 	pcmStart := 44
 	got := int16(binary.LittleEndian.Uint16(body[pcmStart : pcmStart+2]))
+
 	want := int16(math.Round(0.1 * 32767))
 	if abs16(got-want) > 1 {
 		t.Errorf("first PCM sample = %d; want ~%d", got, want)
@@ -137,10 +143,12 @@ func TestTTSStream_SemaphoreEnforced(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make([]*httptest.ResponseRecorder, 2)
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		wg.Add(1)
+
 		go func(idx int) {
 			defer wg.Done()
+
 			results[idx] = postStreamJSON(h, map[string]string{"text": "hello"})
 		}(i)
 	}
@@ -174,5 +182,6 @@ func abs16(v int16) int16 {
 	if v < 0 {
 		return -v
 	}
+
 	return v
 }

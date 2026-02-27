@@ -2,6 +2,7 @@ package onnx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 )
@@ -27,11 +28,13 @@ type GenerateConfig struct {
 // Returns 24 kHz float32 PCM audio samples.
 func (e *Engine) GenerateAudio(ctx context.Context, tokens []int64, cfg GenerateConfig) ([]float32, error) {
 	if len(tokens) == 0 {
-		return nil, fmt.Errorf("generate: token slice must not be empty")
+		return nil, errors.New("generate: token slice must not be empty")
 	}
+
 	if _, ok := e.runners["flow_lm_prefill"]; ok {
 		return e.generateAudioStateful(ctx, tokens, cfg)
 	}
+
 	return e.generateAudioStateless(ctx, tokens, cfg)
 }
 
@@ -51,6 +54,7 @@ func (e *Engine) generateAudioStateful(ctx context.Context, tokens []int64, cfg 
 		if err != nil {
 			return nil, fmt.Errorf("generate: prepend voice embedding: %w", err)
 		}
+
 		slog.Debug("voice conditioning applied", "voice_frames", cfg.VoiceEmbedding.Shape()[1], "total_frames", textEmb.Shape()[1])
 	}
 
@@ -81,6 +85,7 @@ func (e *Engine) generateAudioStateful(ctx context.Context, tokens []int64, cfg 
 		if err != nil {
 			return nil, fmt.Errorf("generate step %d flow: %w", step, err)
 		}
+
 		latentFrames = append(latentFrames, frame)
 		currentFrame = frame
 
@@ -88,11 +93,13 @@ func (e *Engine) generateAudioStateful(ctx context.Context, tokens []int64, cfg 
 			if *eosCountdown == 0 {
 				break
 			}
+
 			*eosCountdown--
 		}
 	}
 
 	slog.Info("generation complete (stateful)", "frames", len(latentFrames))
+
 	return e.decodeLatentsToAudio(ctx, latentFrames)
 }
 
@@ -114,6 +121,7 @@ func (e *Engine) generateAudioStateless(ctx context.Context, tokens []int64, cfg
 		if err != nil {
 			return nil, fmt.Errorf("generate: prepend voice embedding: %w", err)
 		}
+
 		slog.Debug("voice conditioning applied", "voice_frames", cfg.VoiceEmbedding.Shape()[1], "total_frames", textEmb.Shape()[1])
 	}
 
@@ -138,12 +146,14 @@ func (e *Engine) generateAudioStateless(ctx context.Context, tokens []int64, cfg
 		if err != nil {
 			return nil, fmt.Errorf("generate step %d flow: %w", step, err)
 		}
+
 		latentFrames = append(latentFrames, frame)
 
 		if eosCountdown != nil {
 			if *eosCountdown == 0 {
 				break
 			}
+
 			*eosCountdown--
 		}
 
@@ -154,6 +164,7 @@ func (e *Engine) generateAudioStateless(ctx context.Context, tokens []int64, cfg
 	}
 
 	slog.Info("generation complete (stateless)", "frames", len(latentFrames))
+
 	return e.decodeLatentsToAudio(ctx, latentFrames)
 }
 
@@ -163,13 +174,16 @@ func (e *Engine) decodeLatentsToAudio(ctx context.Context, latentFrames []*Tenso
 	if err != nil {
 		return nil, fmt.Errorf("generate: stack latents: %w", err)
 	}
+
 	mimiLatent, err := e.LatentToMimi(ctx, latent)
 	if err != nil {
 		return nil, fmt.Errorf("generate: %w", err)
 	}
+
 	pcm, err := e.MimiDecode(ctx, mimiLatent)
 	if err != nil {
 		return nil, fmt.Errorf("generate: %w", err)
 	}
+
 	return pcm, nil
 }

@@ -33,6 +33,7 @@ func engineWithFakeRunners(runners map[string]runnerIface) *Engine {
 func TestTextConditioner_MissingGraph(t *testing.T) {
 	// Engine with no runners at all → error mentioning "text_conditioner".
 	e := engineWithFakeRunners(map[string]runnerIface{})
+
 	_, err := e.TextConditioner(context.Background(), []int64{1, 2, 3})
 	if err == nil {
 		t.Fatal("expected error when text_conditioner graph is absent")
@@ -50,6 +51,7 @@ func TestTextConditioner_EmptyTokens(t *testing.T) {
 		},
 	}
 	e := engineWithFakeRunners(map[string]runnerIface{"text_conditioner": fake})
+
 	_, err := e.TextConditioner(context.Background(), []int64{})
 	if err == nil {
 		t.Fatal("expected error for empty token slice")
@@ -64,6 +66,7 @@ func TestTextConditioner_PropagatesRunnerError(t *testing.T) {
 		},
 	}
 	e := engineWithFakeRunners(map[string]runnerIface{"text_conditioner": fake})
+
 	_, err := e.TextConditioner(context.Background(), []int64{1, 2})
 	if err == nil {
 		t.Fatal("expected error propagated from runner")
@@ -77,6 +80,7 @@ func TestTextConditioner_ReturnsEmbeddings(t *testing.T) {
 	for i := range outputData {
 		outputData[i] = float32(i) * 0.001
 	}
+
 	fakeTensor, err := NewTensor(outputData, []int64{1, T, 1024})
 	if err != nil {
 		t.Fatalf("NewTensor: %v", err)
@@ -88,10 +92,12 @@ func TestTextConditioner_ReturnsEmbeddings(t *testing.T) {
 			if _, ok := inputs["tokens"]; !ok {
 				t.Error("expected 'tokens' input key")
 			}
+
 			return map[string]*Tensor{"text_embeddings": fakeTensor}, nil
 		},
 	}
 	e := engineWithFakeRunners(map[string]runnerIface{"text_conditioner": fake})
+
 	got, err := e.TextConditioner(context.Background(), []int64{1, 2, 3})
 	if err != nil {
 		t.Fatalf("TextConditioner: %v", err)

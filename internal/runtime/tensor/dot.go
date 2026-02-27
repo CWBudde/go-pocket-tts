@@ -7,6 +7,7 @@ func dotF32Generic(a, b []float32) float32 {
 	for i := range a {
 		sum += a[i] * b[i]
 	}
+
 	return sum
 }
 

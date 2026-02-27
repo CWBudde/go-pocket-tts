@@ -2,6 +2,7 @@ package tts
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,7 +27,7 @@ type VoiceManager struct {
 
 func NewVoiceManager(manifestPath string) (*VoiceManager, error) {
 	if manifestPath == "" {
-		return nil, fmt.Errorf("manifest path is required")
+		return nil, errors.New("manifest path is required")
 	}
 
 	data, err := os.ReadFile(manifestPath)
@@ -48,14 +49,17 @@ func NewVoiceManager(manifestPath string) (*VoiceManager, error) {
 
 	for _, v := range manifest.Voices {
 		if v.ID == "" {
-			return nil, fmt.Errorf("voice manifest contains empty id")
+			return nil, errors.New("voice manifest contains empty id")
 		}
+
 		if v.Path == "" {
 			return nil, fmt.Errorf("voice %q has empty path", v.ID)
 		}
+
 		if _, exists := mgr.byID[v.ID]; exists {
 			return nil, fmt.Errorf("duplicate voice id %q", v.ID)
 		}
+
 		mgr.byID[v.ID] = v
 	}
 
@@ -76,6 +80,7 @@ func (m *VoiceManager) ResolvePath(id string) (string, error) {
 	if !filepath.IsAbs(resolved) {
 		resolved = filepath.Join(m.baseDir, resolved)
 	}
+
 	resolved = filepath.Clean(resolved)
 
 	if _, err := os.Stat(resolved); err != nil {

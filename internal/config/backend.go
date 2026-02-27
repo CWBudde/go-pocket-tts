@@ -16,6 +16,7 @@ func NormalizeBackend(raw string) (string, error) {
 	if backend == "" {
 		backend = BackendNative
 	}
+
 	switch backend {
 	case BackendNative, BackendNativeONNX, BackendCLI:
 		return backend, nil

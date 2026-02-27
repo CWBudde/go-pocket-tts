@@ -10,5 +10,6 @@ func newModelCmd() *cobra.Command {
 
 	cmd.AddCommand(newModelDownloadCmd())
 	cmd.AddCommand(newModelVerifyCmd())
+
 	return cmd
 }

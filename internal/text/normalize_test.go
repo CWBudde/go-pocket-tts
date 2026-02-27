@@ -86,14 +86,18 @@ func TestNormalize(t *testing.T) {
 				if err == nil {
 					t.Fatalf("expected error %v, got nil", tt.wantErr)
 				}
+
 				if !errors.Is(err, tt.wantErr) {
 					t.Fatalf("expected error %v, got %v", tt.wantErr, err)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
+
 			if got != tt.want {
 				t.Errorf("Normalize(%q) = %q, want %q", tt.input, got, tt.want)
 			}

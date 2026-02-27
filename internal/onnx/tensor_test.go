@@ -12,16 +12,20 @@ func TestNewTensor(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewTensor failed: %v", err)
 		}
+
 		if tt.DType() != DTypeFloat32 {
 			t.Fatalf("expected dtype float32, got %s", tt.DType())
 		}
+
 		if !reflect.DeepEqual(tt.Shape(), []int64{2, 2}) {
 			t.Fatalf("unexpected shape: %v", tt.Shape())
 		}
+
 		got, err := ExtractFloat32(tt)
 		if err != nil {
 			t.Fatalf("ExtractFloat32 failed: %v", err)
 		}
+
 		if !reflect.DeepEqual(got, []float32{1, 2, 3, 4}) {
 			t.Fatalf("unexpected data: %v", got)
 		}
@@ -32,6 +36,7 @@ func TestNewTensor(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected shape mismatch error")
 		}
+
 		if !strings.Contains(err.Error(), "expects 4 elements, got 3") {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -67,9 +72,11 @@ func TestNewZeroTensor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("NewZeroTensor failed: %v", err)
 			}
+
 			if got.DType() != tt.wantDType {
 				t.Fatalf("expected dtype %s, got %s", tt.wantDType, got.DType())
 			}
+
 			if !reflect.DeepEqual(got.Shape(), tt.wantShape) {
 				t.Fatalf("expected shape %v, got %v", tt.wantShape, got.Shape())
 			}
@@ -109,6 +116,7 @@ func TestNewZeroTensorErrors(t *testing.T) {
 			if err == nil {
 				t.Fatal("expected error")
 			}
+
 			if !strings.Contains(err.Error(), tt.wantError) {
 				t.Fatalf("expected error containing %q, got %v", tt.wantError, err)
 			}
@@ -121,6 +129,7 @@ func TestExtractors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractFloat32 failed: %v", err)
 	}
+
 	if !reflect.DeepEqual(floats, []float32{1, 2}) {
 		t.Fatalf("unexpected float extract: %v", floats)
 	}
@@ -129,6 +138,7 @@ func TestExtractors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractInt64 failed: %v", err)
 	}
+
 	if !reflect.DeepEqual(ints, []int64{3, 4}) {
 		t.Fatalf("unexpected int extract: %v", ints)
 	}
@@ -136,6 +146,7 @@ func TestExtractors(t *testing.T) {
 	if _, err := ExtractFloat32([]int64{1}); err == nil {
 		t.Fatal("expected float extractor type error")
 	}
+
 	if _, err := ExtractInt64([]float32{1}); err == nil {
 		t.Fatal("expected int extractor type error")
 	}

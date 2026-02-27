@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,7 +32,8 @@ func (e *ErrAccessDenied) Error() string {
 	if e.Msg != "" {
 		return e.Msg
 	}
-	return fmt.Sprintf("access denied for %s", e.Repo)
+
+	return "access denied for " + e.Repo
 }
 
 type lockManifest struct {
@@ -52,6 +54,7 @@ func Download(opts DownloadOptions) error {
 	if err != nil {
 		return err
 	}
+
 	return DownloadManifest(opts, manifest)
 }
 
@@ -59,25 +62,31 @@ func DownloadManifest(opts DownloadOptions, manifest Manifest) error {
 	if opts.Repo == "" {
 		opts.Repo = manifest.Repo
 	}
+
 	if opts.OutDir == "" {
-		return fmt.Errorf("out dir is required")
+		return errors.New("out dir is required")
 	}
+
 	if opts.Stdout == nil {
 		opts.Stdout = io.Discard
 	}
+
 	if opts.Stderr == nil {
 		opts.Stderr = io.Discard
 	}
 
-	if err := os.MkdirAll(opts.OutDir, 0o755); err != nil {
+	err := os.MkdirAll(opts.OutDir, 0o755)
+	if err != nil {
 		return fmt.Errorf("create out dir: %w", err)
 	}
 
 	lockPath := filepath.Join(opts.OutDir, "download-manifest.lock.json")
+
 	lock := readLockManifest(lockPath)
 	if lock.Files == nil {
 		lock.Files = make(map[string]lockRecord)
 	}
+
 	lock.Repo = opts.Repo
 	lock.Generated = time.Now().UTC().Format(time.RFC3339)
 
@@ -85,6 +94,7 @@ func DownloadManifest(opts DownloadOptions, manifest Manifest) error {
 
 	for _, f := range manifest.Files {
 		expected := strings.ToLower(f.SHA256)
+
 		checksumHard := expected != "" // hard = from manifest, soft = from metadata
 		if expected == "" {
 			if lr, ok := lock.Files[f.Filename]; ok && lr.Revision == f.Revision && isSHA256Hex(lr.SHA256) {
@@ -92,6 +102,7 @@ func DownloadManifest(opts DownloadOptions, manifest Manifest) error {
 				checksumHard = true
 			} else {
 				var err error
+
 				expected, err = resolveChecksumFromMetadata(client, manifest.Repo, f, opts.HFToken)
 				if err != nil {
 					return err
@@ -103,6 +114,7 @@ func DownloadManifest(opts DownloadOptions, manifest Manifest) error {
 		if f.LocalPath != "" {
 			saveName = f.LocalPath
 		}
+
 		localPath := filepath.Join(opts.OutDir, filepath.FromSlash(saveName))
 		if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 			return fmt.Errorf("create local subdir: %w", err)
@@ -113,28 +125,36 @@ func DownloadManifest(opts DownloadOptions, manifest Manifest) error {
 		} else if ok {
 			_, _ = fmt.Fprintf(opts.Stdout, "skip %s (checksum match)\n", f.Filename)
 			lock.Files[f.Filename] = lockRecord{Revision: f.Revision, SHA256: expected}
+
 			continue
 		}
 
 		_, _ = fmt.Fprintf(opts.Stdout, "download %s@%s -> %s\n", f.Filename, f.Revision, localPath)
+
 		actual, err := downloadWithProgress(client, manifest.Repo, f, opts.HFToken, localPath, opts.Stdout)
 		if err != nil {
 			return err
 		}
+
 		if actual != expected {
 			if checksumHard {
 				return fmt.Errorf("checksum mismatch for %s: expected %s got %s", f.Filename, expected, actual)
 			}
+
 			_, _ = fmt.Fprintf(opts.Stdout, "warning: metadata checksum mismatch for %s (metadata=%s, actual=%s); accepting download\n", f.Filename, expected, actual)
 		}
+
 		_, _ = fmt.Fprintf(opts.Stdout, "verified %s (sha256=%s)\n", f.Filename, actual)
 		lock.Files[f.Filename] = lockRecord{Revision: f.Revision, SHA256: actual}
 	}
 
-	if err := writeLockManifest(lockPath, lock); err != nil {
+	err = writeLockManifest(lockPath, lock)
+	if err != nil {
 		return err
 	}
+
 	_, _ = fmt.Fprintf(opts.Stdout, "wrote lock manifest: %s\n", lockPath)
+
 	return nil
 }
 
@@ -144,30 +164,37 @@ func existingMatches(path, expected string) (bool, error) {
 		if os.IsNotExist(err) {
 			return false, nil
 		}
+
 		return false, fmt.Errorf("stat existing file: %w", err)
 	}
+
 	if fi.IsDir() {
 		return false, fmt.Errorf("expected file at %s, found directory", path)
 	}
+
 	actual, err := fileSHA256(path)
 	if err != nil {
 		return false, err
 	}
+
 	return actual == expected, nil
 }
 
 func downloadWithProgress(client *http.Client, repo string, file ModelFile, token, outPath string, stdout io.Writer) (string, error) {
 	url := resolveURL(repo, file)
+
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
 	}
+
 	setAuth(req, token)
 
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download request failed: %w", err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
@@ -176,11 +203,13 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 			Msg:  fmt.Sprintf("access denied for %s; provide HF_TOKEN or --hf-token", repo),
 		}
 	}
+
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return "", fmt.Errorf("download failed for %s: %s", file.Filename, resp.Status)
 	}
 
 	tmp := outPath + ".tmp"
+
 	fh, err := os.Create(tmp)
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
@@ -193,6 +222,7 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 	buf := make([]byte, 64*1024)
 	total := resp.ContentLength
 	lastPrint := time.Now()
+
 	for {
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
@@ -200,9 +230,12 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 			if writeErr != nil {
 				_ = fh.Close()
 				_ = os.Remove(tmp)
+
 				return "", fmt.Errorf("write temp file: %w", writeErr)
 			}
+
 			written += int64(wn)
+
 			if time.Since(lastPrint) > 700*time.Millisecond {
 				if total > 0 {
 					pct := float64(written) * 100 / float64(total)
@@ -210,15 +243,19 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 				} else {
 					_, _ = fmt.Fprintf(stdout, "  progress: %d bytes\n", written)
 				}
+
 				lastPrint = time.Now()
 			}
 		}
+
 		if readErr == io.EOF {
 			break
 		}
+
 		if readErr != nil {
 			_ = fh.Close()
 			_ = os.Remove(tmp)
+
 			return "", fmt.Errorf("download read failed: %w", readErr)
 		}
 	}
@@ -227,6 +264,7 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 		_ = os.Remove(tmp)
 		return "", fmt.Errorf("close temp file: %w", err)
 	}
+
 	if err := os.Rename(tmp, outPath); err != nil {
 		_ = os.Remove(tmp)
 		return "", fmt.Errorf("move temp file into place: %w", err)
@@ -240,12 +278,14 @@ func resolveChecksumFromMetadata(client *http.Client, repo string, f ModelFile, 
 	if err != nil {
 		return "", fmt.Errorf("build metadata request: %w", err)
 	}
+
 	setAuth(req, token)
 
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("metadata request failed for %s: %w", f.Filename, err)
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
@@ -254,6 +294,7 @@ func resolveChecksumFromMetadata(client *http.Client, repo string, f ModelFile, 
 			Msg:  fmt.Sprintf("access denied for %s; provide HF_TOKEN or --hf-token", repo),
 		}
 	}
+
 	if resp.StatusCode < 200 || resp.StatusCode > 399 {
 		return "", fmt.Errorf("metadata request failed for %s: %s", f.Filename, resp.Status)
 	}
@@ -275,6 +316,7 @@ func setAuth(req *http.Request, token string) {
 	if token == "" {
 		return
 	}
+
 	req.Header.Set("Authorization", "Bearer "+token)
 }
 
@@ -283,6 +325,7 @@ func normalizeETag(v string) string {
 	v = strings.Trim(v, "\"")
 	v = strings.TrimPrefix(v, "W/")
 	v = strings.Trim(v, "\"")
+
 	return v
 }
 
@@ -295,12 +338,14 @@ func fileSHA256(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("open file for checksum: %w", err)
 	}
+
 	defer func() { _ = f.Close() }()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", fmt.Errorf("read file for checksum: %w", err)
 	}
+
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
@@ -309,13 +354,16 @@ func readLockManifest(path string) lockManifest {
 	if err != nil {
 		return lockManifest{}
 	}
+
 	var out lockManifest
 	if err := json.Unmarshal(b, &out); err != nil {
 		return lockManifest{}
 	}
+
 	if out.Files == nil {
 		out.Files = map[string]lockRecord{}
 	}
+
 	return out
 }
 
@@ -324,8 +372,10 @@ func writeLockManifest(path string, lock lockManifest) error {
 	if err != nil {
 		return fmt.Errorf("encode lock manifest: %w", err)
 	}
+
 	if err := os.WriteFile(path, b, 0o644); err != nil {
 		return fmt.Errorf("write lock manifest: %w", err)
 	}
+
 	return nil
 }

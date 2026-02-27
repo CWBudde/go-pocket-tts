@@ -108,7 +108,8 @@ func Run(cfg Config, w io.Writer) Result {
 			_, _ = fmt.Fprintf(w, "%s safetensors model: %s\n", PassMark, cfg.NativeModelPath)
 			// Optionally validate model contents.
 			if cfg.ValidateSafetensors != nil {
-				if err := cfg.ValidateSafetensors(cfg.NativeModelPath); err != nil {
+				err := cfg.ValidateSafetensors(cfg.NativeModelPath)
+if  err != nil {
 					res.fail(fmt.Sprintf("safetensors model validation: %v", err))
 					_, _ = fmt.Fprintf(w, "%s safetensors model validation: %v\n", FailMark, err)
 				} else {
@@ -138,15 +139,19 @@ func checkPythonVersion(ver string) error {
 	if err != nil {
 		return fmt.Errorf("cannot parse %q: %w", ver, err)
 	}
+
 	if major != 3 {
 		return fmt.Errorf("requires Python 3, got %d", major)
 	}
+
 	if minor < 10 {
 		return fmt.Errorf("requires Python >=3.10, got 3.%d", minor)
 	}
+
 	if minor >= 15 {
 		return fmt.Errorf("requires Python <3.15, got 3.%d", minor)
 	}
+
 	return nil
 }
 
@@ -155,13 +160,16 @@ func parseMajorMinor(ver string) (major, minor int, err error) {
 	if len(parts) < 2 {
 		return 0, 0, fmt.Errorf("unexpected version format %q", ver)
 	}
+
 	major, err = strconv.Atoi(parts[0])
 	if err != nil {
 		return 0, 0, fmt.Errorf("bad major in %q: %w", ver, err)
 	}
+
 	minor, err = strconv.Atoi(parts[1])
 	if err != nil {
 		return 0, 0, fmt.Errorf("bad minor in %q: %w", ver, err)
 	}
+
 	return major, minor, nil
 }

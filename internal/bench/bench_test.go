@@ -26,9 +26,11 @@ func TestStats_MinMaxMean(t *testing.T) {
 	if s.Min != 100*time.Millisecond {
 		t.Errorf("want min=100ms, got %v", s.Min)
 	}
+
 	if s.Max != 300*time.Millisecond {
 		t.Errorf("want max=300ms, got %v", s.Max)
 	}
+
 	if s.Mean != 200*time.Millisecond {
 		t.Errorf("want mean=200ms, got %v", s.Mean)
 	}
@@ -66,6 +68,7 @@ func TestRTF_ZeroAudioDuration(t *testing.T) {
 func TestAudioDurationFromWAV(t *testing.T) {
 	// 24000 samples at 24 kHz = exactly 1 second
 	samples := make([]float32, 24000)
+
 	wav, err := audio.EncodeWAV(samples)
 	if err != nil {
 		t.Fatalf("EncodeWAV: %v", err)
@@ -76,10 +79,12 @@ func TestAudioDurationFromWAV(t *testing.T) {
 		t.Fatalf("WAVDuration: %v", err)
 	}
 	const want = time.Second
+
 	diff := dur - want
 	if diff < 0 {
 		diff = -diff
 	}
+
 	if diff > time.Millisecond {
 		t.Errorf("want 1s audio duration, got %v", dur)
 	}
@@ -150,7 +155,8 @@ func TestFormatJSON_IsValidJSON(t *testing.T) {
 	bench.FormatJSON(runs, stats, &buf)
 
 	var out any
-	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+	err := json.Unmarshal(buf.Bytes(), &out)
+	if err != nil {
 		t.Errorf("FormatJSON produced invalid JSON: %v\n%s", err, buf.String())
 	}
 }

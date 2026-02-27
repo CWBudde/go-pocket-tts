@@ -15,18 +15,23 @@ func modelPath(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("abs path: %v", err)
 	}
+
 	for {
 		candidate := filepath.Join(dir, "models", "tokenizer.model")
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
+
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			break
 		}
+
 		dir = parent
 	}
+
 	t.Skip("models/tokenizer.model not found; skipping tokenizer tests")
+
 	return ""
 }
 
@@ -36,10 +41,12 @@ func modelPath(t *testing.T) string {
 
 func TestNewSentencePieceTokenizer_ValidModel(t *testing.T) {
 	path := modelPath(t)
+
 	tok, err := NewSentencePieceTokenizer(path)
 	if err != nil {
 		t.Fatalf("NewSentencePieceTokenizer(%q): %v", path, err)
 	}
+
 	if tok == nil {
 		t.Fatal("expected non-nil tokenizer")
 	}
@@ -57,6 +64,7 @@ func TestNewSentencePieceTokenizer_EmptyPath(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty path")
 	}
+
 	if !errors.Is(err, ErrEmptyPath) {
 		t.Errorf("expected ErrEmptyPath, got: %v", err)
 	}
@@ -71,6 +79,7 @@ func TestNewSentencePieceTokenizer_EmptyPath(t *testing.T) {
 
 func TestEncode_Hello(t *testing.T) {
 	path := modelPath(t)
+
 	tok, err := NewSentencePieceTokenizer(path)
 	if err != nil {
 		t.Fatalf("NewSentencePieceTokenizer: %v", err)
@@ -81,6 +90,7 @@ func TestEncode_Hello(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
+
 	want := []int64{1876, 393}
 	if !equalInt64(got, want) {
 		t.Errorf("Encode(%q) = %v, want %v", "hello", got, want)
@@ -89,6 +99,7 @@ func TestEncode_Hello(t *testing.T) {
 
 func TestEncode_HelloWorldDot(t *testing.T) {
 	path := modelPath(t)
+
 	tok, err := NewSentencePieceTokenizer(path)
 	if err != nil {
 		t.Fatalf("NewSentencePieceTokenizer: %v", err)
@@ -99,6 +110,7 @@ func TestEncode_HelloWorldDot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
+
 	want := []int64{2994, 578, 263}
 	if !equalInt64(got, want) {
 		t.Errorf("Encode(%q) = %v, want %v", "Hello world.", got, want)
@@ -107,6 +119,7 @@ func TestEncode_HelloWorldDot(t *testing.T) {
 
 func TestEncode_WithLeadingSpaces(t *testing.T) {
 	path := modelPath(t)
+
 	tok, err := NewSentencePieceTokenizer(path)
 	if err != nil {
 		t.Fatalf("NewSentencePieceTokenizer: %v", err)
@@ -118,6 +131,7 @@ func TestEncode_WithLeadingSpaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
+
 	want := []int64{260, 260, 260, 260, 260, 260, 260, 260, 1876, 393}
 	if !equalInt64(got, want) {
 		t.Errorf("Encode(%q) = %v, want %v", "        hello", got, want)
@@ -126,6 +140,7 @@ func TestEncode_WithLeadingSpaces(t *testing.T) {
 
 func TestEncode_ReturnsNonEmpty(t *testing.T) {
 	path := modelPath(t)
+
 	tok, err := NewSentencePieceTokenizer(path)
 	if err != nil {
 		t.Fatalf("NewSentencePieceTokenizer: %v", err)
@@ -144,6 +159,7 @@ func TestEncode_ReturnsNonEmpty(t *testing.T) {
 
 func TestEncode_EmptyString(t *testing.T) {
 	path := modelPath(t)
+
 	tok, err := NewSentencePieceTokenizer(path)
 	if err != nil {
 		t.Fatalf("NewSentencePieceTokenizer: %v", err)
@@ -153,6 +169,7 @@ func TestEncode_EmptyString(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encode(\"\") should not error: %v", err)
 	}
+
 	if len(got) != 0 {
 		t.Errorf("Encode(\"\") = %v, want empty slice", got)
 	}
@@ -160,6 +177,7 @@ func TestEncode_EmptyString(t *testing.T) {
 
 func TestEncode_TokenIDsInRange(t *testing.T) {
 	path := modelPath(t)
+
 	tok, err := NewSentencePieceTokenizer(path)
 	if err != nil {
 		t.Fatalf("NewSentencePieceTokenizer: %v", err)
@@ -170,9 +188,11 @@ func TestEncode_TokenIDsInRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encode: %v", err)
 	}
+
 	if len(ids) == 0 {
 		t.Fatal("Encode returned empty result")
 	}
+
 	for i, id := range ids {
 		if id < 0 || id >= 4000 {
 			t.Errorf("token[%d] = %d out of vocab range [0, 4000)", i, id)
@@ -182,6 +202,7 @@ func TestEncode_TokenIDsInRange(t *testing.T) {
 
 func TestEncode_ImplementsInterface(t *testing.T) {
 	path := modelPath(t)
+
 	tok, err := NewSentencePieceTokenizer(path)
 	if err != nil {
 		t.Fatalf("NewSentencePieceTokenizer: %v", err)
@@ -198,10 +219,12 @@ func equalInt64(a, b []int64) bool {
 	if len(a) != len(b) {
 		return false
 	}
+
 	for i := range a {
 		if a[i] != b[i] {
 			return false
 		}
 	}
+
 	return true
 }

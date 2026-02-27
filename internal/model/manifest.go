@@ -79,5 +79,6 @@ func VoiceManifest() Manifest {
 			LocalPath: v.name + ".safetensors",
 		}
 	}
+
 	return Manifest{Repo: voiceRepo, Files: files}
 }

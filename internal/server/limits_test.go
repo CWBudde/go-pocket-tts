@@ -37,10 +37,13 @@ func TestTTS_OversizedTextRejectedAs413(t *testing.T) {
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("want 413, got %d", rec.Code)
 	}
+
 	var errBody map[string]string
-	if err := json.NewDecoder(rec.Body).Decode(&errBody); err != nil {
+	err := json.NewDecoder(rec.Body).Decode(&errBody)
+	if err != nil {
 		t.Fatalf("decode error body: %v", err)
 	}
+
 	if errBody["error"] == "" {
 		t.Error("want non-empty error field")
 	}
@@ -87,6 +90,7 @@ func TestTTS_RequestTimeoutCancelsInFlight(t *testing.T) {
 		t.Fatalf("want 504 or 408 on timeout, got %d", rec.Code)
 	}
 	var errBody map[string]string
+
 	_ = json.NewDecoder(rec.Body).Decode(&errBody)
 	if errBody["error"] == "" {
 		t.Error("want non-empty error field")
@@ -111,6 +115,7 @@ func TestTTS_ConcurrencyThrottling(t *testing.T) {
 	synth := &countingSynthesizer{
 		onEnter: func() {
 			n := int(atomic.AddInt32(&current, 1))
+
 			mu.Lock()
 			if n > peak {
 				peak = n
@@ -129,11 +134,14 @@ func TestTTS_ConcurrencyThrottling(t *testing.T) {
 	)
 
 	var wg sync.WaitGroup
+
 	codes := make([]int, totalRequests)
 	for i := range totalRequests {
 		wg.Add(1)
+
 		go func(idx int) {
 			defer wg.Done()
+
 			body := bytes.NewBufferString(`{"text":"Hi.","voice":"en"}`)
 			rec := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodPost, "/tts", body)
@@ -155,6 +163,7 @@ func TestTTS_ConcurrencyThrottling(t *testing.T) {
 	if got > workers {
 		t.Errorf("peak concurrency %d exceeded worker limit %d", got, workers)
 	}
+
 	for i, code := range codes {
 		if code != http.StatusOK {
 			t.Errorf("request %d: want 200, got %d", i, code)
@@ -181,6 +190,7 @@ func TestTTS_WaiterCancelledWhileThrottled(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/tts", body)
 		h.ServeHTTP(rec, req)
 	}()
+
 	time.Sleep(20 * time.Millisecond)
 
 	// Second request should be blocked waiting for a worker; cancel its context.
@@ -229,6 +239,7 @@ type countingSynthesizer struct {
 func (c *countingSynthesizer) Synthesize(ctx context.Context, _, _ string) ([]byte, error) {
 	c.onEnter()
 	defer c.onExit()
+
 	return c.wav, nil
 }
 

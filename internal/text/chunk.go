@@ -35,6 +35,7 @@ func ChunkBySentence(text string, maxChars int) []string {
 			current.WriteString(s)
 		}
 	}
+
 	if current.Len() > 0 {
 		chunks = append(chunks, current.String())
 	}
@@ -55,6 +56,7 @@ func splitSentences(text string) []string {
 			if s != "" {
 				sentences = append(sentences, s)
 			}
+
 			start = i + 1
 		}
 	}

@@ -49,6 +49,7 @@ func NewServiceFactory(cfg config.Config) ServiceFactory {
 		case config.BackendNative, config.BackendNativeONNX:
 			next := cfg
 			next.TTS.Backend = normalized
+
 			return NewService(next)
 		default:
 			return nil, fmt.Errorf("unsupported backend %q for parity harness", normalized)
@@ -61,10 +62,11 @@ func NewServiceFactory(cfg config.Config) ServiceFactory {
 // skipped.
 func RunParityCase(factory ServiceFactory, backends []string, input, voicePath string, seed int64) ([]ParitySnapshot, error) {
 	if factory == nil {
-		return nil, fmt.Errorf("parity service factory is required")
+		return nil, errors.New("parity service factory is required")
 	}
+
 	if len(backends) == 0 {
-		return nil, fmt.Errorf("at least one backend is required")
+		return nil, errors.New("at least one backend is required")
 	}
 
 	results := make([]ParitySnapshot, 0, len(backends))
@@ -80,22 +82,28 @@ func RunParityCase(factory ServiceFactory, backends []string, input, voicePath s
 				snap.Status = ParityStatusSkipped
 				snap.Reason = err.Error()
 				results = append(results, snap)
+
 				continue
 			}
+
 			snap.Status = ParityStatusError
 			snap.Reason = fmt.Sprintf("create service: %v", err)
 			results = append(results, snap)
+
 			continue
 		}
 
 		chunks, err := textpkg.PrepareChunks(input, svc.tokenizer, maxTokensPerChunk)
 		if err != nil {
 			svc.Close()
+
 			snap.Status = ParityStatusError
 			snap.Reason = fmt.Sprintf("prepare chunks: %v", err)
 			results = append(results, snap)
+
 			continue
 		}
+
 		snap.ChunkCount = len(chunks)
 		for _, c := range chunks {
 			snap.TokenCount += len(c.TokenIDs)
@@ -103,10 +111,12 @@ func RunParityCase(factory ServiceFactory, backends []string, input, voicePath s
 
 		pcm, err := svc.Synthesize(input, voicePath)
 		svc.Close()
+
 		if err != nil {
 			snap.Status = ParityStatusError
 			snap.Reason = fmt.Sprintf("synthesize: %v", err)
 			results = append(results, snap)
+
 			continue
 		}
 
@@ -126,9 +136,11 @@ func SaveParitySnapshots(path string, snapshots []ParitySnapshot) error {
 	if err != nil {
 		return fmt.Errorf("marshal parity snapshots: %w", err)
 	}
+
 	if err := os.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("write parity snapshots: %w", err)
 	}
+
 	return nil
 }
 
@@ -137,21 +149,25 @@ func LoadParitySnapshots(path string) ([]ParitySnapshot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read parity snapshots: %w", err)
 	}
+
 	var snapshots []ParitySnapshot
 	if err := json.Unmarshal(data, &snapshots); err != nil {
 		return nil, fmt.Errorf("decode parity snapshots: %w", err)
 	}
+
 	return snapshots, nil
 }
 
 func peakAbs(samples []float32) float64 {
 	var peak float64
+
 	for _, s := range samples {
 		v := math.Abs(float64(s))
 		if v > peak {
 			peak = v
 		}
 	}
+
 	return peak
 }
 
@@ -160,19 +176,23 @@ func rms(samples []float32) float64 {
 		return 0
 	}
 	var sum float64
+
 	for _, s := range samples {
 		v := float64(s)
 		sum += v * v
 	}
+
 	return math.Sqrt(sum / float64(len(samples)))
 }
 
 func hashPCM(samples []float32) string {
 	h := sha256.New()
+
 	var b [4]byte
 	for _, s := range samples {
 		binary.LittleEndian.PutUint32(b[:], math.Float32bits(s))
 		_, _ = h.Write(b[:])
 	}
+
 	return hex.EncodeToString(h.Sum(nil))
 }

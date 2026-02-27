@@ -2,6 +2,7 @@ package tts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -40,22 +41,28 @@ func NewService(cfg config.Config) (*Service, error) {
 	}
 
 	var rt Runtime
+
 	switch backend {
 	case config.BackendNative:
 		if w := cfg.Runtime.ConvWorkers; w > 1 {
 			ops.SetConvWorkers(w)
 			slog.Info("conv parallelism enabled", "workers", w)
 		}
+
 		modelPath, err := resolveNativeModelPath(cfg)
 		if err != nil {
 			return nil, err
 		}
+
 		model, err := nativemodel.LoadModelFromSafetensors(modelPath, nativemodel.DefaultConfig())
 		if err != nil {
 			return nil, fmt.Errorf("init safetensors-native model: %w", err)
 		}
+
 		slog.Info("loaded safetensors model", "path", modelPath)
+
 		rt = newNativeSafetensorsRuntime(model)
+
 		slog.Info("created native runtime", "backend", config.BackendNative)
 	case config.BackendNativeONNX:
 		rcfg := onnx.RunnerConfig{
@@ -67,6 +74,7 @@ func NewService(cfg config.Config) (*Service, error) {
 			if err != nil {
 				return nil, fmt.Errorf("detect ORT runtime: %w", err)
 			}
+
 			rcfg.LibraryPath = info.LibraryPath
 		}
 
@@ -74,10 +82,12 @@ func NewService(cfg config.Config) (*Service, error) {
 		if err != nil {
 			return nil, fmt.Errorf("init onnx engine: %w", err)
 		}
+
 		rt = newONNXRuntime(engine)
 	default:
 		return nil, fmt.Errorf("unsupported tts service backend %q", backend)
 	}
+
 	return &Service{
 		runtime:   rt,
 		tokenizer: tok,
@@ -123,14 +133,16 @@ func (s *Service) SynthesizeCtx(ctx context.Context, input string, voicePath str
 	}
 
 	if s.runtime == nil {
-		return nil, fmt.Errorf("tts runtime unavailable")
+		return nil, errors.New("tts runtime unavailable")
 	}
 
 	var allAudio []float32
+
 	for i, chunk := range chunks {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+
 		cfg := s.generateConfig(chunk.FramesAfterEOS())
 		cfg.VoiceEmbedding = voiceEmb
 
@@ -138,6 +150,7 @@ func (s *Service) SynthesizeCtx(ctx context.Context, input string, voicePath str
 		if err != nil {
 			return nil, fmt.Errorf("chunk %d: %w", i, err)
 		}
+
 		allAudio = append(allAudio, pcm...)
 	}
 
@@ -161,7 +174,7 @@ func (s *Service) SynthesizeStream(ctx context.Context, input string, voicePath 
 	}
 
 	if s.runtime == nil {
-		return fmt.Errorf("tts runtime unavailable")
+		return errors.New("tts runtime unavailable")
 	}
 
 	for i, chunk := range chunks {
@@ -191,10 +204,12 @@ func loadVoiceEmbedding(voicePath string) (*VoiceEmbedding, error) {
 	if strings.TrimSpace(voicePath) == "" {
 		return nil, nil
 	}
+
 	data, shape, err := safetensors.LoadVoiceEmbedding(voicePath)
 	if err != nil {
 		return nil, fmt.Errorf("load voice embedding: %w", err)
 	}
+
 	return &VoiceEmbedding{
 		Data:  data,
 		Shape: shape,
@@ -211,13 +226,16 @@ func (s *Service) Close() {
 func resolveNativeModelPath(cfg config.Config) (string, error) {
 	p := strings.TrimSpace(cfg.Paths.ModelPath)
 	if p == "" {
-		return "", fmt.Errorf("safetensors model path is empty; set --paths-model-path")
+		return "", errors.New("safetensors model path is empty; set --paths-model-path")
 	}
+
 	if !strings.HasSuffix(strings.ToLower(p), ".safetensors") {
 		return "", fmt.Errorf("model path %q does not end in .safetensors; set --paths-model-path to a .safetensors checkpoint", p)
 	}
+
 	if _, err := os.Stat(p); err != nil {
 		return "", fmt.Errorf("safetensors model not found at %q; run 'pockettts model download' or set --paths-model-path", p)
 	}
+
 	return p, nil
 }

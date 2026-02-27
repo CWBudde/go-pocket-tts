@@ -36,9 +36,11 @@ func (t *SentencePieceTokenizer) Encode(text string) ([]int64, error) {
 	}
 
 	ids := t.proc.TokenizeToIDs(text)
+
 	result := make([]int64, len(ids))
 	for i, id := range ids {
 		result[i] = int64(id)
 	}
+
 	return result, nil
 }

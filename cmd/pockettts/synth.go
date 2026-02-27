@@ -44,6 +44,7 @@ func newSynthCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
 			inputText, err := readSynthText(text, os.Stdin)
 			if err != nil {
 				return err
@@ -60,25 +61,30 @@ func newSynthCmd() *cobra.Command {
 			}
 
 			var result []byte
+
 			switch selectedBackend {
 			case config.BackendNative, config.BackendNativeONNX:
 				if len(ttsArgs) > 0 {
-					return fmt.Errorf("--tts-arg is only supported with --backend cli")
+					return errors.New("--tts-arg is only supported with --backend cli")
 				}
 				var resolvedVoice string
+
 				resolvedVoice, err = resolveVoiceForNative(selectedVoice)
 				if err != nil {
 					return err
 				}
+
 				nativeCfg := cfg
 				nativeCfg.TTS.Backend = selectedBackend
 				result, err = synthesizeNative(cmd.Context(), nativeCfg, chunks, resolvedVoice)
 			case config.BackendCLI:
 				var resolvedVoice string
+
 				resolvedVoice, err = resolveVoiceOrPath(selectedVoice)
 				if err != nil {
 					return err
 				}
+
 				result, err = synthesizeChunks(cmd.Context(), synthChunksOptions{
 					CLI: synthCLIOptions{
 						ExecutablePath: cfg.TTS.CLIPath,
@@ -94,6 +100,7 @@ func newSynthCmd() *cobra.Command {
 			default:
 				return fmt.Errorf("unsupported backend %q", selectedBackend)
 			}
+
 			if err != nil {
 				return mapSynthError(err)
 			}
@@ -108,6 +115,7 @@ func newSynthCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
+
 				result = processed
 			}
 
@@ -165,17 +173,20 @@ func synthesizeViaCLI(ctx context.Context, opts synthCLIOptions) ([]byte, error)
 	if exe == "" {
 		exe = "pocket-tts"
 	}
+
 	if strings.TrimSpace(opts.Text) == "" {
-		return nil, fmt.Errorf("synth failed: empty input text")
+		return nil, errors.New("synth failed: empty input text")
 	}
 
 	args := []string{"generate", "--text", "-", "--output-path", "-"}
 	if opts.Voice != "" {
 		args = append(args, "--voice", opts.Voice)
 	}
+
 	if opts.ConfigPath != "" {
 		args = append(args, "--config", opts.ConfigPath)
 	}
+
 	if opts.Quiet {
 		args = append(args, "--quiet")
 	}
@@ -184,32 +195,38 @@ func synthesizeViaCLI(ctx context.Context, opts synthCLIOptions) ([]byte, error)
 	if err != nil {
 		return nil, err
 	}
+
 	args = append(args, extra...)
 
 	cmd := exec.CommandContext(ctx, exe, args...)
+
 	cmd.Stdin = strings.NewReader(opts.Text)
 	if opts.Stderr != nil {
 		cmd.Stderr = opts.Stderr
 	}
 
 	var out bytes.Buffer
+
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
 		return nil, err
 	}
+
 	return out.Bytes(), nil
 }
 
 func buildSynthesisChunks(input string, chunk bool, maxChunkChars int) ([]string, error) {
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return nil, fmt.Errorf("empty input text")
+		return nil, errors.New("empty input text")
 	}
+
 	if !chunk {
 		return []string{input}, nil
 	}
 
 	chunks := textpkg.ChunkBySentence(input, maxChunkChars)
+
 	out := make([]string, 0, len(chunks))
 	for _, c := range chunks {
 		c = strings.TrimSpace(c)
@@ -217,9 +234,11 @@ func buildSynthesisChunks(input string, chunk bool, maxChunkChars int) ([]string
 			out = append(out, c)
 		}
 	}
+
 	if len(out) == 0 {
-		return nil, fmt.Errorf("no non-empty chunks produced from input")
+		return nil, errors.New("no non-empty chunks produced from input")
 	}
+
 	return out, nil
 }
 
@@ -228,16 +247,19 @@ func synthesizeChunks(ctx context.Context, opts synthChunksOptions) ([]byte, err
 	for i, chunkText := range opts.Chunks {
 		chunkOpts := opts.CLI
 		chunkOpts.Text = chunkText
+
 		wavBytes, err := runChunkSynthesis(ctx, chunkOpts)
 		if err != nil {
 			return nil, fmt.Errorf("chunk %d synthesis failed: %w", i+1, err)
 		}
+
 		results = append(results, wavBytes)
 	}
 
 	if !opts.ChunkMode || len(results) == 1 {
 		return results[0], nil
 	}
+
 	return concatenateWAVChunks(results)
 }
 
@@ -249,40 +271,49 @@ func synthesizeNative(ctx context.Context, cfg config.Config, chunks []string, v
 	defer svc.Close()
 
 	merged := make([]float32, 0, 24000)
+
 	for i, chunkText := range chunks {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+
 		samples, err := svc.Synthesize(chunkText, voicePath)
 		if err != nil {
 			return nil, fmt.Errorf("native chunk %d synthesis failed: %w", i+1, err)
 		}
+
 		merged = append(merged, samples...)
 	}
+
 	if len(merged) == 0 {
-		return nil, fmt.Errorf("native synthesis produced no samples")
+		return nil, errors.New("native synthesis produced no samples")
 	}
 
 	wavData, err := audio.EncodeWAV(merged)
 	if err != nil {
 		return nil, fmt.Errorf("encode native synthesis WAV: %w", err)
 	}
+
 	return wavData, nil
 }
 
 func concatenateWAVChunks(chunkWAVs [][]byte) ([]byte, error) {
 	merged := make([]float32, 0, 24000)
+
 	for i, data := range chunkWAVs {
 		samples, err := audio.DecodeWAV(data)
 		if err != nil {
 			return nil, fmt.Errorf("decode chunk %d WAV: %w", i+1, err)
 		}
+
 		merged = append(merged, samples...)
 	}
+
 	out, err := audio.EncodeWAV(merged)
 	if err != nil {
 		return nil, fmt.Errorf("encode merged WAV: %w", err)
 	}
+
 	return out, nil
 }
 
@@ -296,12 +327,15 @@ func applyDSPToWAV(wavData []byte, opts synthDSPOptions) ([]byte, error) {
 	if opts.Normalize {
 		processed = audio.PeakNormalize(processed)
 	}
+
 	if opts.DCBlock {
 		processed = audio.DCBlock(processed, audio.ExpectedSampleRate)
 	}
+
 	if opts.FadeInMS > 0 {
 		processed = audio.FadeIn(processed, audio.ExpectedSampleRate, opts.FadeInMS)
 	}
+
 	if opts.FadeOutMS > 0 {
 		processed = audio.FadeOut(processed, audio.ExpectedSampleRate, opts.FadeOutMS)
 	}
@@ -310,17 +344,21 @@ func applyDSPToWAV(wavData []byte, opts synthDSPOptions) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encode WAV after DSP: %w", err)
 	}
+
 	return out, nil
 }
 
 func writeSynthOutput(outPath string, wavData []byte, stdout io.Writer) error {
 	if outPath == "-" {
 		if stdout == nil {
-			return fmt.Errorf("stdout writer is nil")
+			return errors.New("stdout writer is nil")
 		}
+
 		_, err := stdout.Write(wavData)
+
 		return err
 	}
+
 	return os.WriteFile(outPath, wavData, 0o644)
 }
 
@@ -333,10 +371,12 @@ func readSynthText(text string, stdin io.Reader) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read stdin: %w", err)
 	}
+
 	input := strings.TrimSpace(string(b))
 	if input == "" {
-		return "", fmt.Errorf("either provide --text or pipe text on stdin")
+		return "", errors.New("either provide --text or pipe text on stdin")
 	}
+
 	return input, nil
 }
 
@@ -345,6 +385,7 @@ func resolveSynthBackend(flagBackend, cfgBackend string) (string, error) {
 	if backend == "" {
 		backend = strings.TrimSpace(cfgBackend)
 	}
+
 	return config.NormalizeBackend(backend)
 }
 
@@ -369,14 +410,17 @@ func resolveVoiceForNative(voice string) (string, error) {
 		// Manifest missing or unreadable — skip voice conditioning.
 		return "", nil
 	}
+
 	path, err := vm.ResolvePath(voice)
 	if err != nil {
 		if strings.Contains(err.Error(), "unknown voice id") {
 			// Not in manifest — skip voice conditioning rather than error.
 			return "", nil
 		}
+
 		return "", fmt.Errorf("resolve --voice %q: %w", voice, err)
 	}
+
 	return path, nil
 }
 
@@ -390,14 +434,17 @@ func resolveVoiceOrPath(voice string) (string, error) {
 		// Manifest is optional for integration and built-in voices; fall back.
 		return voice, nil
 	}
+
 	path, err := vm.ResolvePath(voice)
 	if err != nil {
 		// If voice is not declared in manifest, treat it as a raw CLI voice value.
 		if strings.Contains(err.Error(), "unknown voice id") {
 			return voice, nil
 		}
+
 		return "", fmt.Errorf("resolve --voice %q: %w", voice, err)
 	}
+
 	return path, nil
 }
 
@@ -408,23 +455,28 @@ func buildPassthroughArgs(items []string) ([]string, error) {
 		if item == "" {
 			continue
 		}
+
 		parts := strings.SplitN(item, "=", 2)
 		if len(parts) != 2 {
 			return nil, fmt.Errorf("invalid --tts-arg %q: expected key=value", item)
 		}
+
 		key := strings.TrimSpace(parts[0])
 		val := strings.TrimSpace(parts[1])
+
 		if key == "" {
 			return nil, fmt.Errorf("invalid --tts-arg %q: empty key", item)
 		}
+
 		if strings.HasPrefix(key, "--") {
 			args = append(args, key+"="+val)
-		} else if strings.HasPrefix(key, "-") {
-			args = append(args, "-"+strings.TrimPrefix(key, "-")+"="+val)
+		} else if after, ok := strings.CutPrefix(key, "-"); ok {
+			args = append(args, "-"+after+"="+val)
 		} else {
 			args = append(args, "--"+key+"="+val)
 		}
 	}
+
 	return args, nil
 }
 

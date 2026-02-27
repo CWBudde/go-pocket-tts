@@ -40,6 +40,7 @@ func Bootstrap(cfg config.RuntimeConfig) (RuntimeInfo, error) {
 			bootstrapErr = fmt.Errorf("set POCKETTTS_ORT_LIB: %w", err)
 			return
 		}
+
 		bootstrapInfo = info
 		bootstrapInfo.Initialized = true
 	})
@@ -47,6 +48,7 @@ func Bootstrap(cfg config.RuntimeConfig) (RuntimeInfo, error) {
 	if bootstrapErr != nil {
 		return RuntimeInfo{}, bootstrapErr
 	}
+
 	return bootstrapInfo, nil
 }
 
@@ -54,12 +56,14 @@ func Shutdown() error {
 	if !bootstrapInfo.Initialized {
 		return nil
 	}
+
 	if shutdownFlag.Swap(true) {
 		return nil
 	}
 
 	// Placeholder cleanup point for native ORT environment/session teardown.
 	bootstrapInfo.Initialized = false
+
 	return nil
 }
 
@@ -68,6 +72,7 @@ func DetectRuntime(cfg config.RuntimeConfig) (RuntimeInfo, error) {
 	if path == "" {
 		path = os.Getenv("POCKETTTS_ORT_LIB")
 	}
+
 	if path == "" {
 		path = os.Getenv("ORT_LIBRARY_PATH")
 	}
@@ -90,6 +95,7 @@ func DetectRuntime(cfg config.RuntimeConfig) (RuntimeInfo, error) {
 	if path == "" {
 		return RuntimeInfo{LibraryPath: "not found", Version: "unknown"}, errors.New("unable to detect ONNX Runtime library path")
 	}
+
 	if _, err := os.Stat(path); err != nil {
 		return RuntimeInfo{LibraryPath: path, Version: "unknown"}, fmt.Errorf("onnx runtime library path check failed: %w", err)
 	}
@@ -98,9 +104,11 @@ func DetectRuntime(cfg config.RuntimeConfig) (RuntimeInfo, error) {
 	if version == "" {
 		version = os.Getenv("ORT_VERSION")
 	}
+
 	if version == "" {
 		version = inferVersionFromPath(path)
 	}
+
 	if version == "" {
 		version = "unknown"
 	}
@@ -113,5 +121,6 @@ func inferVersionFromPath(path string) string {
 	if m := versionPattern.FindStringSubmatch(name); len(m) == 2 {
 		return m[1]
 	}
+
 	return ""
 }

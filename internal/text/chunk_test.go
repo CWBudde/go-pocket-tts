@@ -93,6 +93,7 @@ func TestChunkBySentence(t *testing.T) {
 				t.Fatalf("ChunkBySentence(%q, %d) returned %d chunks %v, want %d chunks %v",
 					tt.text, tt.maxChars, len(got), got, len(tt.want), tt.want)
 			}
+
 			for i := range got {
 				if got[i] != tt.want[i] {
 					t.Errorf("chunk[%d] = %q, want %q", i, got[i], tt.want[i])
@@ -104,6 +105,7 @@ func TestChunkBySentence(t *testing.T) {
 
 func TestChunkBySentence_allChunksNonEmpty(t *testing.T) {
 	text := "One. Two. Three! Four? Five."
+
 	chunks := ChunkBySentence(text, 10)
 	for i, c := range chunks {
 		if strings.TrimSpace(c) == "" {

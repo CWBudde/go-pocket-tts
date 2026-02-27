@@ -14,12 +14,15 @@ func TestChooseWorkerLimit(t *testing.T) {
 	if got := chooseWorkerLimit(cfg, "native-onnx"); got != 0 {
 		t.Fatalf("native-onnx backend should disable worker pool, got %d", got)
 	}
+
 	if got := chooseWorkerLimit(cfg, "native"); got != 0 {
 		t.Fatalf("native alias backend should disable worker pool, got %d", got)
 	}
+
 	if got := chooseWorkerLimit(cfg, "native-safetensors"); got != 0 {
 		t.Fatalf("native-safetensors backend should disable worker pool, got %d", got)
 	}
+
 	if got := chooseWorkerLimit(cfg, "cli"); got != 3 {
 		t.Fatalf("cli backend should use server workers first, got %d", got)
 	}

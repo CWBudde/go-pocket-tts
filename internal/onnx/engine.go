@@ -2,6 +2,7 @@ package onnx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -40,8 +41,10 @@ func NewEngine(manifestPath string, cfg RunnerConfig) (*Engine, error) {
 			for _, r := range runners {
 				r.Close()
 			}
+
 			return nil, fmt.Errorf("create runner %q: %w", sess.Name, err)
 		}
+
 		runners[sess.Name] = runner
 		slog.Info("created ONNX runner", "graph", sess.Name)
 	}
@@ -60,7 +63,9 @@ func (e *Engine) Runner(name string) (*Runner, bool) {
 	if !ok {
 		return nil, false
 	}
+
 	concrete, ok := r.(*Runner)
+
 	return concrete, ok
 }
 
@@ -75,15 +80,16 @@ func (e *Engine) Close() {
 // embeddings shaped [1, T, 1024] for the given SentencePiece token IDs.
 func (e *Engine) TextConditioner(ctx context.Context, tokens []int64) (*Tensor, error) {
 	if len(tokens) == 0 {
-		return nil, fmt.Errorf("text_conditioner: token slice must not be empty")
+		return nil, errors.New("text_conditioner: token slice must not be empty")
 	}
 
 	runner, ok := e.runners["text_conditioner"]
 	if !ok {
-		return nil, fmt.Errorf("text_conditioner graph not found in manifest")
+		return nil, errors.New("text_conditioner graph not found in manifest")
 	}
 
 	T := int64(len(tokens))
+
 	tokenTensor, err := NewTensor(tokens, []int64{1, T})
 	if err != nil {
 		return nil, fmt.Errorf("text_conditioner: build token tensor: %w", err)
@@ -96,7 +102,8 @@ func (e *Engine) TextConditioner(ctx context.Context, tokens []int64) (*Tensor, 
 
 	emb, ok := outputs["text_embeddings"]
 	if !ok {
-		return nil, fmt.Errorf("text_conditioner: missing 'text_embeddings' in output")
+		return nil, errors.New("text_conditioner: missing 'text_embeddings' in output")
 	}
+
 	return emb, nil
 }

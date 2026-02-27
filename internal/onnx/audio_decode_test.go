@@ -2,7 +2,7 @@ package onnx
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
 )
 
@@ -12,10 +12,12 @@ import (
 
 func TestStackLatentFrames_SingleFrame(t *testing.T) {
 	frame, _ := NewTensor(make([]float32, 32), []int64{1, 1, 32})
+
 	result, err := StackLatentFrames([]*Tensor{frame})
 	if err != nil {
 		t.Fatalf("StackLatentFrames: %v", err)
 	}
+
 	shape := result.Shape()
 	if len(shape) != 3 || shape[0] != 1 || shape[1] != 1 || shape[2] != 32 {
 		t.Errorf("shape = %v, want [1 1 32]", shape)
@@ -29,6 +31,7 @@ func TestStackLatentFrames_MultipleFrames(t *testing.T) {
 		for j := range data {
 			data[j] = float32(i)
 		}
+
 		frames[i], _ = NewTensor(data, []int64{1, 1, 32})
 	}
 
@@ -45,9 +48,11 @@ func TestStackLatentFrames_MultipleFrames(t *testing.T) {
 
 	// Verify data ordering: frame i has all values = float32(i).
 	data, _ := ExtractFloat32(result)
-	for i := 0; i < 5; i++ {
-		for j := 0; j < 32; j++ {
+
+	for i := range 5 {
+		for j := range 32 {
 			got := data[i*32+j]
+
 			want := float32(i)
 			if got != want {
 				t.Errorf("data[%d][%d] = %v, want %v", i, j, got, want)
@@ -81,7 +86,7 @@ func TestLatentToMimi_PropagatesRunnerError(t *testing.T) {
 	fake := &fakeRunner{
 		name: "latent_to_mimi",
 		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
-			return nil, fmt.Errorf("ort failure")
+			return nil, errors.New("ort failure")
 		},
 	}
 	e := engineWithFakeRunners(map[string]runnerIface{"latent_to_mimi": fake})
@@ -105,6 +110,7 @@ func TestLatentToMimi_ReturnsOutput(t *testing.T) {
 			if _, ok := inputs["latent"]; !ok {
 				t.Error("expected 'latent' input key")
 			}
+
 			return map[string]*Tensor{"mimi_latent": fakeOutput}, nil
 		},
 	}
@@ -156,7 +162,7 @@ func TestMimiDecode_PropagatesRunnerError(t *testing.T) {
 	fake := &fakeRunner{
 		name: "mimi_decoder",
 		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
-			return nil, fmt.Errorf("ort failure")
+			return nil, errors.New("ort failure")
 		},
 	}
 	e := engineWithFakeRunners(map[string]runnerIface{"mimi_decoder": fake})
@@ -171,10 +177,12 @@ func TestMimiDecode_PropagatesRunnerError(t *testing.T) {
 func TestMimiDecode_ReturnsAudio(t *testing.T) {
 	// Mimi decoder: input "latent" [1, 512, T] → output "audio" [1, 1, N_samples].
 	const nSamples = 480
+
 	audioData := make([]float32, nSamples)
 	for i := range audioData {
 		audioData[i] = float32(i) * 0.001
 	}
+
 	fakeAudio, _ := NewTensor(audioData, []int64{1, 1, int64(nSamples)})
 
 	fake := &fakeRunner{
@@ -183,6 +191,7 @@ func TestMimiDecode_ReturnsAudio(t *testing.T) {
 			if _, ok := inputs["latent"]; !ok {
 				t.Error("expected 'latent' input key")
 			}
+
 			return map[string]*Tensor{"audio": fakeAudio}, nil
 		},
 	}

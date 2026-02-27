@@ -14,7 +14,9 @@ func (p *Preprocessor) Preprocess(input string) []int {
 		if unicode.IsSpace(r) {
 			continue
 		}
+
 		tokens = append(tokens, int(unicode.ToLower(r)))
 	}
+
 	return tokens
 }

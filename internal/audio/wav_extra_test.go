@@ -11,10 +11,12 @@ import (
 
 func TestApplyHooks_NoHooks(t *testing.T) {
 	samples := []float32{0.1, 0.2, 0.3}
+
 	got := ApplyHooks(samples)
 	if len(got) != len(samples) {
 		t.Fatalf("ApplyHooks() len = %d; want %d", len(got), len(samples))
 	}
+
 	for i, v := range samples {
 		if got[i] != v {
 			t.Errorf("ApplyHooks()[%d] = %v; want %v", i, got[i], v)
@@ -28,11 +30,13 @@ func TestApplyHooks_SingleHook(t *testing.T) {
 		for i, v := range s {
 			out[i] = v * 2
 		}
+
 		return out
 	}
 
 	samples := []float32{0.1, 0.5, 1.0}
 	got := ApplyHooks(samples, scale)
+
 	want := []float32{0.2, 1.0, 2.0}
 	for i := range want {
 		if math.Abs(float64(got[i]-want[i])) > 1e-6 {
@@ -100,6 +104,7 @@ func TestEncodeWAVPCM16_ValidOutput(t *testing.T) {
 	if !bytes.HasPrefix(data, []byte("RIFF")) {
 		t.Error("output does not start with RIFF")
 	}
+
 	if !bytes.Contains(data[:12], []byte("WAVE")) {
 		t.Error("output does not contain WAVE marker")
 	}
@@ -107,6 +112,7 @@ func TestEncodeWAVPCM16_ValidOutput(t *testing.T) {
 
 func TestEncodeWAVPCM16_SampleRateInHeader(t *testing.T) {
 	sampleRate := 16000
+
 	data, err := EncodeWAVPCM16([]float32{0}, sampleRate)
 	if err != nil {
 		t.Fatalf("EncodeWAVPCM16 error = %v", err)
@@ -122,6 +128,7 @@ func TestEncodeWAVPCM16_SampleRateInHeader(t *testing.T) {
 func TestEncodeWAVPCM16_Clamping(t *testing.T) {
 	// Values > 1.0 and < -1.0 must be clamped to int16 range.
 	samples := []float32{2.0, -2.0}
+
 	data, err := EncodeWAVPCM16(samples, 44100)
 	if err != nil {
 		t.Fatalf("EncodeWAVPCM16 error = %v", err)
@@ -134,6 +141,7 @@ func TestEncodeWAVPCM16_Clamping(t *testing.T) {
 	if v1 != 32767 {
 		t.Errorf("clamped +2.0 = %d; want 32767", v1)
 	}
+
 	if v2 != -32767 {
 		t.Errorf("clamped -2.0 = %d; want -32767", v2)
 	}

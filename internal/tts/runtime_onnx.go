@@ -28,8 +28,10 @@ func (r *onnxRuntime) GenerateAudio(ctx context.Context, tokens []int64, cfg Run
 		if err != nil {
 			return nil, fmt.Errorf("build voice tensor: %w", err)
 		}
+
 		genCfg.VoiceEmbedding = voiceTensor
 	}
+
 	return r.engine.GenerateAudio(ctx, tokens, genCfg)
 }
 

@@ -38,6 +38,7 @@ func newModelExportCmd() *cobra.Command {
 					err,
 				)
 			}
+
 			return nil
 		},
 	}

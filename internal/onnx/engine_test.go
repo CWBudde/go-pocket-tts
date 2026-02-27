@@ -8,13 +8,16 @@ import (
 
 func writeTestManifest(t *testing.T, dir string) string {
 	t.Helper()
+
 	onnxFile := filepath.Join(dir, "identity.onnx")
 
 	src := filepath.Join("..", "model", "testdata", "identity_float32.onnx")
+
 	data, err := os.ReadFile(src)
 	if err != nil {
 		t.Fatalf("read identity model: %v", err)
 	}
+
 	if err := os.WriteFile(onnxFile, data, 0o644); err != nil {
 		t.Fatalf("write identity model: %v", err)
 	}
@@ -29,10 +32,12 @@ func writeTestManifest(t *testing.T, dir string) string {
     }
   ]
 }`
+
 	mPath := filepath.Join(dir, "manifest.json")
 	if err := os.WriteFile(mPath, []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
+
 	return mPath
 }
 
@@ -41,6 +46,7 @@ func TestNewEngineLoadsRunners(t *testing.T) {
 	if libPath == "" {
 		libPath = os.Getenv("ORT_LIBRARY_PATH")
 	}
+
 	if libPath == "" {
 		t.Skip("no ORT library available")
 	}
@@ -61,6 +67,7 @@ func TestNewEngineLoadsRunners(t *testing.T) {
 	if !ok {
 		t.Fatal("expected 'identity' runner")
 	}
+
 	if runner.Name() != "identity" {
 		t.Fatalf("expected name 'identity', got %q", runner.Name())
 	}

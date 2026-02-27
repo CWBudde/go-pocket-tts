@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -22,14 +23,17 @@ var runNativeVerify = runNativeVerifyImpl
 
 func VerifyONNX(opts VerifyOptions) error {
 	if opts.ManifestPath == "" {
-		return fmt.Errorf("manifest path is required")
+		return errors.New("manifest path is required")
 	}
+
 	if opts.ORTAPIVersion == 0 {
 		opts.ORTAPIVersion = 23
 	}
+
 	if opts.Stdout == nil {
 		opts.Stdout = io.Discard
 	}
+
 	if opts.Stderr == nil {
 		opts.Stderr = io.Discard
 	}
@@ -50,6 +54,7 @@ func VerifyONNX(opts VerifyOptions) error {
 	if err := runNativeVerify(sm.Sessions(), opts); err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -58,6 +63,7 @@ func runNativeVerifyImpl(sessions []onnx.Session, opts VerifyOptions) error {
 	if err != nil {
 		return fmt.Errorf("initialize ONNX Runtime (lib=%q api=%d): %w", opts.ORTLibrary, opts.ORTAPIVersion, err)
 	}
+
 	defer func() { _ = runtime.Close() }()
 
 	env, err := runtime.NewEnv("pockettts-model-verify", ort.LoggingLevelWarning)
@@ -67,18 +73,23 @@ func runNativeVerifyImpl(sessions []onnx.Session, opts VerifyOptions) error {
 	defer env.Close()
 
 	var failures []string
+
 	for _, session := range sessions {
-		if err := runSessionSmoke(context.Background(), runtime, env, session); err != nil {
+		err := runSessionSmoke(context.Background(), runtime, env, session)
+		if err != nil {
 			_, _ = fmt.Fprintf(opts.Stderr, "FAIL %s: %v\n", session.Name, err)
 			failures = append(failures, session.Name)
+
 			continue
 		}
+
 		_, _ = fmt.Fprintf(opts.Stdout, "PASS %s\n", session.Name)
 	}
 
 	if len(failures) > 0 {
 		return fmt.Errorf("verify failed for %d session(s): %s", len(failures), strings.Join(failures, ", "))
 	}
+
 	return nil
 }
 
@@ -95,12 +106,15 @@ func runSessionSmoke(ctx context.Context, runtime *ort.Runtime, env *ort.Env, se
 		if err != nil {
 			return fmt.Errorf("build input %q tensor: %w", input.Name, err)
 		}
+
 		v, err := tensorToORTValue(runtime, t)
 		if err != nil {
 			return fmt.Errorf("convert input %q to runtime tensor: %w", input.Name, err)
 		}
+
 		inputs[input.Name] = v
 	}
+
 	defer func() {
 		for _, v := range inputs {
 			v.Close()
@@ -111,9 +125,11 @@ func runSessionSmoke(ctx context.Context, runtime *ort.Runtime, env *ort.Env, se
 	if err != nil {
 		return fmt.Errorf("run inference: %w", err)
 	}
+
 	for _, out := range outputs {
 		out.Close()
 	}
+
 	return nil
 }
 

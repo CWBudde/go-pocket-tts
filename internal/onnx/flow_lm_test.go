@@ -2,6 +2,7 @@ package onnx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -27,7 +28,7 @@ func TestFlowLMStep_PropagatesRunnerError(t *testing.T) {
 	fake := &fakeRunner{
 		name: "flow_lm_main",
 		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
-			return nil, fmt.Errorf("ort failure")
+			return nil, errors.New("ort failure")
 		},
 	}
 	e := engineWithFakeRunners(map[string]runnerIface{"flow_lm_main": fake})
@@ -47,6 +48,7 @@ func TestFlowLMStep_ReturnsOutputs(t *testing.T) {
 	for i := range hiddenData {
 		hiddenData[i] = float32(i) * 0.01
 	}
+
 	fakeHidden, _ := NewTensor(hiddenData, []int64{1, 1024})
 
 	eosData := []float32{-5.0}
@@ -59,9 +61,11 @@ func TestFlowLMStep_ReturnsOutputs(t *testing.T) {
 			if _, ok := inputs["sequence"]; !ok {
 				t.Error("expected 'sequence' input key")
 			}
+
 			if _, ok := inputs["text_embeddings"]; !ok {
 				t.Error("expected 'text_embeddings' input key")
 			}
+
 			return map[string]*Tensor{
 				"last_hidden": fakeHidden,
 				"eos_logits":  fakeEOS,
@@ -151,6 +155,7 @@ func TestNewBOSSequence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractFloat32: %v", err)
 	}
+
 	for i, v := range data {
 		if !isNaN(v) {
 			t.Errorf("BOS[%d] = %v, want NaN", i, v)
@@ -171,6 +176,7 @@ func TestAppendLatentFrame(t *testing.T) {
 	for i := range frameData {
 		frameData[i] = float32(i)
 	}
+
 	frame, err := NewTensor(frameData, []int64{1, 1, 32})
 	if err != nil {
 		t.Fatalf("NewTensor frame: %v", err)
@@ -197,6 +203,7 @@ func TestAppendLatentFrame(t *testing.T) {
 			t.Errorf("data[%d] = %v, want NaN", i, data[i])
 		}
 	}
+
 	for i := 0; i < 32; i++ {
 		if data[32+i] != float32(i) {
 			t.Errorf("data[%d] = %v, want %v", 32+i, data[32+i], float32(i))
@@ -211,6 +218,7 @@ func TestAppendLatentFrame_GrowsSequence(t *testing.T) {
 	for step := 0; step < 3; step++ {
 		frame, _ := NewTensor(make([]float32, 32), []int64{1, 1, 32})
 		var err error
+
 		seq, err = AppendLatentFrame(seq, frame)
 		if err != nil {
 			t.Fatalf("step %d: AppendLatentFrame: %v", step, err)
@@ -243,6 +251,7 @@ func TestEOSDetected(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tensor, _ := NewTensor([]float32{tt.logit}, []int64{1, 1})
+
 			got := EOSDetected(tensor, tt.threshold)
 			if got != tt.want {
 				t.Errorf("EOSDetected(logit=%v, threshold=%v) = %v, want %v",
@@ -270,7 +279,7 @@ func TestFlowLMFlow_PropagatesRunnerError(t *testing.T) {
 	fake := &fakeRunner{
 		name: "flow_lm_flow",
 		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
-			return nil, fmt.Errorf("ort failure")
+			return nil, errors.New("ort failure")
 		},
 	}
 	e := engineWithFakeRunners(map[string]runnerIface{"flow_lm_flow": fake})
@@ -289,6 +298,7 @@ func TestFlowLMFlow_SingleStep_ReturnsLatentFrame(t *testing.T) {
 	for i := range flowDir {
 		flowDir[i] = 1.0 // constant flow direction
 	}
+
 	fakeFlow, _ := NewTensor(flowDir, []int64{1, 32})
 
 	var capturedInputs map[string]*Tensor
@@ -331,9 +341,11 @@ func TestFlowLMFlow_SingleStep_ReturnsLatentFrame(t *testing.T) {
 	// Verify s=0, t=1 for single step.
 	sData, _ := ExtractFloat32(capturedInputs["s"])
 	tData, _ := ExtractFloat32(capturedInputs["t"])
+
 	if sData[0] != 0.0 {
 		t.Errorf("s = %v, want 0.0", sData[0])
 	}
+
 	if tData[0] != 1.0 {
 		t.Errorf("t = %v, want 1.0", tData[0])
 	}
@@ -349,11 +361,14 @@ func TestFlowLMFlow_MultiStep_Arithmetic(t *testing.T) {
 		name: "flow_lm_flow",
 		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
 			callCount++
+
 			flowDir := make([]float32, 32)
 			for i := range flowDir {
 				flowDir[i] = 2.0
 			}
+
 			out, _ := NewTensor(flowDir, []int64{1, 32})
+
 			return map[string]*Tensor{"flow_direction": out}, nil
 		},
 	}
@@ -412,6 +427,7 @@ func TestFlowLMPrefill_ReturnsMissingGraphError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing flow_lm_prefill graph")
 	}
+
 	if !strings.Contains(err.Error(), "flow_lm_prefill") {
 		t.Errorf("error %q should mention 'flow_lm_prefill'", err.Error())
 	}
@@ -431,8 +447,10 @@ func TestFlowLMPrefill_UnpacksKVState(t *testing.T) {
 				kv, _ := NewTensor(make([]float32, 2*1*int(T)*2*4), []int64{2, 1, T, 2, 4})
 				out[fmt.Sprintf("kv_%d", i)] = kv
 			}
+
 			offsetTensor, _ := NewTensor([]int64{T}, []int64{1})
 			out["offset"] = offsetTensor
+
 			return out, nil
 		},
 	}
@@ -442,13 +460,16 @@ func TestFlowLMPrefill_UnpacksKVState(t *testing.T) {
 	})
 
 	textEmb, _ := NewTensor(make([]float32, T*1024), []int64{1, T, 1024})
+
 	state, err := e.FlowLMPrefill(context.Background(), textEmb)
 	if err != nil {
 		t.Fatalf("FlowLMPrefill: %v", err)
 	}
+
 	if len(state.KV) != numLayers {
 		t.Fatalf("KV len = %d; want %d", len(state.KV), numLayers)
 	}
+
 	if state.Offset != T {
 		t.Fatalf("Offset = %d; want %d", state.Offset, T)
 	}
@@ -468,6 +489,7 @@ func TestFlowLMStepStateful_ReturnsMissingGraphError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing flow_lm_step graph")
 	}
+
 	if !strings.Contains(err.Error(), "flow_lm_step") {
 		t.Errorf("error %q should mention 'flow_lm_step'", err.Error())
 	}
@@ -484,16 +506,19 @@ func TestFlowLMStepStateful_UpdatesStateInPlace(t *testing.T) {
 		name: "flow_lm_step",
 		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 			out := map[string]*Tensor{}
+
 			for i := range numLayers {
 				kv, _ := NewTensor(make([]float32, 2*1*int(newOffset)*2*4), []int64{2, 1, newOffset, 2, 4})
 				out[fmt.Sprintf("kv_%d", i)] = kv
 			}
+
 			updated, _ := NewTensor([]int64{newOffset}, []int64{1})
 			out["offset"] = updated
 			hidden, _ := NewTensor(make([]float32, 1024), []int64{1, 1024})
 			out["last_hidden"] = hidden
 			eos, _ := NewTensor([]float32{-10.0}, []int64{1, 1})
 			out["eos_logits"] = eos
+
 			return out, nil
 		},
 	}
@@ -505,6 +530,7 @@ func TestFlowLMStepStateful_UpdatesStateInPlace(t *testing.T) {
 		kv, _ := NewTensor(make([]float32, 2*1*int(initialOffset)*2*4), []int64{2, 1, initialOffset, 2, 4})
 		kvs[i] = kv
 	}
+
 	state := &FlowLMKVState{KV: kvs, Offset: initialOffset}
 	frame, _ := NewTensor(make([]float32, 32), []int64{1, 1, 32})
 
@@ -512,12 +538,15 @@ func TestFlowLMStepStateful_UpdatesStateInPlace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FlowLMStepStateful: %v", err)
 	}
+
 	if lastHidden == nil || eosLogits == nil {
 		t.Fatal("expected non-nil lastHidden and eosLogits")
 	}
+
 	if state.Offset != newOffset {
 		t.Fatalf("state.Offset = %d; want %d", state.Offset, newOffset)
 	}
+
 	if state.KV[0].Shape()[2] != newOffset {
 		t.Fatalf("state.KV[0] seq dim = %d; want %d", state.KV[0].Shape()[2], newOffset)
 	}
@@ -543,6 +572,7 @@ func TestFlowLMStep_NaNOutputIsDetectable(t *testing.T) {
 	for i := range nanHidden {
 		nanHidden[i] = float32(math.NaN())
 	}
+
 	fakeHidden, _ := NewTensor(nanHidden, []int64{1, 1024})
 	fakeEOS, _ := NewTensor([]float32{float32(math.NaN())}, []int64{1, 1})
 
@@ -569,12 +599,14 @@ func TestFlowLMStep_NaNOutputIsDetectable(t *testing.T) {
 	// Verify that NaN in last_hidden IS detectable (not silently swallowed).
 	hiddenData, _ := ExtractFloat32(lastHidden)
 	hasNaN := false
+
 	for _, v := range hiddenData {
 		if isNaN(v) {
 			hasNaN = true
 			break
 		}
 	}
+
 	if !hasNaN {
 		t.Error("expected NaN to be detectable in last_hidden output from buggy runner")
 	}

@@ -23,18 +23,22 @@ func TestParity_FlowDirection_VsONNX(t *testing.T) {
 	defer m.Close()
 
 	manifest := requireONNXManifest(t)
+
 	sm, err := onnx.NewSessionManager(manifest)
 	if err != nil {
 		t.Fatalf("session manager: %v", err)
 	}
+
 	sess, ok := sm.Session("flow_lm_flow")
 	if !ok {
 		t.Fatal("flow_lm_flow session missing in manifest")
 	}
+
 	info, err := onnx.DetectRuntime(config.RuntimeConfig{})
 	if err != nil {
 		t.Fatalf("detect runtime: %v", err)
 	}
+
 	runner, err := onnx.NewRunner(sess, onnx.RunnerConfig{LibraryPath: info.LibraryPath, APIVersion: 23})
 	if err != nil {
 		t.Fatalf("new runner: %v", err)
@@ -55,6 +59,7 @@ func TestParity_FlowDirection_VsONNX(t *testing.T) {
 	inS, _ := onnx.NewTensor(s.Data(), s.Shape())
 	inT, _ := onnx.NewTensor(tv.Data(), tv.Shape())
 	inX, _ := onnx.NewTensor(x.Data(), x.Shape())
+
 	outs, err := runner.Run(context.Background(), map[string]*onnx.Tensor{
 		"condition": inCondition,
 		"s":         inS,
@@ -64,27 +69,35 @@ func TestParity_FlowDirection_VsONNX(t *testing.T) {
 	if err != nil {
 		t.Fatalf("onnx run: %v", err)
 	}
+
 	refName := sess.Outputs[0].Name
+
 	ot, ok := outs[refName]
 	if !ok {
 		t.Fatalf("onnx output %q missing", refName)
 	}
+
 	refData, err := onnx.ExtractFloat32(ot)
 	if err != nil {
 		t.Fatalf("extract float32: %v", err)
 	}
+
 	ref, err := tensor.New(refData, ot.Shape())
 	if err != nil {
 		t.Fatalf("build ref tensor: %v", err)
 	}
+
 	tol, _ := ops.KernelTolerance("mlp")
+
 	rep, err := CompareTensor("flow_lm_flow", nativeOut, ref, tol)
 	if err != nil {
 		t.Fatalf("compare tensor: %v", err)
 	}
+
 	if !rep.ShapeMatch {
 		t.Fatalf("flow_lm_flow shape mismatch: %+v", rep)
 	}
+
 	if !rep.Pass {
 		// Keep this as a non-fatal diagnostic for now: the flow-net port is
 		// intentionally incremental and exact parity will be tightened in later
@@ -104,18 +117,22 @@ func TestParity_LatentToMimi_VsONNX(t *testing.T) {
 	defer m.Close()
 
 	manifest := requireONNXManifest(t)
+
 	sm, err := onnx.NewSessionManager(manifest)
 	if err != nil {
 		t.Fatalf("session manager: %v", err)
 	}
+
 	sess, ok := sm.Session("latent_to_mimi")
 	if !ok {
 		t.Fatal("latent_to_mimi session missing in manifest")
 	}
+
 	info, err := onnx.DetectRuntime(config.RuntimeConfig{})
 	if err != nil {
 		t.Fatalf("detect runtime: %v", err)
 	}
+
 	runner, err := onnx.NewRunner(sess, onnx.RunnerConfig{LibraryPath: info.LibraryPath, APIVersion: 23})
 	if err != nil {
 		t.Fatalf("new runner: %v", err)
@@ -126,37 +143,47 @@ func TestParity_LatentToMimi_VsONNX(t *testing.T) {
 	for i := range latentData {
 		latentData[i] = float32(i%7) / 7
 	}
+
 	latent, _ := tensor.New(latentData, []int64{1, 2, 32})
+
 	nativeOut, err := m.LatentToMimi(latent)
 	if err != nil {
 		t.Fatalf("native latent_to_mimi: %v", err)
 	}
 
 	inLatent, _ := onnx.NewTensor(latent.Data(), latent.Shape())
+
 	outs, err := runner.Run(context.Background(), map[string]*onnx.Tensor{
 		"latent": inLatent,
 	})
 	if err != nil {
 		t.Fatalf("onnx run: %v", err)
 	}
+
 	refName := sess.Outputs[0].Name
+
 	ot, ok := outs[refName]
 	if !ok {
 		t.Fatalf("onnx output %q missing", refName)
 	}
+
 	refData, err := onnx.ExtractFloat32(ot)
 	if err != nil {
 		t.Fatalf("extract float32: %v", err)
 	}
+
 	ref, err := tensor.New(refData, ot.Shape())
 	if err != nil {
 		t.Fatalf("build ref tensor: %v", err)
 	}
+
 	tol, _ := ops.KernelTolerance("conv1d")
+
 	rep, err := CompareTensor("latent_to_mimi", nativeOut, ref, tol)
 	if err != nil {
 		t.Fatalf("compare tensor: %v", err)
 	}
+
 	if !rep.Pass {
 		t.Fatalf("latent_to_mimi parity failed: %+v", rep)
 	}
@@ -164,6 +191,7 @@ func TestParity_LatentToMimi_VsONNX(t *testing.T) {
 
 func requireONNXManifest(t *testing.T) string {
 	t.Helper()
+
 	candidates := []string{
 		filepath.Join("models", "onnx", "manifest.json"),
 		filepath.Join("..", "..", "models", "onnx", "manifest.json"),
@@ -173,20 +201,25 @@ func requireONNXManifest(t *testing.T) string {
 			return p
 		}
 	}
+
 	t.Skipf("onnx manifest not available in expected locations: %v", candidates)
+
 	return ""
 }
 
 func requireONNXRuntime(t *testing.T) {
 	t.Helper()
+
 	for _, env := range []string{"ORT_LIBRARY_PATH", "POCKETTTS_ORT_LIB"} {
 		if p := os.Getenv(env); p != "" {
 			if _, err := os.Stat(p); err == nil {
 				return
 			}
+
 			t.Skipf("ONNX Runtime library not found at %s=%q", env, p)
 		}
 	}
+
 	candidates := []string{
 		"/usr/lib/libonnxruntime.so",
 		"/usr/local/lib/libonnxruntime.so",
@@ -197,5 +230,6 @@ func requireONNXRuntime(t *testing.T) {
 			return
 		}
 	}
+
 	t.Skip("ONNX Runtime shared library not found; set ORT_LIBRARY_PATH or POCKETTTS_ORT_LIB")
 }

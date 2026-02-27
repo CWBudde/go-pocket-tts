@@ -12,6 +12,7 @@ import (
 
 func requireCheckpointForBench(b *testing.B) string {
 	b.Helper()
+
 	candidates := []string{
 		filepath.Join("models", "tts_b6369a24.safetensors"),
 		filepath.Join("..", "..", "models", "tts_b6369a24.safetensors"),
@@ -21,7 +22,9 @@ func requireCheckpointForBench(b *testing.B) string {
 			return path
 		}
 	}
+
 	b.Skipf("checkpoint not available in any expected location: %v", candidates)
+
 	return ""
 }
 
@@ -30,6 +33,7 @@ func nanFrame() (*tensor.Tensor, error) {
 	for i := range data {
 		data[i] = float32(math.NaN())
 	}
+
 	return tensor.New(data, []int64{1, 1, 32})
 }
 
@@ -38,6 +42,7 @@ func nanFrame() (*tensor.Tensor, error) {
 // Run with -cpuprofile or -memprofile to locate hot paths.
 func BenchmarkSynthesisFullPipeline(b *testing.B) {
 	path := requireCheckpointForBench(b)
+
 	m, err := LoadModelFromSafetensors(path, DefaultConfig())
 	if err != nil {
 		b.Fatalf("load model: %v", err)
@@ -45,6 +50,7 @@ func BenchmarkSynthesisFullPipeline(b *testing.B) {
 	defer m.Close()
 
 	tokenIDs := []int64{10, 20, 30, 40, 50}
+
 	textEmb, err := m.TextEmbeddings(tokenIDs)
 	if err != nil {
 		b.Fatalf("text embeddings: %v", err)
@@ -58,11 +64,13 @@ func BenchmarkSynthesisFullPipeline(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		state, err := m.NewFlowState()
 		if err != nil {
 			b.Fatalf("new flow state: %v", err)
 		}
+
 		if err := m.PromptFlow(state, textEmb); err != nil {
 			b.Fatalf("prompt flow: %v", err)
 		}
@@ -73,13 +81,16 @@ func BenchmarkSynthesisFullPipeline(b *testing.B) {
 		}
 
 		var allLatents []*tensor.Tensor
-		for step := 0; step < maxSteps; step++ {
+
+		for step := range maxSteps {
 			next, isEOS, err := m.SampleNextLatentStateful(state, frame, decodeSteps, eosThreshold, temperature, rng)
 			if err != nil {
 				b.Fatalf("step %d: %v", step, err)
 			}
+
 			allLatents = append(allLatents, next)
 			frame = next
+
 			if isEOS {
 				break
 			}
@@ -90,10 +101,12 @@ func BenchmarkSynthesisFullPipeline(b *testing.B) {
 			if err != nil {
 				b.Fatalf("concat latents: %v", err)
 			}
+
 			mimiIn, err := m.LatentToMimi(combined)
 			if err != nil {
 				b.Fatalf("latent to mimi: %v", err)
 			}
+
 			_, err = m.MimiDecode(mimiIn)
 			if err != nil {
 				b.Fatalf("mimi decode: %v", err)
@@ -106,6 +119,7 @@ func BenchmarkSynthesisFullPipeline(b *testing.B) {
 // inner loop. Run with -cpuprofile to see per-layer costs.
 func BenchmarkFlowStep(b *testing.B) {
 	path := requireCheckpointForBench(b)
+
 	m, err := LoadModelFromSafetensors(path, DefaultConfig())
 	if err != nil {
 		b.Fatalf("load model: %v", err)
@@ -113,6 +127,7 @@ func BenchmarkFlowStep(b *testing.B) {
 	defer m.Close()
 
 	tokenIDs := []int64{10, 20, 30, 40, 50}
+
 	textEmb, err := m.TextEmbeddings(tokenIDs)
 	if err != nil {
 		b.Fatalf("text embeddings: %v", err)
@@ -122,6 +137,7 @@ func BenchmarkFlowStep(b *testing.B) {
 	if err != nil {
 		b.Fatalf("new flow state: %v", err)
 	}
+
 	if err := m.PromptFlow(state, textEmb); err != nil {
 		b.Fatalf("prompt flow: %v", err)
 	}
@@ -135,6 +151,7 @@ func BenchmarkFlowStep(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		_, _, err := m.SampleNextLatentStateful(state, frame, 10, 0.5, 1.0, rng)
 		if err != nil {
@@ -147,6 +164,7 @@ func BenchmarkFlowStep(b *testing.B) {
 // This is the Conv1D/ConvTranspose1D hot path.
 func BenchmarkMimiDecode(b *testing.B) {
 	path := requireCheckpointForBench(b)
+
 	m, err := LoadModelFromSafetensors(path, DefaultConfig())
 	if err != nil {
 		b.Fatalf("load model: %v", err)
@@ -166,6 +184,7 @@ func BenchmarkMimiDecode(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		_, err := m.MimiDecode(mimiIn)
 		if err != nil {

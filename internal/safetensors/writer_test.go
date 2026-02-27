@@ -26,12 +26,15 @@ func TestWriteFile_RoundTripSingleTensor(t *testing.T) {
 	if got.Name != want.Name {
 		t.Fatalf("tensor name = %q, want %q", got.Name, want.Name)
 	}
+
 	if len(got.Shape) != len(want.Shape) || got.Shape[0] != 1 || got.Shape[1] != 2 || got.Shape[2] != 4 {
 		t.Fatalf("tensor shape = %v, want %v", got.Shape, want.Shape)
 	}
+
 	if len(got.Data) != len(want.Data) {
 		t.Fatalf("tensor data length = %d, want %d", len(got.Data), len(want.Data))
 	}
+
 	for i := range got.Data {
 		if got.Data[i] != want.Data[i] {
 			t.Fatalf("data[%d] = %v, want %v", i, got.Data[i], want.Data[i])
