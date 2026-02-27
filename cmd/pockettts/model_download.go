@@ -35,7 +35,7 @@ func newModelDownloadCmd() *cobra.Command {
 				return nil
 			}
 
-			var denied *model.ErrAccessDenied
+			var denied *model.AccessDeniedError
 			if fallbackUngated && hfToken == "" && errors.As(err, &denied) && hfRepo == "kyutai/pocket-tts" {
 				_, _ = fmt.Fprintf(
 					os.Stderr,

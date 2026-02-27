@@ -60,6 +60,7 @@ func newDoctorCmd() *cobra.Command {
 			// ONNX model verify as an additional check.
 			// Skip gracefully when no manifest is present (models not yet downloaded).
 			const onnxManifest = "models/onnx/manifest.json"
+
 			if backend == config.BackendNative {
 				_, _ = fmt.Fprintf(
 					os.Stdout,
@@ -67,19 +68,24 @@ func newDoctorCmd() *cobra.Command {
 					doctor.PassMark,
 					config.BackendNative,
 				)
-			} else if _, statErr := os.Stat(onnxManifest); os.IsNotExist(statErr) {
-				_, _ = fmt.Fprintf(os.Stdout, "%s model verify: skipped (no manifest at %s)\n", doctor.PassMark, onnxManifest)
-			} else err := model.VerifyONNX(model.VerifyOptions{
-	ManifestPath:	onnxManifest,
-	ORTLibrary:	cfg.Runtime.ORTLibraryPath,
-	Stdout:		os.Stdout,
-	Stderr:		os.Stderr,
-})
-if  err != nil {
-				result.AddFailure(fmt.Sprintf("model verify: %v", err))
-				_, _ = fmt.Fprintf(os.Stdout, "%s model verify: %v\n", doctor.FailMark, err)
 			} else {
-				_, _ = fmt.Fprintf(os.Stdout, "%s model verify: ok\n", doctor.PassMark)
+				_, manifestStatErr := os.Stat(onnxManifest)
+				if os.IsNotExist(manifestStatErr) {
+					_, _ = fmt.Fprintf(os.Stdout, "%s model verify: skipped (no manifest at %s)\n", doctor.PassMark, onnxManifest)
+				} else {
+					verifyErr := model.VerifyONNX(model.VerifyOptions{
+						ManifestPath: onnxManifest,
+						ORTLibrary:   cfg.Runtime.ORTLibraryPath,
+						Stdout:       os.Stdout,
+						Stderr:       os.Stderr,
+					})
+					if verifyErr != nil {
+						result.AddFailure(fmt.Sprintf("model verify: %v", verifyErr))
+						_, _ = fmt.Fprintf(os.Stdout, "%s model verify: %v\n", doctor.FailMark, verifyErr)
+					} else {
+						_, _ = fmt.Fprintf(os.Stdout, "%s model verify: ok\n", doctor.PassMark)
+					}
+				}
 			}
 
 			if result.Failed() {

@@ -95,18 +95,6 @@ func NewService(cfg config.Config) (*Service, error) {
 	}, nil
 }
 
-// generateConfig builds a GenerateConfig from the stored TTS config,
-// overriding FramesAfterEOS per chunk.
-func (s *Service) generateConfig(framesAfterEOS int) RuntimeGenerateConfig {
-	return RuntimeGenerateConfig{
-		Temperature:    s.ttsCfg.Temperature,
-		EOSThreshold:   s.ttsCfg.EOSThreshold,
-		MaxSteps:       s.ttsCfg.MaxSteps,
-		LSDDecodeSteps: s.ttsCfg.LSDDecodeSteps,
-		FramesAfterEOS: framesAfterEOS,
-	}
-}
-
 // Synthesize converts text to audio samples.
 // Text is preprocessed and split into ≤50-token chunks per the reference
 // implementation. Each chunk is generated independently and the resulting
@@ -220,6 +208,18 @@ func loadVoiceEmbedding(voicePath string) (*VoiceEmbedding, error) {
 func (s *Service) Close() {
 	if s.runtime != nil {
 		s.runtime.Close()
+	}
+}
+
+// generateConfig builds a GenerateConfig from the stored TTS config,
+// overriding FramesAfterEOS per chunk.
+func (s *Service) generateConfig(framesAfterEOS int) RuntimeGenerateConfig {
+	return RuntimeGenerateConfig{
+		Temperature:    s.ttsCfg.Temperature,
+		EOSThreshold:   s.ttsCfg.EOSThreshold,
+		MaxSteps:       s.ttsCfg.MaxSteps,
+		LSDDecodeSteps: s.ttsCfg.LSDDecodeSteps,
+		FramesAfterEOS: framesAfterEOS,
 	}
 }
 
