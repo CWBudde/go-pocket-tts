@@ -374,6 +374,7 @@ async function handleSynthesize() {
   try {
     state.isSynthesizing = true;
     setSynthesizeEnabled();
+    showProgress("Synthesizing...", 0, false);
     setAction("Synthesis started...");
 
     const options = { temperature: modelConfig.temperature };
@@ -388,6 +389,7 @@ async function handleSynthesize() {
       (evt) => {
         const pct = Math.round(Math.max(0, Math.min(100, Number(evt?.percent || 0))));
         const stage = evt?.stage || "working";
+        showProgress(`Synthesizing (${stage})... ${pct}%`, pct, false);
         setAction(`Synthesis ${pct}% (${stage})`);
       },
       options,
@@ -400,8 +402,11 @@ async function handleSynthesize() {
 
     const wavBytes = decodeBase64ToBytes(result.wav_base64 || "");
     setAudioBlob(wavBytes);
+    showProgress(`Synthesis complete in ${elapsedMs} ms`, 100, true);
     setAction(`Synthesis complete in ${elapsedMs} ms.`);
+    setTimeout(hideProgress, 3000);
   } catch (err) {
+    hideProgress();
     setAction(`Synthesis failed: ${formatError(err)}`);
   } finally {
     state.isSynthesizing = false;
