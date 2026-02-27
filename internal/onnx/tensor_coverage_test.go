@@ -11,6 +11,7 @@ import (
 
 func TestExtractFloat32_PointerToSlice(t *testing.T) {
 	data := []float32{1.5, 2.5}
+
 	got, err := ExtractFloat32(&data)
 	if err != nil {
 		t.Fatalf("ExtractFloat32(*[]float32) error: %v", err)
@@ -22,6 +23,7 @@ func TestExtractFloat32_PointerToSlice(t *testing.T) {
 
 	// Returned slice must be a copy.
 	got[0] = 99
+
 	if data[0] != 1.5 {
 		t.Fatal("ExtractFloat32 returned non-copy")
 	}
@@ -76,6 +78,7 @@ func TestExtractFloat32_WrongDTypeTensor(t *testing.T) {
 
 func TestExtractInt64_PointerToSlice(t *testing.T) {
 	data := []int64{3, 4}
+
 	got, err := ExtractInt64(&data)
 	if err != nil {
 		t.Fatalf("ExtractInt64(*[]int64) error: %v", err)
