@@ -25,7 +25,6 @@ func SetConvWorkers(n int) {
 		n = maxInt32
 	}
 
-	//nolint:gosec // n is clamped to int32 range above.
 	convWorkers.Store(int32(n))
 }
 

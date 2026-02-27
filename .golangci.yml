@@ -30,6 +30,10 @@ linters:
     cyclop:
       max-complexity: 15
 
+    gosec:
+      excludes:
+        - G115 # temporary: gosec conversion_overflow analyzer panics on audio int16 conversion
+
     funlen:
       lines: 100
 
