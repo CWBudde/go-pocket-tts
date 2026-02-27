@@ -381,7 +381,9 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 				pct := chunkStart + stepPct
 				detail := fmt.Sprintf("chunk %d/%d · step %d", i+1, nChunks, step)
 				progress.Emit("synthesize", pct, 100, detail)
-				browserYield()
+				if step%10 == 0 {
+					browserYield()
+				}
 			},
 		}
 
