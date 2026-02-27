@@ -115,7 +115,7 @@ func (s *Service) SynthesizeCtx(ctx context.Context, input string, voicePath str
 		return nil, fmt.Errorf("no tokens produced from input: %w", err)
 	}
 
-	voiceEmb, err := loadVoiceEmbedding(voicePath)
+	voiceEmb, hasVoiceEmb, err := loadVoiceEmbedding(voicePath)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +133,9 @@ func (s *Service) SynthesizeCtx(ctx context.Context, input string, voicePath str
 		}
 
 		cfg := s.generateConfig(chunk.FramesAfterEOS())
-		cfg.VoiceEmbedding = voiceEmb
+		if hasVoiceEmb {
+			cfg.VoiceEmbedding = voiceEmb
+		}
 
 		pcm, err := s.runtime.GenerateAudio(ctx, chunk.TokenIDs, cfg)
 		if err != nil {
@@ -157,7 +159,7 @@ func (s *Service) SynthesizeStream(ctx context.Context, input string, voicePath 
 		return fmt.Errorf("no tokens produced from input: %w", err)
 	}
 
-	voiceEmb, err := loadVoiceEmbedding(voicePath)
+	voiceEmb, hasVoiceEmb, err := loadVoiceEmbedding(voicePath)
 	if err != nil {
 		return err
 	}
@@ -173,7 +175,9 @@ func (s *Service) SynthesizeStream(ctx context.Context, input string, voicePath 
 		}
 
 		cfg := s.generateConfig(chunk.FramesAfterEOS())
-		cfg.VoiceEmbedding = voiceEmb
+		if hasVoiceEmb {
+			cfg.VoiceEmbedding = voiceEmb
+		}
 
 		pcm, err := s.runtime.GenerateAudio(ctx, chunk.TokenIDs, cfg)
 		if err != nil {
@@ -190,20 +194,20 @@ func (s *Service) SynthesizeStream(ctx context.Context, input string, voicePath 
 	return nil
 }
 
-func loadVoiceEmbedding(voicePath string) (*VoiceEmbedding, error) {
+func loadVoiceEmbedding(voicePath string) (*VoiceEmbedding, bool, error) {
 	if strings.TrimSpace(voicePath) == "" {
-		return nil, nil
+		return nil, false, nil
 	}
 
 	data, shape, err := safetensors.LoadVoiceEmbedding(voicePath)
 	if err != nil {
-		return nil, fmt.Errorf("load voice embedding: %w", err)
+		return nil, false, fmt.Errorf("load voice embedding: %w", err)
 	}
 
 	return &VoiceEmbedding{
 		Data:  data,
 		Shape: shape,
-	}, nil
+	}, true, nil
 }
 
 // Close releases engine resources.

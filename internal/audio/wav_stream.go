@@ -46,7 +46,8 @@ func WritePCM16Samples(w io.Writer, samples []float32) (int, error) {
 	for i, s := range samples {
 		clamped := math.Max(-1.0, math.Min(1.0, float64(s)))
 		v := int16(clamped * 32767)
-		binary.LittleEndian.PutUint16(buf[i*2:], uint16(v))
+		buf[i*2] = byte(v)
+		buf[i*2+1] = byte(v >> 8)
 	}
 
 	return w.Write(buf)

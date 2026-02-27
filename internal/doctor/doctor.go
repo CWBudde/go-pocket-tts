@@ -74,6 +74,7 @@ func Run(cfg Config, w io.Writer) Result {
 	}
 
 	// ---- Python version ---------------------------------------------------
+	//nolint:nestif // Preserve detailed staged reporting for python availability and version compatibility.
 	if cfg.SkipPython {
 		_, _ = fmt.Fprintf(w, "%s python version: skipped\n", PassMark)
 	} else {
@@ -104,6 +105,7 @@ func Run(cfg Config, w io.Writer) Result {
 	}
 
 	// ---- native safetensors model -----------------------------------------
+	//nolint:nestif // Keep model existence and optional validation checks grouped in doctor output order.
 	if cfg.NativeModelPath != "" {
 		_, statErr := os.Stat(cfg.NativeModelPath)
 		if statErr != nil {

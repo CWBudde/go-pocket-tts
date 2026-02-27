@@ -26,7 +26,8 @@ func TestResolveBundleFromLock_ByVariant(t *testing.T) {
 		t.Fatalf("marshal lock: %v", err)
 	}
 
-	if err := os.WriteFile(lockPath, data, 0o644); err != nil {
+	err = os.WriteFile(lockPath, data, 0o644)
+	if err != nil {
 		t.Fatalf("write lock: %v", err)
 	}
 
@@ -98,19 +99,23 @@ func TestExtractBundle_Zip(t *testing.T) {
 
 	_, _ = w.Write([]byte(`{"graphs":[]}`))
 
-	if err := zw.Close(); err != nil {
+	err = zw.Close()
+	if err != nil {
 		t.Fatalf("close zip writer: %v", err)
 	}
 
-	if err := fh.Close(); err != nil {
+	err = fh.Close()
+	if err != nil {
 		t.Fatalf("close zip file: %v", err)
 	}
 
-	if err := extractZip(zipPath, outDir); err != nil {
+	err = extractZip(zipPath, outDir)
+	if err != nil {
 		t.Fatalf("extract zip: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(outDir, "manifest.json")); err != nil {
+	_, err = os.Stat(filepath.Join(outDir, "manifest.json"))
+	if err != nil {
 		t.Fatalf("expected extracted file: %v", err)
 	}
 }

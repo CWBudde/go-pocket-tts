@@ -10,7 +10,9 @@ func TestVoiceManagerListAndResolve(t *testing.T) {
 	tmp := t.TempDir()
 
 	voiceFile := filepath.Join(tmp, "mimi.safetensors")
-	if err := os.WriteFile(voiceFile, []byte("voice"), 0o644); err != nil {
+
+	err := os.WriteFile(voiceFile, []byte("voice"), 0o644)
+	if err != nil {
 		t.Fatalf("write voice file: %v", err)
 	}
 
@@ -21,7 +23,9 @@ func TestVoiceManagerListAndResolve(t *testing.T) {
     {"id": "mimi", "path": "mimi.safetensors", "license": "CC-BY-4.0"}
   ]
 }`
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+
+	err = os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 
@@ -54,7 +58,9 @@ func TestVoiceManagerResolveUnknownID(t *testing.T) {
 	manifestPath := filepath.Join(tmp, "manifest.json")
 
 	manifest := `{"voices": [{"id": "mimi", "path": "mimi.safetensors", "license": "CC-BY-4.0"}]}`
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+
+	err := os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 
@@ -63,7 +69,8 @@ func TestVoiceManagerResolveUnknownID(t *testing.T) {
 		t.Fatalf("new voice manager: %v", err)
 	}
 
-	if _, err := mgr.ResolvePath("unknown"); err == nil {
+	_, err = mgr.ResolvePath("unknown")
+	if err == nil {
 		t.Fatal("expected error for unknown voice id")
 	}
 }

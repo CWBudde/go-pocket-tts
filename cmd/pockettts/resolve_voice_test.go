@@ -31,7 +31,8 @@ func TestResolveVoiceOrPath_NoManifest(t *testing.T) {
 		}
 	})
 
-	if err := os.Chdir(t.TempDir()); err != nil {
+	err = os.Chdir(t.TempDir())
+	if err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
 
@@ -60,22 +61,28 @@ func TestResolveVoiceOrPath_KnownVoiceInManifest(t *testing.T) {
 		}
 	})
 
-	if err := os.Chdir(tmp); err != nil {
+	err = os.Chdir(tmp)
+	if err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
 
 	voiceDir := filepath.Join(tmp, "voices")
-	if err := os.MkdirAll(voiceDir, 0o755); err != nil {
+
+	err = os.MkdirAll(voiceDir, 0o755)
+	if err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	// Voice path is relative to the manifest's directory (voices/).
 	// VoiceManager resolves: filepath.Join("voices", "alice.bin") → "<tmp>/voices/alice.bin".
-	if err := os.WriteFile(filepath.Join(voiceDir, "alice.bin"), []byte("voice-data"), 0o644); err != nil {
+	err = os.WriteFile(filepath.Join(voiceDir, "alice.bin"), []byte("voice-data"), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile alice.bin: %v", err)
 	}
 
 	manifest := `{"voices":[{"id":"alice","path":"alice.bin","license":"MIT"}]}`
-	if err := os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+
+	err = os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -107,17 +114,22 @@ func TestResolveVoiceOrPath_UnknownVoicePassesThrough(t *testing.T) {
 		}
 	})
 
-	if err := os.Chdir(tmp); err != nil {
+	err = os.Chdir(tmp)
+	if err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
 
 	voiceDir := filepath.Join(tmp, "voices")
-	if err := os.MkdirAll(voiceDir, 0o755); err != nil {
+
+	err = os.MkdirAll(voiceDir, 0o755)
+	if err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
 	manifest := `{"voices":[{"id":"alice","path":"voices/alice.bin","license":"MIT"}]}`
-	if err := os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+
+	err = os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 

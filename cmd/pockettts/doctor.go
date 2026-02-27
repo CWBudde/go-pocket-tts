@@ -61,6 +61,7 @@ func newDoctorCmd() *cobra.Command {
 			// Skip gracefully when no manifest is present (models not yet downloaded).
 			const onnxManifest = "models/onnx/manifest.json"
 
+			//nolint:nestif // Keep doctor verify status reporting in one place with explicit skip/fail messaging.
 			if backend == config.BackendNative {
 				_, _ = fmt.Fprintf(
 					os.Stdout,

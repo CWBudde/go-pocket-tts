@@ -60,6 +60,8 @@ func NewServiceFactory(cfg config.Config) ServiceFactory {
 // RunParityCase executes the same text/voice input on each backend and returns
 // comparable snapshots. Backends that are not yet implemented are marked as
 // skipped.
+//
+//nolint:funlen // Snapshot assembly is intentionally linear for test diagnostics.
 func RunParityCase(factory ServiceFactory, backends []string, input, voicePath string, seed int64) ([]ParitySnapshot, error) {
 	if factory == nil {
 		return nil, errors.New("parity service factory is required")

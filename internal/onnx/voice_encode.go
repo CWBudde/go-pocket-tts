@@ -2,7 +2,6 @@ package onnx
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -283,7 +282,9 @@ func decodePCM16LE(data []byte) ([]float32, error) {
 
 	out := make([]float32, len(data)/2)
 	for i := range out {
-		pcm := int16(binary.LittleEndian.Uint16(data[i*2:]))
+		lo := int16(data[i*2])
+		hi := int16(data[i*2+1]) << 8
+		pcm := hi | lo
 		out[i] = float32(pcm) / 32768.0
 	}
 

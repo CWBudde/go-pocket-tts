@@ -20,10 +20,17 @@ var convWorkers atomic.Int32
 // SetConvWorkers sets the maximum number of goroutines used for parallel
 // Conv1D / ConvTranspose1D execution.  n ≤ 1 disables parallelism.
 func SetConvWorkers(n int) {
+	const maxInt32 = int(^uint32(0) >> 1)
+
 	if n < 0 {
 		n = 0
 	}
 
+	if n > maxInt32 {
+		n = maxInt32
+	}
+
+	//nolint:gosec // n is clamped to int32 range above.
 	convWorkers.Store(int32(n))
 }
 

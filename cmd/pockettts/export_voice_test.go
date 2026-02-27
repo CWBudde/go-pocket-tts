@@ -80,7 +80,9 @@ func TestExportVoiceCmd_RequiresInput(t *testing.T) {
 
 func TestExportVoiceCmd_RequiresOut(t *testing.T) {
 	in := filepath.Join(t.TempDir(), "in.wav")
-	if err := os.WriteFile(in, []byte{0, 1}, 0o644); err != nil {
+
+	err := os.WriteFile(in, []byte{0, 1}, 0o644)
+	if err != nil {
 		t.Fatalf("write input fixture: %v", err)
 	}
 
@@ -88,7 +90,7 @@ func TestExportVoiceCmd_RequiresOut(t *testing.T) {
 	cmd.SilenceUsage = true
 	cmd.SetArgs([]string{"export-voice", "--input=" + in})
 
-	err := cmd.Execute()
+	err = cmd.Execute()
 	if err == nil {
 		t.Fatal("expected error when --out is missing")
 	}
@@ -116,14 +118,18 @@ func TestExportVoiceCmd_WritesSafetensorsViaNativeEncoder(t *testing.T) {
 	}
 
 	in := filepath.Join(t.TempDir(), "prompt.wav")
-	if err := os.WriteFile(in, []byte{1, 2, 3, 4}, 0o644); err != nil {
+
+	err := os.WriteFile(in, []byte{1, 2, 3, 4}, 0o644)
+	if err != nil {
 		t.Fatalf("write input fixture: %v", err)
 	}
 
 	out := filepath.Join(t.TempDir(), "voice.safetensors")
 
 	modelPath := filepath.Join(t.TempDir(), "tts_b6369a24.safetensors")
-	if err := os.WriteFile(modelPath, []byte("stub"), 0o644); err != nil {
+
+	err = os.WriteFile(modelPath, []byte("stub"), 0o644)
+	if err != nil {
 		t.Fatalf("write model fixture: %v", err)
 	}
 
@@ -138,7 +144,8 @@ func TestExportVoiceCmd_WritesSafetensorsViaNativeEncoder(t *testing.T) {
 		"--license=CC-BY-4.0",
 	})
 
-	if err := cmd.Execute(); err != nil {
+	err = cmd.Execute()
+	if err != nil {
 		t.Fatalf("export-voice command failed: %v", err)
 	}
 

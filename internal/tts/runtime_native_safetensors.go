@@ -36,6 +36,7 @@ func NewNativeSafetensorsRuntime(model *nativemodel.Model) Runtime {
 	return newNativeSafetensorsRuntime(model)
 }
 
+//nolint:gocognit,cyclop,funlen // Generation pipeline intentionally keeps staged control-flow and logging in one place.
 func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []int64, cfg RuntimeGenerateConfig) ([]float32, error) {
 	if r == nil || r.model == nil {
 		return nil, errors.New("native-safetensors runtime unavailable")
