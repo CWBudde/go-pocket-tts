@@ -1,19 +1,22 @@
 # go-pocket-tts
 
-Go CLI (and a small HTTP server skeleton) for working with [PocketTTS](https://github.com/kyutai-labs/pocket-tts):
+A pure-Go CLI and HTTP server for [PocketTTS](https://github.com/kyutai-labs/pocket-tts) text-to-speech synthesis. The default backend runs inference directly from safetensors weights — no Python, no ONNX Runtime required. An optional ONNX backend is available as a fallback.
 
-- Run text-to-speech with native Go backend by default (`--backend native`)
+- Synthesize speech from text with the native Go backend (AVX2/FMA optimized)
+- Serve TTS over HTTP with concurrent worker pool and graceful shutdown
 - Download PocketTTS model checkpoints from Hugging Face
-- Export PocketTTS PyTorch checkpoints to ONNX subgraphs + manifest
-- Smoke-verify exported ONNX graphs
-- Export voice embeddings (`.safetensors`) from a WAV/PCM prompt (native ONNX)
+- Export voice embeddings (`.safetensors`) from a WAV/PCM prompt
+- Optionally export and run ONNX subgraphs via ONNX Runtime
+- Run in-browser via experimental WASM kernel
 
 ## Status
 
-- CLI commands are implemented.
+All core features are implemented and functional.
+
 - Runtime binary: `pockettts` (`synth`, `export-voice`, `serve`, `doctor`, `health`, `model download`, `model verify`).
 - Tooling binary: `pockettts-tools` (`model export`).
 - HTTP server endpoints: `GET /health`, `GET /voices`, `POST /tts`.
+- Experimental browser app via Go WASM kernel (GitHub Pages deployment).
 
 ## Get Started
 
@@ -311,3 +314,7 @@ just test
 just lint
 just ci
 ```
+
+## Acknowledgements
+
+This project is based heavily on the work of [Kyutai Labs](https://github.com/kyutai-labs) and their [PocketTTS](https://github.com/kyutai-labs/pocket-tts) text-to-speech model. The native Go inference engine reimplements the model architecture and generation loop originally developed by the Kyutai team. All model weights are downloaded from their official Hugging Face repositories. Full credit for the underlying research and model design belongs to them.
