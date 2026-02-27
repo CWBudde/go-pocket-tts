@@ -237,7 +237,7 @@ type countingSynthesizer struct {
 	wav     []byte
 }
 
-func (c *countingSynthesizer) Synthesize(ctx context.Context, _, _ string) ([]byte, error) {
+func (c *countingSynthesizer) Synthesize(_ context.Context, _, _ string) ([]byte, error) {
 	c.onEnter()
 	defer c.onExit()
 

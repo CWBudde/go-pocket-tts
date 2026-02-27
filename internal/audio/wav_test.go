@@ -17,7 +17,7 @@ func makeWAV(sampleRate uint32, numChannels uint16, bitDepth uint16, numSamples 
 
 	buf := &bytes.Buffer{}
 	buf.WriteString("RIFF")
-	_ = binary.Write(buf, binary.LittleEndian, uint32(riffSize))
+	_ = binary.Write(buf, binary.LittleEndian, riffSize)
 	buf.WriteString("WAVE")
 
 	// fmt chunk

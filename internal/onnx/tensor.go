@@ -102,95 +102,52 @@ func (t *Tensor) Data() any {
 }
 
 func ExtractFloat32(output any) ([]float32, error) {
-	v, err := unwrapData(output)
-	if err != nil {
-		return nil, err
-	}
-
-	switch out := v.(type) {
-	case []float32:
-		return append([]float32(nil), out...), nil
-	case *[]float32:
-		if out == nil {
-			return nil, errors.New("expected []float32 output, got nil *[]float32")
-		}
-
-		return append([]float32(nil), (*out)...), nil
-	case Tensor:
-		if out.dtype != DTypeFloat32 {
-			return nil, fmt.Errorf("expected float32 tensor, got %s", out.dtype)
-		}
-
-		data, ok := out.data.([]float32)
-		if !ok {
-			return nil, fmt.Errorf("float32 tensor has unexpected backing type %T", out.data)
-		}
-
-		return append([]float32(nil), data...), nil
-	case *Tensor:
-		if out == nil {
-			return nil, errors.New("expected *Tensor output, got nil")
-		}
-
-		if out.dtype != DTypeFloat32 {
-			return nil, fmt.Errorf("expected float32 tensor, got %s", out.dtype)
-		}
-
-		data, ok := out.data.([]float32)
-		if !ok {
-			return nil, fmt.Errorf("float32 tensor has unexpected backing type %T", out.data)
-		}
-
-		return append([]float32(nil), data...), nil
-	default:
-		return nil, fmt.Errorf("expected []float32 output, got %T", v)
-	}
+	return extractTypedSlice[float32](output, DTypeFloat32, "float32")
 }
 
 func ExtractInt64(output any) ([]int64, error) {
+	return extractTypedSlice[int64](output, DTypeInt64, "int64")
+}
+
+func extractTypedSlice[T ~float32 | ~int64](output any, expected TensorDType, typeName string) ([]T, error) {
 	v, err := unwrapData(output)
 	if err != nil {
 		return nil, err
 	}
 
 	switch out := v.(type) {
-	case []int64:
-		return append([]int64(nil), out...), nil
-	case *[]int64:
+	case []T:
+		return append([]T(nil), out...), nil
+	case *[]T:
 		if out == nil {
-			return nil, errors.New("expected []int64 output, got nil *[]int64")
+			return nil, fmt.Errorf("expected []%s output, got nil *[]%s", typeName, typeName)
 		}
 
-		return append([]int64(nil), (*out)...), nil
+		return append([]T(nil), (*out)...), nil
 	case Tensor:
-		if out.dtype != DTypeInt64 {
-			return nil, fmt.Errorf("expected int64 tensor, got %s", out.dtype)
-		}
-
-		data, ok := out.data.([]int64)
-		if !ok {
-			return nil, fmt.Errorf("int64 tensor has unexpected backing type %T", out.data)
-		}
-
-		return append([]int64(nil), data...), nil
+		return extractTypedSliceFromTensor[T](&out, expected, typeName)
 	case *Tensor:
 		if out == nil {
 			return nil, errors.New("expected *Tensor output, got nil")
 		}
 
-		if out.dtype != DTypeInt64 {
-			return nil, fmt.Errorf("expected int64 tensor, got %s", out.dtype)
-		}
-
-		data, ok := out.data.([]int64)
-		if !ok {
-			return nil, fmt.Errorf("int64 tensor has unexpected backing type %T", out.data)
-		}
-
-		return append([]int64(nil), data...), nil
+		return extractTypedSliceFromTensor[T](out, expected, typeName)
 	default:
-		return nil, fmt.Errorf("expected []int64 output, got %T", v)
+		return nil, fmt.Errorf("expected []%s output, got %T", typeName, v)
 	}
+}
+
+func extractTypedSliceFromTensor[T ~float32 | ~int64](out *Tensor, expected TensorDType, typeName string) ([]T, error) {
+	if out.dtype != expected {
+		return nil, fmt.Errorf("expected %s tensor, got %s", typeName, out.dtype)
+	}
+
+	data, ok := out.data.([]T)
+	if !ok {
+		return nil, fmt.Errorf("%s tensor has unexpected backing type %T", typeName, out.data)
+	}
+
+	return append([]T(nil), data...), nil
 }
 
 func unwrapData(output any) (any, error) {

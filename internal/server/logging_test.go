@@ -22,8 +22,8 @@ func (c *capturingHandler) Handle(_ context.Context, r slog.Record) error {
 	c.records = append(c.records, r)
 	return nil
 }
-func (c *capturingHandler) WithAttrs(attrs []slog.Attr) slog.Handler { return c }
-func (c *capturingHandler) WithGroup(name string) slog.Handler       { return c }
+func (c *capturingHandler) WithAttrs(_ []slog.Attr) slog.Handler { return c }
+func (c *capturingHandler) WithGroup(_ string) slog.Handler      { return c }
 
 func (c *capturingHandler) attrMap(idx int) map[string]any {
 	m := make(map[string]any)
@@ -37,8 +37,8 @@ func (c *capturingHandler) attrMap(idx int) map[string]any {
 }
 
 func TestTTS_LogsVoiceAndTextLen(t *testing.T) {
-	cap := &capturingHandler{}
-	logger := slog.New(cap)
+	handler := &capturingHandler{}
+	logger := slog.New(handler)
 
 	fakeWAV := []byte("RIFF\x00\x00\x00\x00WAVEfmt ")
 	h := server.NewHandler(
@@ -58,15 +58,15 @@ func TestTTS_LogsVoiceAndTextLen(t *testing.T) {
 	}
 
 	// Must have at least one log record for the request.
-	if len(cap.records) == 0 {
+	if len(handler.records) == 0 {
 		t.Fatal("want at least one log record, got none")
 	}
 
 	// Find the synthesis log record.
 	var found bool
 
-	for i := range cap.records {
-		attrs := cap.attrMap(i)
+	for i := range handler.records {
+		attrs := handler.attrMap(i)
 		if _, ok := attrs["voice"]; ok {
 			found = true
 
@@ -90,8 +90,8 @@ func TestTTS_LogsVoiceAndTextLen(t *testing.T) {
 }
 
 func TestTTS_LogsStatusOnError(t *testing.T) {
-	cap := &capturingHandler{}
-	logger := slog.New(cap)
+	handler := &capturingHandler{}
+	logger := slog.New(handler)
 
 	h := server.NewHandler(
 		&stubSynthesizer{err: errSynthFailed},
@@ -111,8 +111,8 @@ func TestTTS_LogsStatusOnError(t *testing.T) {
 
 	var foundError bool
 
-	for i := range cap.records {
-		attrs := cap.attrMap(i)
+	for i := range handler.records {
+		attrs := handler.attrMap(i)
 		if _, ok := attrs["error"]; ok {
 			foundError = true
 		}

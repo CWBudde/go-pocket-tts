@@ -485,6 +485,7 @@ func prepareRoPE(x, cos, sin *tensor.Tensor, pos int64) (ropeParams, *tensor.Ten
 
 	cosShape := cos.Shape()
 	sinShape := sin.Shape()
+
 	if len(cosShape) != 2 || len(sinShape) != 2 {
 		return ropeParams{}, nil, nil, nil, nil, fmt.Errorf("ops: rope cos/sin must be rank 2, got %v and %v", cosShape, sinShape)
 	}
@@ -668,6 +669,7 @@ func prepareConv1D(
 
 	inShape := input.Shape()
 	kShape := kernel.Shape()
+
 	if len(inShape) != 3 || len(kShape) != 3 {
 		return conv1DParams{}, nil, nil, fmt.Errorf("ops: conv1d expects input/kernel rank 3, got %v and %v", inShape, kShape)
 	}

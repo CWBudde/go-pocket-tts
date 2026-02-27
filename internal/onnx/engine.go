@@ -8,16 +8,9 @@ import (
 	"sync"
 )
 
-// runnerIface is satisfied by *Runner and by test fakes.
-type runnerIface interface {
-	Run(ctx context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error)
-	Name() string
-	Close()
-}
-
 // Engine manages ONNX graph runners loaded from a manifest.
 type Engine struct {
-	runners map[string]runnerIface
+	runners map[string]GraphRunner
 	sm      *SessionManager
 
 	manifestPath      string
@@ -34,7 +27,7 @@ func NewEngine(manifestPath string, cfg RunnerConfig) (*Engine, error) {
 		return nil, fmt.Errorf("load manifest: %w", err)
 	}
 
-	runners := make(map[string]runnerIface, len(sm.Sessions()))
+	runners := make(map[string]GraphRunner, len(sm.Sessions()))
 	for _, sess := range sm.Sessions() {
 		runner, err := NewRunner(sess, cfg)
 		if err != nil {

@@ -277,6 +277,8 @@ func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	start := time.Now()
+
+	// streamChunks handles the synthesis and streaming, and returns the total number of audio samples sent.
 	totalSamples, err := h.streamChunks(ctx, cancel, w, flusher, req)
 	if err != nil {
 		h.log.ErrorContext(r.Context(), "streaming synthesis failed",
@@ -339,6 +341,7 @@ func (h *handler) decodeStreamRequest(w http.ResponseWriter, r *http.Request) (t
 	if len(req.Text) > h.opts.maxTextBytes {
 		writeError(w, http.StatusRequestEntityTooLarge,
 			fmt.Sprintf("text exceeds maximum size of %d bytes", h.opts.maxTextBytes))
+
 		return ttsRequest{}, false
 	}
 
@@ -356,7 +359,8 @@ func (h *handler) streamChunks(
 	w.Header().Set("Transfer-Encoding", "chunked")
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := audio.WriteWAVHeaderStreaming(w); err != nil {
+	_, err := audio.WriteWAVHeaderStreaming(w)
+	if err != nil {
 		h.log.ErrorContext(ctx, "failed to write WAV header", slog.String("error", err.Error()))
 		return 0, err
 	}
@@ -373,9 +377,12 @@ func (h *handler) streamChunks(
 	totalSamples := 0
 	for chunk := range chunkCh {
 		totalSamples += len(chunk.Samples)
-		if _, err := audio.WritePCM16Samples(w, chunk.Samples); err != nil {
+
+		_, err := audio.WritePCM16Samples(w, chunk.Samples)
+		if err != nil {
 			h.log.ErrorContext(ctx, "failed to write PCM chunk", slog.String("error", err.Error()))
 			cancel()
+
 			break
 		}
 

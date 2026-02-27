@@ -691,11 +691,12 @@ func broadcastShape(a, b []int64) ([]int64, error) {
 			bd = b[j]
 		}
 
-		if ad == bd || ad == 1 {
+		switch {
+		case ad == bd || ad == 1:
 			out[i] = bd
-		} else if bd == 1 {
+		case bd == 1:
 			out[i] = ad
-		} else {
+		default:
 			return nil, fmt.Errorf("cannot broadcast shapes %v and %v", a, b)
 		}
 	}

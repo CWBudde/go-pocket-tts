@@ -254,7 +254,7 @@ func TestOptions_WithRequestTimeout(t *testing.T) {
 	}
 }
 
-func TestOptions_WithLogger(t *testing.T) {
+func TestOptions_WithLogger(_ *testing.T) {
 	// Just verify it doesn't panic and sets a non-nil logger.
 	opts := defaultOptions()
 	WithLogger(nil)(&opts)
