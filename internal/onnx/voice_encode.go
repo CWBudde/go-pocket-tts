@@ -213,6 +213,7 @@ func (e *Engine) resolveModelWeightsPath() (string, error) {
 	}
 
 	if p := strings.TrimSpace(os.Getenv("POCKETTTS_MODEL_SAFETENSORS")); p != "" {
+		// #nosec G703 -- Path is explicitly provided via environment for local model selection; this only checks existence.
 		_, err := os.Stat(p)
 		if err == nil {
 			return p, nil

@@ -176,6 +176,7 @@ func fetchBundleArchive(client *http.Client, bundleURL string) (string, string, 
 		req, err := http.NewRequest(http.MethodGet, bundleURL, nil)
 		if err != nil {
 			_ = tmpFile.Close()
+			// #nosec G703 -- tmpPath is from os.CreateTemp in this function and removed only for local cleanup.
 			_ = os.Remove(tmpPath)
 
 			return "", "", fmt.Errorf("build bundle request: %w", err)
@@ -185,6 +186,7 @@ func fetchBundleArchive(client *http.Client, bundleURL string) (string, string, 
 		resp, err := client.Do(req)
 		if err != nil {
 			_ = tmpFile.Close()
+			// #nosec G703 -- tmpPath is from os.CreateTemp in this function and removed only for local cleanup.
 			_ = os.Remove(tmpPath)
 
 			return "", "", fmt.Errorf("bundle download failed: %w", err)
