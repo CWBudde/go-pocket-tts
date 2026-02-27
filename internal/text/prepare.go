@@ -1,6 +1,7 @@
 package text
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -37,6 +38,7 @@ func (c ChunkMetadata) FramesAfterEOS() int {
 	if c.NumWords <= 4 {
 		return 5
 	}
+
 	return 3
 }
 
@@ -54,6 +56,7 @@ func PrepareText(input string) string {
 	for strings.Contains(s, "  ") {
 		s = strings.ReplaceAll(s, "  ", " ")
 	}
+
 	s = strings.TrimSpace(s)
 
 	// Step 2: capitalize first letter.
@@ -85,7 +88,7 @@ func PrepareText(input string) string {
 // processed text, token IDs, word count, and generation parameters.
 func PrepareChunks(input string, tok Tokenizer, maxTokens int) ([]ChunkMetadata, error) {
 	if strings.TrimSpace(input) == "" {
-		return nil, fmt.Errorf("input text is empty")
+		return nil, errors.New("input text is empty")
 	}
 
 	// Split into sentences first, then apply PrepareText per chunk.
@@ -102,12 +105,15 @@ func PrepareChunks(input string, tok Tokenizer, maxTokens int) ([]ChunkMetadata,
 		if len(pending) == 0 {
 			return nil
 		}
+
 		joined := strings.Join(pending, " ")
 		prepared := PrepareText(joined)
+
 		ids, err := tok.Encode(prepared)
 		if err != nil {
 			return fmt.Errorf("encode %q: %w", prepared, err)
 		}
+
 		chunks = append(chunks, ChunkMetadata{
 			Text:      prepared,
 			TokenIDs:  ids,
@@ -115,11 +121,13 @@ func PrepareChunks(input string, tok Tokenizer, maxTokens int) ([]ChunkMetadata,
 			NumWords:  len(splitWords(joined)),
 		})
 		pending = pending[:0]
+
 		return nil
 	}
 
 	for _, sent := range sentences {
 		prepared := PrepareText(sent)
+
 		ids, err := tok.Encode(prepared)
 		if err != nil {
 			return nil, fmt.Errorf("encode sentence %q: %w", sent, err)
@@ -127,12 +135,15 @@ func PrepareChunks(input string, tok Tokenizer, maxTokens int) ([]ChunkMetadata,
 
 		// Count tokens that would result if we add this sentence to pending.
 		pendingTokens := 0
+
 		if len(pending) > 0 {
 			joined := PrepareText(strings.Join(append(pending, sent), " "))
+
 			tentativeIDs, err := tok.Encode(joined)
 			if err != nil {
 				return nil, fmt.Errorf("encode combined chunk: %w", err)
 			}
+
 			pendingTokens = len(tentativeIDs)
 		} else {
 			pendingTokens = len(ids)
@@ -140,13 +151,17 @@ func PrepareChunks(input string, tok Tokenizer, maxTokens int) ([]ChunkMetadata,
 
 		if len(pending) > 0 && pendingTokens > maxTokens {
 			// Current sentence would exceed budget — flush and start fresh.
-			if err := flush(); err != nil {
+			err := flush()
+			if err != nil {
 				return nil, err
 			}
 		}
+
 		pending = append(pending, sent)
 	}
-	if err := flush(); err != nil {
+
+	err := flush()
+	if err != nil {
 		return nil, err
 	}
 

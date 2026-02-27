@@ -15,6 +15,7 @@ func TestVoiceManagerListAndResolve(t *testing.T) {
 	}
 
 	manifestPath := filepath.Join(tmp, "manifest.json")
+
 	manifest := `{
   "voices": [
     {"id": "mimi", "path": "mimi.safetensors", "license": "CC-BY-4.0"}
@@ -33,6 +34,7 @@ func TestVoiceManagerListAndResolve(t *testing.T) {
 	if len(voices) != 1 {
 		t.Fatalf("expected 1 voice, got %d", len(voices))
 	}
+
 	if voices[0].ID != "mimi" {
 		t.Fatalf("unexpected voice id: %q", voices[0].ID)
 	}
@@ -41,6 +43,7 @@ func TestVoiceManagerListAndResolve(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve voice path: %v", err)
 	}
+
 	if resolved != voiceFile {
 		t.Fatalf("expected %q, got %q", voiceFile, resolved)
 	}
@@ -49,6 +52,7 @@ func TestVoiceManagerListAndResolve(t *testing.T) {
 func TestVoiceManagerResolveUnknownID(t *testing.T) {
 	tmp := t.TempDir()
 	manifestPath := filepath.Join(tmp, "manifest.json")
+
 	manifest := `{"voices": [{"id": "mimi", "path": "mimi.safetensors", "license": "CC-BY-4.0"}]}`
 	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)

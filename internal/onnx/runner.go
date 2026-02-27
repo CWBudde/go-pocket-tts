@@ -46,6 +46,7 @@ func NewRunner(meta Session, cfg RunnerConfig) (*Runner, error) {
 	if err != nil {
 		env.Close()
 		_ = runtime.Close()
+
 		return nil, fmt.Errorf("ort session for %q (%s): %w", meta.Name, meta.Path, err)
 	}
 
@@ -67,8 +68,10 @@ func (r *Runner) Run(ctx context.Context, inputs map[string]*Tensor) (map[string
 			closeORTValues(ortInputs)
 			return nil, fmt.Errorf("input %q: %w", name, err)
 		}
+
 		ortInputs[name] = v
 	}
+
 	defer closeORTValues(ortInputs)
 
 	ortOutputs, err := r.session.Run(ctx, ortInputs)
@@ -83,8 +86,10 @@ func (r *Runner) Run(ctx context.Context, inputs map[string]*Tensor) (map[string
 		if err != nil {
 			return nil, fmt.Errorf("output %q: %w", name, err)
 		}
+
 		results[name] = t
 	}
+
 	return results, nil
 }
 
@@ -94,10 +99,12 @@ func (r *Runner) Close() {
 		r.session.Close()
 		r.session = nil
 	}
+
 	if r.env != nil {
 		r.env.Close()
 		r.env = nil
 	}
+
 	if r.runtime != nil {
 		_ = r.runtime.Close()
 		r.runtime = nil
@@ -125,18 +132,21 @@ func ortToTensor(v *ort.Value) (*Tensor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get element type: %w", err)
 	}
+
 	switch elemType {
 	case ort.ONNXTensorElementDataTypeFloat:
 		data, shape, err := ort.GetTensorData[float32](v)
 		if err != nil {
 			return nil, err
 		}
+
 		return NewTensor(data, shape)
 	case ort.ONNXTensorElementDataTypeInt64:
 		data, shape, err := ort.GetTensorData[int64](v)
 		if err != nil {
 			return nil, err
 		}
+
 		return NewTensor(data, shape)
 	default:
 		return nil, fmt.Errorf("unsupported ORT element type %d", elemType)

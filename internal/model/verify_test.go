@@ -34,21 +34,26 @@ func TestVerifyONNXRunsNativeVerifier(t *testing.T) {
 	}
 
 	orig := runNativeVerify
+
 	t.Cleanup(func() { runNativeVerify = orig })
 
 	var called bool
 	runNativeVerify = func(sessions []onnx.Session, opts VerifyOptions) error {
 		called = true
+
 		if len(sessions) != 1 || sessions[0].Name != "tiny" {
 			t.Fatalf("unexpected sessions: %+v", sessions)
 		}
+
 		if opts.ManifestPath != manifestPath {
 			t.Fatalf("unexpected manifest path: %s", opts.ManifestPath)
 		}
+
 		return nil
 	}
 
 	var out bytes.Buffer
+
 	err := VerifyONNX(VerifyOptions{
 		ManifestPath: manifestPath,
 		ORTLibrary:   "/tmp/libonnxruntime.so",
@@ -58,6 +63,7 @@ func TestVerifyONNXRunsNativeVerifier(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VerifyONNX failed: %v", err)
 	}
+
 	if !called {
 		t.Fatal("expected native verifier to be called")
 	}
@@ -87,13 +93,16 @@ func TestVerifyONNXRejectsInvalidInputShape(t *testing.T) {
 	}
 
 	orig := runNativeVerify
+
 	t.Cleanup(func() { runNativeVerify = orig })
+
 	runNativeVerify = func(_ []onnx.Session, _ VerifyOptions) error { return nil }
 
 	err := VerifyONNX(VerifyOptions{ManifestPath: manifestPath})
 	if err == nil {
 		t.Fatal("expected shape validation error")
 	}
+
 	if !strings.Contains(err.Error(), "not a positive integer") {
 		t.Fatalf("unexpected error: %v", err)
 	}

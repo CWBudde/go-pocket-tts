@@ -2,6 +2,7 @@ package tts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -37,16 +38,18 @@ func NewNativeSafetensorsRuntime(model *nativemodel.Model) Runtime {
 
 func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []int64, cfg RuntimeGenerateConfig) ([]float32, error) {
 	if r == nil || r.model == nil {
-		return nil, fmt.Errorf("native-safetensors runtime unavailable")
+		return nil, errors.New("native-safetensors runtime unavailable")
 	}
+
 	if len(tokens) == 0 {
-		return nil, fmt.Errorf("generate: token slice must not be empty")
+		return nil, errors.New("generate: token slice must not be empty")
 	}
 
 	maxSteps := cfg.MaxSteps
 	if maxSteps <= 0 {
 		maxSteps = 256
 	}
+
 	decodeSteps := cfg.LSDDecodeSteps
 	if decodeSteps <= 0 {
 		decodeSteps = 1
@@ -54,6 +57,7 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 
 	overallStart := time.Now()
 	stageStart := overallStart
+
 	slog.Debug(
 		"native-safetensors generation start",
 		"tokens", len(tokens),
@@ -67,6 +71,7 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 	if err != nil {
 		return nil, fmt.Errorf("generate: text embeddings: %w", err)
 	}
+
 	slog.Debug(
 		"native-safetensors text conditioning ready",
 		"ms", time.Since(stageStart).Milliseconds(),
@@ -78,10 +83,12 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 		if err != nil {
 			return nil, fmt.Errorf("generate: build voice tensor: %w", err)
 		}
+
 		textEmb, err = tensor.Concat([]*tensor.Tensor{voiceEmb, textEmb}, 1)
 		if err != nil {
 			return nil, fmt.Errorf("generate: prepend voice embedding: %w", err)
 		}
+
 		shape := cfg.VoiceEmbedding.Shape
 		if len(shape) >= 2 {
 			slog.Debug("voice conditioning applied", "voice_frames", shape[1], "total_frames", textEmb.Shape()[1])
@@ -89,13 +96,16 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 	}
 
 	stageStart = time.Now()
+
 	flowState, err := r.model.NewFlowState()
 	if err != nil {
 		return nil, fmt.Errorf("generate: init flow state: %w", err)
 	}
+
 	if err := r.model.PromptFlow(flowState, textEmb); err != nil {
 		return nil, fmt.Errorf("generate: prompt flow state: %w", err)
 	}
+
 	slog.Debug("native-safetensors flow prompt complete", "ms", time.Since(stageStart).Milliseconds())
 
 	sequenceFrame, err := newBOSSequenceTensor()
@@ -107,7 +117,8 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 	var eosCountdown *int
 
 	stageStart = time.Now()
-	for step := 0; step < maxSteps; step++ {
+
+	for step := range maxSteps {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -122,9 +133,11 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 			r.rng,
 		)
 		r.rngMu.Unlock()
+
 		if err != nil {
 			return nil, fmt.Errorf("generate step %d: %w", step, err)
 		}
+
 		latentFrames = append(latentFrames, frame)
 
 		if isEOS && eosCountdown == nil {
@@ -137,29 +150,36 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 			if *eosCountdown == 0 {
 				break
 			}
+
 			*eosCountdown = *eosCountdown - 1
 		}
 
 		sequenceFrame = frame
+
 		if step > 0 && step%10 == 0 {
 			slog.Debug("native-safetensors generation progress", "step", step, "frames", len(latentFrames))
 		}
 	}
+
 	slog.Debug("native-safetensors AR loop complete", "ms", time.Since(stageStart).Milliseconds(), "frames", len(latentFrames))
 
 	stageStart = time.Now()
+
 	latent, err := stackLatentFramesTensor(latentFrames)
 	if err != nil {
 		return nil, fmt.Errorf("generate: stack latents: %w", err)
 	}
+
 	mimiLatent, err := r.model.LatentToMimi(latent)
 	if err != nil {
 		return nil, fmt.Errorf("generate: latent_to_mimi: %w", err)
 	}
+
 	audio3D, err := r.model.MimiDecode(mimiLatent)
 	if err != nil {
 		return nil, fmt.Errorf("generate: mimi_decode: %w", err)
 	}
+
 	slog.Debug("native-safetensors decode complete", "ms", time.Since(stageStart).Milliseconds())
 
 	shape := audio3D.Shape()
@@ -174,6 +194,7 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 		"samples", len(audio3D.RawData()),
 		"duration_ms", time.Since(overallStart).Milliseconds(),
 	)
+
 	return append([]float32(nil), audio3D.RawData()...), nil
 }
 
@@ -188,12 +209,14 @@ func newBOSSequenceTensor() (*tensor.Tensor, error) {
 	for i := range data {
 		data[i] = float32(math.NaN())
 	}
+
 	return tensor.New(data, []int64{1, 1, nativeLatentDim})
 }
 
 func stackLatentFramesTensor(frames []*tensor.Tensor) (*tensor.Tensor, error) {
 	if len(frames) == 0 {
-		return nil, fmt.Errorf("no latent frames to stack")
+		return nil, errors.New("no latent frames to stack")
 	}
+
 	return tensor.Concat(frames, 1)
 }

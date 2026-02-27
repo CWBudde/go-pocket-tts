@@ -17,6 +17,7 @@ func TestProbePocketTTSVersion_RealExecutable(t *testing.T) {
 	// Create a tiny script that exits 0 and prints a fixed string, simulating
 	// a pocket-tts binary that honours --version.
 	tmp := t.TempDir()
+
 	script := filepath.Join(tmp, "fake-tts")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\necho 'fake-tts 1.2.3'\n"), 0o755); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -26,6 +27,7 @@ func TestProbePocketTTSVersion_RealExecutable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("probePocketTTSVersion: %v", err)
 	}
+
 	if got != "fake-tts 1.2.3" {
 		t.Errorf("unexpected version output: %q", got)
 	}
@@ -37,6 +39,7 @@ func TestProbePythonVersion_ReturnsVersion(t *testing.T) {
 	if err != nil {
 		t.Skipf("python not available: %v", err)
 	}
+
 	if ver == "" {
 		t.Error("expected non-empty version string")
 	}
@@ -48,11 +51,14 @@ func TestCollectVoiceFiles_NoManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
+
 	t.Cleanup(func() {
-		if err := os.Chdir(orig); err != nil {
+		err := os.Chdir(orig)
+		if err != nil {
 			t.Logf("chdir restore failed: %v", err)
 		}
 	})
+
 	if err := os.Chdir(t.TempDir()); err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
@@ -66,15 +72,19 @@ func TestCollectVoiceFiles_NoManifest(t *testing.T) {
 
 func TestCollectVoiceFiles_WithManifest(t *testing.T) {
 	tmp := t.TempDir()
+
 	orig, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
+
 	t.Cleanup(func() {
-		if err := os.Chdir(orig); err != nil {
+		err := os.Chdir(orig)
+		if err != nil {
 			t.Logf("chdir restore failed: %v", err)
 		}
 	})
+
 	if err := os.Chdir(tmp); err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
@@ -88,6 +98,7 @@ func TestCollectVoiceFiles_WithManifest(t *testing.T) {
 	if err := os.WriteFile(voiceFile, []byte("dummy"), 0o644); err != nil {
 		t.Fatalf("WriteFile voice: %v", err)
 	}
+
 	manifest := `{"voices":[{"id":"test","path":"test.bin","license":"MIT"}]}`
 	if err := os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -128,6 +139,7 @@ func TestCollectVoiceFiles_PathResolvedRelativeToManifest(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(voiceDir, "mimi.safetensors"), []byte("dummy"), 0o644); err != nil {
 		t.Fatalf("WriteFile voice: %v", err)
 	}
+
 	manifest := `{"voices":[{"id":"mimi","path":"mimi.safetensors","license":"CC-BY-4.0"}]}`
 	if err := os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("WriteFile manifest: %v", err)
@@ -140,11 +152,14 @@ func TestCollectVoiceFiles_PathResolvedRelativeToManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
+
 	t.Cleanup(func() {
-		if err := os.Chdir(orig); err != nil {
+		err := os.Chdir(orig)
+		if err != nil {
 			t.Logf("chdir restore: %v", err)
 		}
 	})
+
 	if err := os.Chdir(tmp); err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
@@ -158,6 +173,7 @@ func TestCollectVoiceFiles_PathResolvedRelativeToManifest(t *testing.T) {
 	if !filepath.IsAbs(files[0]) {
 		t.Errorf("path is not absolute: %q", files[0])
 	}
+
 	if _, err := os.Stat(files[0]); err != nil {
 		t.Errorf("returned path does not exist: %q (%v)", files[0], err)
 	}

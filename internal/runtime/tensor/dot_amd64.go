@@ -14,6 +14,7 @@ func dotF32(a, b []float32) float32 {
 	if useAVX2FMA && len(a) >= 8 {
 		return dotF32AVX2(&a[0], &b[0], len(a))
 	}
+
 	return dotF32Generic(a, b)
 }
 

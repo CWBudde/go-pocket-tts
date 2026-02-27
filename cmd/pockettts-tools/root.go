@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/example/go-pocket-tts/internal/config"
 	"github.com/spf13/cobra"
@@ -27,7 +27,9 @@ func NewRootCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
 			activeCfg = loaded
+
 			return nil
 		},
 	}
@@ -44,7 +46,8 @@ func NewRootCmd() *cobra.Command {
 
 func requireConfig() (config.Config, error) {
 	if activeCfg.Paths.ModelPath == "" {
-		return config.Config{}, fmt.Errorf("configuration not loaded")
+		return config.Config{}, errors.New("configuration not loaded")
 	}
+
 	return activeCfg, nil
 }

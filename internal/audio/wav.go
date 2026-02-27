@@ -14,6 +14,7 @@ func ApplyHooks(samples []float32, hooks ...Hook) []float32 {
 	for _, hook := range hooks {
 		out = hook(out)
 	}
+
 	return out
 }
 
@@ -48,6 +49,7 @@ func EncodeWAVPCM16(samples []float32, sampleRate int) ([]byte, error) {
 	_ = binary.Write(buf, binary.LittleEndian, uint16(blockAlign))
 	_ = binary.Write(buf, binary.LittleEndian, uint16(bitsPerSample))
 	buf.WriteString("data")
+
 	_ = binary.Write(buf, binary.LittleEndian, uint32(dataSize))
 	for _, s := range pcm {
 		_ = binary.Write(buf, binary.LittleEndian, s)

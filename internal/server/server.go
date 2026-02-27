@@ -138,6 +138,7 @@ func NewHandler(synth Synthesizer, voices VoiceLister, optFns ...Option) http.Ha
 	mux.HandleFunc("/voices", h.handleVoices)
 	mux.HandleFunc("/tts", h.handleTTS)
 	mux.HandleFunc("/tts/stream", h.handleTTSStream)
+
 	return mux
 }
 
@@ -145,6 +146,7 @@ func buildVersion() string {
 	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" {
 		return info.Main.Version
 	}
+
 	return "dev"
 }
 
@@ -160,6 +162,7 @@ func (h *handler) handleVoices(w http.ResponseWriter, _ *http.Request) {
 	if voices == nil {
 		voices = []tts.Voice{}
 	}
+
 	writeJSON(w, http.StatusOK, voices)
 }
 
@@ -194,6 +197,7 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 	if len(req.Text) > h.opts.maxTextBytes {
 		writeError(w, http.StatusRequestEntityTooLarge,
 			fmt.Sprintf("text exceeds maximum size of %d bytes", h.opts.maxTextBytes))
+
 		return
 	}
 
@@ -201,6 +205,7 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 	if !h.acquireWorker(r.Context(), w) {
 		return
 	}
+
 	if h.sem != nil {
 		defer func() { <-h.sem }()
 	}
@@ -222,8 +227,10 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 				slog.String("error", err.Error()),
 			)
 			writeError(w, http.StatusGatewayTimeout, "synthesis timed out")
+
 			return
 		}
+
 		h.log.ErrorContext(r.Context(), "synthesis failed",
 			slog.String("voice", req.Voice),
 			slog.Int("text_len", len(req.Text)),
@@ -231,6 +238,7 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 			slog.String("error", err.Error()),
 		)
 		writeError(w, http.StatusInternalServerError, err.Error())
+
 		return
 	}
 
@@ -269,23 +277,28 @@ func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req ttsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}
+
 	if req.Text == "" {
 		writeError(w, http.StatusBadRequest, "text field is required")
 		return
 	}
+
 	if len(req.Text) > h.opts.maxTextBytes {
 		writeError(w, http.StatusRequestEntityTooLarge,
 			fmt.Sprintf("text exceeds maximum size of %d bytes", h.opts.maxTextBytes))
+
 		return
 	}
 
 	if !h.acquireWorker(r.Context(), w) {
 		return
 	}
+
 	if h.sem != nil {
 		defer func() { <-h.sem }()
 	}
@@ -301,34 +314,41 @@ func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
 		h.log.ErrorContext(r.Context(), "failed to write WAV header", slog.String("error", err.Error()))
 		return
 	}
+
 	flusher.Flush()
 
 	chunkCh := make(chan tts.PCMChunk, 2)
 
 	errCh := make(chan error, 1)
+
 	go func() {
 		errCh <- h.streamer.SynthesizeStream(ctx, req.Text, req.Voice, chunkCh)
 	}()
 
 	start := time.Now()
+
 	var totalSamples int
 	for chunk := range chunkCh {
 		totalSamples += len(chunk.Samples)
 		if _, err := audio.WritePCM16Samples(w, chunk.Samples); err != nil {
 			h.log.ErrorContext(r.Context(), "failed to write PCM chunk", slog.String("error", err.Error()))
 			cancel()
+
 			break
 		}
+
 		flusher.Flush()
 	}
 
-	if err := <-errCh; err != nil {
+	err = <-errCh
+	if err != nil {
 		h.log.ErrorContext(r.Context(), "streaming synthesis failed",
 			slog.String("voice", req.Voice),
 			slog.Int("text_len", len(req.Text)),
 			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
 			slog.String("error", err.Error()),
 		)
+
 		return
 	}
 
@@ -348,11 +368,13 @@ func (h *handler) acquireWorker(ctx context.Context, w http.ResponseWriter) bool
 	if h.sem == nil {
 		return true
 	}
+
 	select {
 	case h.sem <- struct{}{}:
 		return true
 	default:
 		h.log.Info("request queued for worker slot")
+
 		select {
 		case h.sem <- struct{}{}:
 			return true
@@ -427,6 +449,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	errCh := make(chan error, 1)
+
 	go func() {
 		errCh <- httpServer.ListenAndServe()
 	}()
@@ -435,14 +458,18 @@ func (s *Server) Start(ctx context.Context) error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
 		defer cancel()
-		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+
+		err := httpServer.Shutdown(shutdownCtx)
+		if err != nil {
 			return fmt.Errorf("http shutdown: %w", err)
 		}
+
 		return nil
 	case err := <-errCh:
-		if err == http.ErrServerClosed {
+		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
+
 		return fmt.Errorf("http listen: %w", err)
 	}
 }
@@ -452,11 +479,13 @@ func ProbeHTTP(addr string) error {
 	if err != nil {
 		return err
 	}
+
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected health status: %s", resp.Status)
 	}
+
 	return nil
 }
 
@@ -470,19 +499,24 @@ func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, Str
 			var err error
 			next := s.cfg
 			next.TTS.Backend = backend
+
 			svc, err = tts.NewService(next)
 			if err != nil {
 				return nil, nil, 0, nil, fmt.Errorf("initialize native service: %w", err)
 			}
 		}
+
 		workers := s.cfg.Server.Workers
 		if workers <= 0 {
 			workers = 2
 		}
+
 		ns := &nativeSynthesizer{svc: svc}
+
 		return ns, voices, workers, ns, nil
 	case config.BackendCLI:
 		workers := chooseWorkerLimit(s.cfg, backend)
+
 		return &cliSynthesizer{
 			executablePath: s.cfg.TTS.CLIPath,
 			configPath:     s.cfg.TTS.CLIConfigPath,
@@ -497,10 +531,12 @@ func chooseWorkerLimit(cfg config.Config, backend string) int {
 	if backend != config.BackendCLI {
 		return 0
 	}
+
 	workers := cfg.Server.Workers
 	if workers <= 0 {
 		workers = cfg.TTS.Concurrency
 	}
+
 	return workers
 }
 
@@ -509,6 +545,7 @@ func loadVoiceLister() VoiceLister {
 	if err != nil {
 		return staticVoiceLister{}
 	}
+
 	return vm
 }
 
@@ -529,6 +566,7 @@ func (n *nativeSynthesizer) Synthesize(ctx context.Context, text, voice string) 
 	if err != nil {
 		return nil, err
 	}
+
 	return audio.EncodeWAV(samples)
 }
 
@@ -552,9 +590,11 @@ func (c *cliSynthesizer) Synthesize(ctx context.Context, text, voice string) ([]
 	if strings.TrimSpace(voice) != "" {
 		args = append(args, "--voice", voice)
 	}
+
 	if c.configPath != "" {
 		args = append(args, "--config", c.configPath)
 	}
+
 	if c.quiet {
 		args = append(args, "--quiet")
 	}
@@ -566,8 +606,10 @@ func (c *cliSynthesizer) Synthesize(ctx context.Context, text, voice string) ([]
 	cmd.Stdout = &out
 	cmd.Stderr = io.Discard
 
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err != nil {
 		return nil, err
 	}
+
 	return out.Bytes(), nil
 }

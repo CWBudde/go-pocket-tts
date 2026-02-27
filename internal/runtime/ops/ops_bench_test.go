@@ -12,6 +12,7 @@ func BenchmarkMatMulFlowLM(b *testing.B) {
 	w := mustTensor(b, seqData(1*64*64), []int64{1, 64, 64})
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		_, err := tensor.MatMul(a, w)
 		if err != nil {
@@ -26,6 +27,7 @@ func BenchmarkLayerNormFlowLM(b *testing.B) {
 	bias := mustTensor(b, seqData(1024), []int64{1024})
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		_, err := tensor.LayerNorm(x, w, bias, 1e-5)
 		if err != nil {
@@ -40,6 +42,7 @@ func BenchmarkAttentionFlowLM(b *testing.B) {
 	v := mustTensor(b, seqData(1*8*32*64), []int64{1, 8, 32, 64})
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		_, err := Attention(q, k, v, true, 0)
 		if err != nil {
@@ -54,6 +57,7 @@ func BenchmarkConv1DMimi(b *testing.B) {
 	bias := mustTensor(b, seqData(512), []int64{512})
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		_, err := Conv1D(input, kernel, bias, 1, 1, 1, 1)
 		if err != nil {
@@ -67,11 +71,13 @@ func BenchmarkConv1DMimiParallel(b *testing.B) {
 		b.Run(fmt.Sprintf("workers=%d", workers), func(b *testing.B) {
 			SetConvWorkers(workers)
 			defer SetConvWorkers(1)
+
 			input := mustTensor(b, seqData(1*256*128), []int64{1, 256, 128})
 			kernel := mustTensor(b, seqData(512*256*3), []int64{512, 256, 3})
 			bias := mustTensor(b, seqData(512), []int64{512})
 			b.ReportAllocs()
 			b.ResetTimer()
+
 			for i := 0; i < b.N; i++ {
 				_, err := Conv1D(input, kernel, bias, 1, 1, 1, 1)
 				if err != nil {
@@ -93,11 +99,13 @@ func BenchmarkFrameDecodeThroughput(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+
 	for i := 0; i < b.N; i++ {
 		h, err := tensor.Linear(latent, projW, projB)
 		if err != nil {
 			b.Fatalf("proj linear: %v", err)
 		}
+
 		h, err = MLP(h, mlpW1, nil, mlpW2, nil)
 		if err != nil {
 			b.Fatalf("mlp: %v", err)
@@ -107,6 +115,7 @@ func BenchmarkFrameDecodeThroughput(b *testing.B) {
 		if err != nil {
 			b.Fatalf("transpose: %v", err)
 		}
+
 		_, err = ConvTranspose1D(h, deconvK, deconvB, 2, 1, 0, 1, 1)
 		if err != nil {
 			b.Fatalf("convtranspose1d: %v", err)
@@ -116,17 +125,20 @@ func BenchmarkFrameDecodeThroughput(b *testing.B) {
 
 func seqData(n int) []float32 {
 	out := make([]float32, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		out[i] = float32((i%17)-8) / 17
 	}
+
 	return out
 }
 
 func mustTensor(tb testing.TB, data []float32, shape []int64) *tensor.Tensor {
 	tb.Helper()
+
 	t, err := tensor.New(data, shape)
 	if err != nil {
 		tb.Fatalf("new tensor: %v", err)
 	}
+
 	return t
 }

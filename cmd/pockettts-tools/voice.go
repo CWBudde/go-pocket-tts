@@ -9,5 +9,6 @@ func newVoiceCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(newVoiceDownloadCmd())
+
 	return cmd
 }

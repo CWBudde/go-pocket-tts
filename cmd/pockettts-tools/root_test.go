@@ -17,10 +17,12 @@ func TestNewRootCmd_Use(t *testing.T) {
 
 func TestNewRootCmd_HasSubcommands(t *testing.T) {
 	cmd := NewRootCmd()
+
 	names := make(map[string]bool)
 	for _, sub := range cmd.Commands() {
 		names[sub.Name()] = true
 	}
+
 	for _, want := range []string{"model", "export-voice"} {
 		if !names[want] {
 			t.Errorf("subcommand %q not registered", want)
@@ -41,21 +43,26 @@ func TestNewRootCmd_ModelHasExportSubcommand(t *testing.T) {
 			for _, s := range sub.Commands() {
 				subNames[s.Name()] = true
 			}
+
 			if !subNames["export"] {
 				t.Error("model subcommand 'export' not registered")
 			}
+
 			return
 		}
 	}
+
 	t.Error("'model' command not found")
 }
 
 func TestNewRootCmd_PersistentFlagConfig(t *testing.T) {
 	cmd := NewRootCmd()
+
 	f := cmd.PersistentFlags().Lookup("config")
 	if f == nil {
 		t.Fatal("--config flag not registered")
 	}
+
 	if f.DefValue != "" {
 		t.Errorf("--config default = %q; want empty string", f.DefValue)
 	}
@@ -63,6 +70,7 @@ func TestNewRootCmd_PersistentFlagConfig(t *testing.T) {
 
 func TestNewRootCmd_PersistentFlagsIncludeBackend(t *testing.T) {
 	cmd := NewRootCmd()
+
 	knownFlags := []string{"backend", "log-level", "workers", "paths-model-path"}
 	for _, name := range knownFlags {
 		if cmd.PersistentFlags().Lookup(name) == nil {
@@ -81,6 +89,7 @@ func TestRequireConfig_FailsWhenNotLoaded(t *testing.T) {
 	if err == nil {
 		t.Error("requireConfig() = nil; want error when config not loaded")
 	}
+
 	if !strings.Contains(err.Error(), "not loaded") {
 		t.Errorf("error %q does not mention 'not loaded'", err.Error())
 	}
@@ -88,12 +97,14 @@ func TestRequireConfig_FailsWhenNotLoaded(t *testing.T) {
 
 func TestRequireConfig_SucceedsWhenLoaded(t *testing.T) {
 	activeCfg.Paths.ModelPath = "models/model.onnx"
+
 	t.Cleanup(func() { activeCfg.Paths.ModelPath = "" })
 
 	cfg, err := requireConfig()
 	if err != nil {
 		t.Fatalf("requireConfig() error = %v", err)
 	}
+
 	if cfg.Paths.ModelPath != "models/model.onnx" {
 		t.Errorf("ModelPath = %q; want %q", cfg.Paths.ModelPath, "models/model.onnx")
 	}
@@ -120,6 +131,7 @@ func TestModelExportCmd_Flags(t *testing.T) {
 			t.Errorf("flag %q not registered", f.name)
 			continue
 		}
+
 		if flag.DefValue != f.defValue {
 			t.Errorf("flag %q default = %q; want %q", f.name, flag.DefValue, f.defValue)
 		}
@@ -162,6 +174,7 @@ func TestExportVoiceCmd_Flags(t *testing.T) {
 			t.Errorf("flag %q not registered", f.name)
 			continue
 		}
+
 		if flag.DefValue != f.defValue {
 			t.Errorf("flag %q default = %q; want %q", f.name, flag.DefValue, f.defValue)
 		}
@@ -178,6 +191,7 @@ func TestExportVoiceCmd_Use(t *testing.T) {
 func TestExportVoiceCmd_RequiresAudioFlag(t *testing.T) {
 	// Simulate config loaded so requireConfig() passes.
 	activeCfg.Paths.ModelPath = "models/model.onnx"
+
 	t.Cleanup(func() { activeCfg.Paths.ModelPath = "" })
 
 	cmd := NewRootCmd()
@@ -190,6 +204,7 @@ func TestExportVoiceCmd_RequiresAudioFlag(t *testing.T) {
 	if err == nil {
 		t.Error("Execute() = nil; want error when --audio is missing")
 	}
+
 	if !strings.Contains(err.Error(), "--audio") {
 		t.Errorf("error %q does not mention '--audio'", err.Error())
 	}
@@ -197,6 +212,7 @@ func TestExportVoiceCmd_RequiresAudioFlag(t *testing.T) {
 
 func TestExportVoiceCmd_RequiresOutFlag(t *testing.T) {
 	activeCfg.Paths.ModelPath = "models/model.onnx"
+
 	t.Cleanup(func() { activeCfg.Paths.ModelPath = "" })
 
 	cmd := NewRootCmd()
@@ -209,6 +225,7 @@ func TestExportVoiceCmd_RequiresOutFlag(t *testing.T) {
 	if err == nil {
 		t.Error("Execute() = nil; want error when --out is missing")
 	}
+
 	if !strings.Contains(err.Error(), "--out") {
 		t.Errorf("error %q does not mention '--out'", err.Error())
 	}

@@ -12,10 +12,12 @@ type parityTokenizer struct{}
 
 func (p parityTokenizer) Encode(text string) ([]int64, error) {
 	words := strings.Fields(text)
+
 	out := make([]int64, len(words))
 	for i := range words {
 		out[i] = int64(i + 1)
 	}
+
 	return out, nil
 }
 
@@ -54,6 +56,7 @@ func TestRunParityCase_SkipsUnimplementedBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunParityCase returned error: %v", err)
 	}
+
 	if len(got) != 2 {
 		t.Fatalf("RunParityCase len = %d; want 2", len(got))
 	}
@@ -62,15 +65,19 @@ func TestRunParityCase_SkipsUnimplementedBackend(t *testing.T) {
 	if first.Status != ParityStatusOK {
 		t.Fatalf("first status = %q; want %q", first.Status, ParityStatusOK)
 	}
+
 	if first.Seed != 42 {
 		t.Fatalf("first seed = %d; want 42", first.Seed)
 	}
+
 	if first.TokenCount == 0 || first.ChunkCount == 0 {
 		t.Fatalf("first token/chunk counts should be > 0, got tokens=%d chunks=%d", first.TokenCount, first.ChunkCount)
 	}
+
 	if first.SampleCount != 3 {
 		t.Fatalf("first sample count = %d; want 3", first.SampleCount)
 	}
+
 	if first.PCMHashSHA256 == "" {
 		t.Fatal("first PCM hash should be non-empty")
 	}
@@ -79,6 +86,7 @@ func TestRunParityCase_SkipsUnimplementedBackend(t *testing.T) {
 	if second.Status != ParityStatusSkipped {
 		t.Fatalf("second status = %q; want %q", second.Status, ParityStatusSkipped)
 	}
+
 	if second.Reason == "" {
 		t.Fatal("second skip reason should be non-empty")
 	}
@@ -114,12 +122,15 @@ func TestParitySnapshots_SaveLoadRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadParitySnapshots returned error: %v", err)
 	}
+
 	if len(out) != len(in) {
 		t.Fatalf("loaded snapshots len = %d; want %d", len(out), len(in))
 	}
+
 	if out[0].Backend != in[0].Backend || out[0].PCMHashSHA256 != in[0].PCMHashSHA256 {
 		t.Fatalf("loaded first snapshot mismatch: got %+v want %+v", out[0], in[0])
 	}
+
 	if out[1].Status != ParityStatusSkipped {
 		t.Fatalf("loaded second status = %q; want %q", out[1].Status, ParityStatusSkipped)
 	}

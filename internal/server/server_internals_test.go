@@ -17,10 +17,12 @@ import (
 
 func TestNew_DefaultShutdownTimeout(t *testing.T) {
 	cfg := config.DefaultConfig()
+
 	s := New(cfg, nil)
 	if s == nil {
 		t.Fatal("New() returned nil")
 	}
+
 	if s.shutdownTimeout != 30*time.Second {
 		t.Errorf("shutdownTimeout = %v; want 30s", s.shutdownTimeout)
 	}
@@ -28,6 +30,7 @@ func TestNew_DefaultShutdownTimeout(t *testing.T) {
 
 func TestWithShutdownTimeout(t *testing.T) {
 	cfg := config.DefaultConfig()
+
 	s := New(cfg, nil).WithShutdownTimeout(5 * time.Second)
 	if s.shutdownTimeout != 5*time.Second {
 		t.Errorf("shutdownTimeout = %v; want 5s", s.shutdownTimeout)
@@ -66,6 +69,7 @@ func TestStaticVoiceLister_ReturnsCopy(t *testing.T) {
 
 	// Mutating the returned slice must not affect the original.
 	got[0].ID = "mutated"
+
 	fresh := vl.ListVoices()
 	if fresh[0].ID != "v1" {
 		t.Error("ListVoices() returned a non-copy; mutation affected the source")
@@ -96,15 +100,19 @@ func TestRuntimeDeps_CLIBackend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runtimeDeps(cli) error = %v", err)
 	}
+
 	if synth == nil {
 		t.Error("synth is nil for cli backend")
 	}
+
 	if voices == nil {
 		t.Error("voices is nil")
 	}
+
 	if workers != 4 {
 		t.Errorf("workers = %d; want 4", workers)
 	}
+
 	if streamer != nil {
 		t.Error("streamer should be nil for cli backend")
 	}
@@ -123,25 +131,31 @@ func TestRuntimeDeps_InvalidBackend(t *testing.T) {
 func TestRuntimeDeps_NativeSafetensors(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Paths.ModelPath = filepath.Join("..", "..", "models", "tts_b6369a24.safetensors")
+
 	cfg.Paths.TokenizerModel = filepath.Join("..", "..", "models", "tokenizer.model")
 	if _, err := os.Stat(cfg.Paths.ModelPath); err != nil {
 		t.Skipf("native safetensors model not available: %v", err)
 	}
+
 	if _, err := os.Stat(cfg.Paths.TokenizerModel); err != nil {
 		t.Skipf("tokenizer model not available: %v", err)
 	}
+
 	s := New(cfg, nil)
 
 	synth, voices, workers, streamer, err := s.runtimeDeps(config.BackendNative)
 	if err != nil {
 		t.Fatalf("runtimeDeps(native-safetensors) error = %v", err)
 	}
+
 	if synth == nil || voices == nil {
 		t.Fatalf("runtimeDeps(native-safetensors) returned nil deps")
 	}
+
 	if workers != 2 {
 		t.Fatalf("runtimeDeps(native-safetensors) workers = %d; want 2", workers)
 	}
+
 	if streamer == nil {
 		t.Fatal("runtimeDeps(native-safetensors) streamer is nil; want non-nil")
 	}
@@ -162,7 +176,8 @@ func TestProbeHTTP_Success(t *testing.T) {
 
 	// ProbeHTTP uses "http://" prefix + addr, so strip the scheme.
 	addr := srv.Listener.Addr().String()
-	if err := ProbeHTTP(addr); err != nil {
+	err := ProbeHTTP(addr)
+	if err != nil {
 		t.Errorf("ProbeHTTP(%q) = %v; want nil", addr, err)
 	}
 }
@@ -174,13 +189,15 @@ func TestProbeHTTP_NonOKStatus(t *testing.T) {
 	defer srv.Close()
 
 	addr := srv.Listener.Addr().String()
-	if err := ProbeHTTP(addr); err == nil {
+	err := ProbeHTTP(addr)
+	if err == nil {
 		t.Error("ProbeHTTP() = nil; want error for non-200 response")
 	}
 }
 
 func TestProbeHTTP_ConnectionRefused(t *testing.T) {
-	if err := ProbeHTTP("127.0.0.1:1"); err == nil {
+	err := ProbeHTTP("127.0.0.1:1")
+	if err == nil {
 		t.Error("ProbeHTTP() = nil; want error for unreachable host")
 	}
 }
@@ -206,6 +223,7 @@ func TestStart_InvalidBackend(t *testing.T) {
 func TestOptions_WithMaxTextBytes(t *testing.T) {
 	opts := defaultOptions()
 	WithMaxTextBytes(1024)(&opts)
+
 	if opts.maxTextBytes != 1024 {
 		t.Errorf("maxTextBytes = %d; want 1024", opts.maxTextBytes)
 	}
@@ -214,6 +232,7 @@ func TestOptions_WithMaxTextBytes(t *testing.T) {
 func TestOptions_WithWorkers(t *testing.T) {
 	opts := defaultOptions()
 	WithWorkers(8)(&opts)
+
 	if opts.workers != 8 {
 		t.Errorf("workers = %d; want 8", opts.workers)
 	}
@@ -222,6 +241,7 @@ func TestOptions_WithWorkers(t *testing.T) {
 func TestOptions_WithRequestTimeout(t *testing.T) {
 	opts := defaultOptions()
 	WithRequestTimeout(90 * time.Second)(&opts)
+
 	if opts.requestTimeout != 90*time.Second {
 		t.Errorf("requestTimeout = %v; want 90s", opts.requestTimeout)
 	}

@@ -2,6 +2,7 @@ package model
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,33 +15,39 @@ func detectPocketTTSPython() string {
 	if err != nil {
 		return "python3"
 	}
+
 	fh, err := os.Open(pocketBin)
 	if err != nil {
 		return "python3"
 	}
+
 	defer func() { _ = fh.Close() }()
 
 	s := bufio.NewScanner(fh)
 	if !s.Scan() {
 		return "python3"
 	}
+
 	line := strings.TrimSpace(s.Text())
 	if !strings.HasPrefix(line, "#!") {
 		return "python3"
 	}
+
 	interpreter := strings.TrimSpace(strings.TrimPrefix(line, "#!"))
 	if interpreter == "" {
 		return "python3"
 	}
+
 	if _, err := os.Stat(interpreter); err != nil {
 		return "python3"
 	}
+
 	return interpreter
 }
 
 func resolveScriptPath(rel string) (string, error) {
 	if rel == "" {
-		return "", fmt.Errorf("script path is required")
+		return "", errors.New("script path is required")
 	}
 
 	cwd, err := os.Getwd()

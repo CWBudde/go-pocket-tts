@@ -19,13 +19,17 @@ func newHealthCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
 			if addr == "" {
 				addr = cfg.Server.ListenAddr
 			}
+
 			if err := server.ProbeHTTP(addr); err != nil {
 				return err
 			}
+
 			_, err = fmt.Fprintln(os.Stdout, "ok")
+
 			return err
 		},
 	}

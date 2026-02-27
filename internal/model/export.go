@@ -1,11 +1,13 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 )
 
 type ExportOptions struct {
@@ -21,17 +23,21 @@ type ExportOptions struct {
 
 func ExportONNX(opts ExportOptions) error {
 	if opts.ModelsDir == "" {
-		return fmt.Errorf("models dir is required")
+		return errors.New("models dir is required")
 	}
+
 	if opts.OutDir == "" {
-		return fmt.Errorf("out dir is required")
+		return errors.New("out dir is required")
 	}
+
 	if opts.Variant == "" {
 		opts.Variant = "b6369a24"
 	}
+
 	if opts.Stdout == nil {
 		opts.Stdout = io.Discard
 	}
+
 	if opts.Stderr == nil {
 		opts.Stderr = io.Discard
 	}
@@ -40,6 +46,7 @@ func ExportONNX(opts ExportOptions) error {
 	if pythonBin == "" {
 		pythonBin = detectPocketTTSPython()
 	}
+
 	if err := validateExportTooling(pythonBin); err != nil {
 		return err
 	}
@@ -53,12 +60,14 @@ func ExportONNX(opts ExportOptions) error {
 	if opts.Int8 {
 		args = append(args, "--int8")
 	}
+
 	if opts.MaxSeq > 0 {
-		args = append(args, "--max-seq", fmt.Sprintf("%d", opts.MaxSeq))
+		args = append(args, "--max-seq", strconv.Itoa(opts.MaxSeq))
 	}
 
 	cmd := exec.Command(pythonBin, args...)
 	cmd.Stdout = opts.Stdout
+
 	cmd.Stderr = opts.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("run ONNX export helper: %w", err)
@@ -74,9 +83,12 @@ func validateExportTooling(pythonBin string) error {
 
 	check := exec.Command(pythonBin, "-c", "import pocket_tts, torch, onnx")
 	check.Stdout = io.Discard
+
 	check.Stderr = os.Stderr
-	if err := check.Run(); err != nil {
+	err := check.Run()
+	if err != nil {
 		return fmt.Errorf("python tooling dependencies missing for export (need pocket_tts, torch, onnx): %w", err)
 	}
+
 	return nil
 }

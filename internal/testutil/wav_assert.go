@@ -2,7 +2,7 @@ package testutil
 
 import (
 	"encoding/binary"
-	"fmt"
+	"errors"
 	"testing"
 )
 
@@ -15,12 +15,15 @@ func AssertValidWAV(t testing.TB, data []byte) {
 	if len(data) < 44 {
 		t.Fatalf("WAV data too short: %d bytes", len(data))
 	}
+
 	if string(data[0:4]) != "RIFF" {
 		t.Fatalf("WAV: missing RIFF header (got %q)", string(data[0:4]))
 	}
+
 	if string(data[8:12]) != "WAVE" {
 		t.Fatalf("WAV: missing WAVE marker (got %q)", string(data[8:12]))
 	}
+
 	if string(data[12:16]) != "fmt " {
 		t.Fatalf("WAV: missing fmt chunk (got %q)", string(data[12:16]))
 	}
@@ -30,14 +33,17 @@ func AssertValidWAV(t testing.TB, data []byte) {
 	if audioFmt != 1 {
 		t.Fatalf("WAV: expected PCM format (1), got %d", audioFmt)
 	}
+
 	channels := binary.LittleEndian.Uint16(data[22:24])
 	if channels != 1 {
 		t.Fatalf("WAV: expected mono (1 channel), got %d", channels)
 	}
+
 	sampleRate := binary.LittleEndian.Uint32(data[24:28])
 	if sampleRate != 24000 {
 		t.Fatalf("WAV: expected sample rate 24000, got %d", sampleRate)
 	}
+
 	bitDepth := binary.LittleEndian.Uint16(data[34:36])
 	if bitDepth != 16 {
 		t.Fatalf("WAV: expected 16-bit depth, got %d", bitDepth)
@@ -48,6 +54,7 @@ func AssertValidWAV(t testing.TB, data []byte) {
 	if err != nil {
 		t.Fatalf("WAV: %v", err)
 	}
+
 	sampleCount := dataSize / 2 // 16-bit = 2 bytes per sample
 	if sampleCount == 0 {
 		t.Fatal("WAV: data chunk contains zero samples")
@@ -66,6 +73,7 @@ func AssertWAVDurationApprox(t testing.TB, data []byte, minSec, maxSec float64) 
 	}
 	const sampleRate = 24000
 	sampleCount := dataSize / 2 // 16-bit mono
+
 	durationSec := float64(sampleCount) / float64(sampleRate)
 	if durationSec < minSec || durationSec > maxSec {
 		t.Fatalf("WAV duration %.3fs out of expected range [%.3fs, %.3fs]", durationSec, minSec, maxSec)
@@ -79,15 +87,18 @@ func findDataChunkSize(data []byte) (uint32, error) {
 	offset := 12
 	for offset+8 <= len(data) {
 		id := string(data[offset : offset+4])
+
 		size := binary.LittleEndian.Uint32(data[offset+4 : offset+8])
 		if id == "data" {
 			return size, nil
 		}
+
 		offset += 8 + int(size)
 		// Pad to even boundary.
 		if size%2 != 0 {
 			offset++
 		}
 	}
-	return 0, fmt.Errorf("data chunk not found in WAV")
+
+	return 0, errors.New("data chunk not found in WAV")
 }

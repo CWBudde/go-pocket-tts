@@ -11,5 +11,6 @@ func newModelCmd() *cobra.Command {
 	cmd.AddCommand(newModelDownloadCmd())
 	cmd.AddCommand(newModelDownloadONNXCmd())
 	cmd.AddCommand(newModelExportCmd())
+
 	return cmd
 }

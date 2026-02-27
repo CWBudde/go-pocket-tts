@@ -12,6 +12,7 @@ import (
 func TestSilenceWAVPath_FileExists(t *testing.T) {
 	// Walk up from internal/testutil to the repo root and check the fixture.
 	root := filepath.Join("..", "..")
+
 	p := filepath.Join(root, testutil.SilenceWAVPath())
 	if _, err := os.Stat(p); err != nil {
 		t.Fatalf("silence fixture not found at %q: %v", p, err)
@@ -40,7 +41,9 @@ func TestRequireVoiceFile_SkipsWhenManifestAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
+
 	t.Cleanup(func() { os.Chdir(orig) }) //nolint:errcheck
+
 	if err := os.Chdir(t.TempDir()); err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
@@ -57,11 +60,15 @@ func TestRequireVoiceFile_SkipsWhenManifestAbsent(t *testing.T) {
 func captureSkip(fn func(testing.TB)) (skipped bool) {
 	stub := &stubTB{}
 	done := make(chan struct{})
+
 	go func() {
 		defer close(done)
+
 		fn(stub)
 	}()
+
 	<-done
+
 	return stub.skipped
 }
 
@@ -69,7 +76,8 @@ func captureSkip(fn func(testing.TB)) (skipped bool) {
 // calling goroutine (via runtime.Goexit) exactly as the real testing.T does.
 type stubTB struct {
 	testing.TB // intentionally nil — only Skip methods are called
-	skipped    bool
+
+	skipped bool
 }
 
 func (s *stubTB) Helper()                 {}
@@ -78,15 +86,18 @@ func (s *stubTB) Logf(_ string, _ ...any) {}
 
 func (s *stubTB) Skip(_ ...any) {
 	s.skipped = true
+
 	runtime.Goexit()
 }
 
 func (s *stubTB) Skipf(_ string, _ ...any) {
 	s.skipped = true
+
 	runtime.Goexit()
 }
 
 func (s *stubTB) SkipNow() {
 	s.skipped = true
+
 	runtime.Goexit()
 }

@@ -24,6 +24,7 @@ func TestRun_AllChecksPass(t *testing.T) {
 	if result.Failed() {
 		t.Errorf("expected all checks to pass; failures: %v", result.Failures())
 	}
+
 	if !strings.Contains(out.String(), "pocket-tts") {
 		t.Error("output should mention pocket-tts")
 	}
@@ -46,6 +47,7 @@ func TestRun_PocketTTSMissingFails(t *testing.T) {
 	if !result.Failed() {
 		t.Fatal("expected failure when pocket-tts is not found")
 	}
+
 	if !hasFailureContaining(result.Failures(), "pocket-tts") {
 		t.Errorf("expected failure mentioning pocket-tts, got: %v", result.Failures())
 	}
@@ -68,6 +70,7 @@ func TestRun_PythonTooOldFails(t *testing.T) {
 	if !result.Failed() {
 		t.Fatal("expected failure for Python 3.9 (< 3.10)")
 	}
+
 	if !hasFailureContaining(result.Failures(), "python") {
 		t.Errorf("expected failure mentioning python, got: %v", result.Failures())
 	}
@@ -97,6 +100,7 @@ func TestRun_PythonInRangePasses(t *testing.T) {
 				VoiceFiles:       []string{},
 			}
 			var out strings.Builder
+
 			result := doctor.Run(cfg, &out)
 			if result.Failed() {
 				t.Errorf("Python %s should pass but got failures: %v", ver, result.Failures())
@@ -122,6 +126,7 @@ func TestRun_MissingVoiceFileFails(t *testing.T) {
 	if !result.Failed() {
 		t.Fatal("expected failure for missing voice file")
 	}
+
 	if !hasFailureContaining(result.Failures(), "voice") {
 		t.Errorf("expected failure mentioning voice, got: %v", result.Failures())
 	}
@@ -145,6 +150,7 @@ func TestRun_OutputContainsPassAndFailMarkers(t *testing.T) {
 	if !strings.Contains(body, doctor.PassMark) {
 		t.Errorf("output missing pass marker %q:\n%s", doctor.PassMark, body)
 	}
+
 	if !strings.Contains(body, doctor.FailMark) {
 		t.Errorf("output missing fail marker %q:\n%s", doctor.FailMark, body)
 	}
@@ -158,14 +164,17 @@ func TestRun_SkipRuntimeChecks(t *testing.T) {
 	}
 
 	var out strings.Builder
+
 	result := doctor.Run(cfg, &out)
 	if result.Failed() {
 		t.Fatalf("expected no failures when runtime checks are skipped, got: %v", result.Failures())
 	}
+
 	body := out.String()
 	if !strings.Contains(body, "pocket-tts binary: skipped") {
 		t.Fatalf("expected pocket-tts skipped output, got:\n%s", body)
 	}
+
 	if !strings.Contains(body, "python version: skipped") {
 		t.Fatalf("expected python skipped output, got:\n%s", body)
 	}
@@ -178,16 +187,18 @@ func TestRun_SkipRuntimeChecks(t *testing.T) {
 func TestRun_NativeModelPresent(t *testing.T) {
 	// Use a file we know exists (the test file itself).
 	cfg := doctor.Config{
-		SkipPocketTTS:  true,
-		SkipPython:     true,
+		SkipPocketTTS:   true,
+		SkipPython:      true,
 		NativeModelPath: "doctor_test.go",
 	}
 
 	var out strings.Builder
+
 	result := doctor.Run(cfg, &out)
 	if result.Failed() {
 		t.Errorf("expected pass; failures: %v", result.Failures())
 	}
+
 	if !strings.Contains(out.String(), "safetensors model: doctor_test.go") {
 		t.Errorf("output should mention safetensors model; got:\n%s", out.String())
 	}
@@ -195,16 +206,18 @@ func TestRun_NativeModelPresent(t *testing.T) {
 
 func TestRun_NativeModelMissing(t *testing.T) {
 	cfg := doctor.Config{
-		SkipPocketTTS:  true,
-		SkipPython:     true,
+		SkipPocketTTS:   true,
+		SkipPython:      true,
 		NativeModelPath: "/nonexistent/model.safetensors",
 	}
 
 	var out strings.Builder
+
 	result := doctor.Run(cfg, &out)
 	if !result.Failed() {
 		t.Fatal("expected failure for missing safetensors model")
 	}
+
 	if !hasFailureContaining(result.Failures(), "safetensors") {
 		t.Errorf("expected failure mentioning safetensors, got: %v", result.Failures())
 	}
@@ -218,10 +231,12 @@ func TestRun_TokenizerModelMissing(t *testing.T) {
 	}
 
 	var out strings.Builder
+
 	result := doctor.Run(cfg, &out)
 	if !result.Failed() {
 		t.Fatal("expected failure for missing tokenizer model")
 	}
+
 	if !hasFailureContaining(result.Failures(), "tokenizer") {
 		t.Errorf("expected failure mentioning tokenizer, got: %v", result.Failures())
 	}
@@ -229,8 +244,8 @@ func TestRun_TokenizerModelMissing(t *testing.T) {
 
 func TestRun_ValidateSafetensorsCallback(t *testing.T) {
 	cfg := doctor.Config{
-		SkipPocketTTS:  true,
-		SkipPython:     true,
+		SkipPocketTTS:   true,
+		SkipPython:      true,
 		NativeModelPath: "doctor_test.go", // exists
 		ValidateSafetensors: func(_ string) error {
 			return sentinelErr("bad keys")
@@ -238,10 +253,12 @@ func TestRun_ValidateSafetensorsCallback(t *testing.T) {
 	}
 
 	var out strings.Builder
+
 	result := doctor.Run(cfg, &out)
 	if !result.Failed() {
 		t.Fatal("expected failure from validation callback")
 	}
+
 	if !hasFailureContaining(result.Failures(), "validation") {
 		t.Errorf("expected failure mentioning validation, got: %v", result.Failures())
 	}
@@ -249,8 +266,8 @@ func TestRun_ValidateSafetensorsCallback(t *testing.T) {
 
 func TestRun_ValidateSafetensorsPassesOnSuccess(t *testing.T) {
 	cfg := doctor.Config{
-		SkipPocketTTS:  true,
-		SkipPython:     true,
+		SkipPocketTTS:   true,
+		SkipPython:      true,
 		NativeModelPath: "doctor_test.go",
 		ValidateSafetensors: func(_ string) error {
 			return nil
@@ -258,10 +275,12 @@ func TestRun_ValidateSafetensorsPassesOnSuccess(t *testing.T) {
 	}
 
 	var out strings.Builder
+
 	result := doctor.Run(cfg, &out)
 	if result.Failed() {
 		t.Errorf("expected pass; failures: %v", result.Failures())
 	}
+
 	if !strings.Contains(out.String(), "validation: ok") {
 		t.Errorf("output should contain 'validation: ok'; got:\n%s", out.String())
 	}
@@ -284,5 +303,6 @@ func hasFailureContaining(failures []string, substr string) bool {
 			return true
 		}
 	}
+
 	return false
 }

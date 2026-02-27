@@ -19,6 +19,7 @@ func (f *fakeBinder) Flags() *pflag.FlagSet { return f.fs }
 func newFlagBinder(defaults Config) *fakeBinder {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	RegisterFlags(fs, defaults)
+
 	return &fakeBinder{fs: fs}
 }
 
@@ -30,42 +31,55 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Paths.ModelPath != "models/tts_b6369a24.safetensors" {
 		t.Errorf("ModelPath = %q; want %q", cfg.Paths.ModelPath, "models/tts_b6369a24.safetensors")
 	}
+
 	if cfg.Paths.VoicePath != "models/voice.bin" {
 		t.Errorf("VoicePath = %q; want %q", cfg.Paths.VoicePath, "models/voice.bin")
 	}
+
 	if cfg.Runtime.Threads != 4 {
 		t.Errorf("Runtime.Threads = %d; want 4", cfg.Runtime.Threads)
 	}
+
 	if cfg.Runtime.InterOpThreads != 1 {
 		t.Errorf("Runtime.InterOpThreads = %d; want 1", cfg.Runtime.InterOpThreads)
 	}
+
 	if cfg.Server.ListenAddr != ":8080" {
 		t.Errorf("Server.ListenAddr = %q; want %q", cfg.Server.ListenAddr, ":8080")
 	}
+
 	if cfg.Server.GRPCAddr != ":9090" {
 		t.Errorf("Server.GRPCAddr = %q; want %q", cfg.Server.GRPCAddr, ":9090")
 	}
+
 	if cfg.Server.Workers != 2 {
 		t.Errorf("Server.Workers = %d; want 2", cfg.Server.Workers)
 	}
+
 	if cfg.Server.ShutdownTimeout != 30 {
 		t.Errorf("Server.ShutdownTimeout = %d; want 30", cfg.Server.ShutdownTimeout)
 	}
+
 	if cfg.Server.MaxTextBytes != 4096 {
 		t.Errorf("Server.MaxTextBytes = %d; want 4096", cfg.Server.MaxTextBytes)
 	}
+
 	if cfg.Server.RequestTimeout != 60 {
 		t.Errorf("Server.RequestTimeout = %d; want 60", cfg.Server.RequestTimeout)
 	}
+
 	if cfg.TTS.Backend != "native-safetensors" {
 		t.Errorf("TTS.Backend = %q; want %q", cfg.TTS.Backend, "native-safetensors")
 	}
+
 	if cfg.TTS.Concurrency != 1 {
 		t.Errorf("TTS.Concurrency = %d; want 1", cfg.TTS.Concurrency)
 	}
+
 	if !cfg.TTS.Quiet {
 		t.Error("TTS.Quiet = false; want true")
 	}
+
 	if cfg.LogLevel != "info" {
 		t.Errorf("LogLevel = %q; want %q", cfg.LogLevel, "info")
 	}
@@ -100,12 +114,15 @@ func TestNormalizeBackend(t *testing.T) {
 				if err == nil {
 					t.Errorf("NormalizeBackend(%q) = %q, nil; want error", tt.input, got)
 				}
+
 				return
 			}
+
 			if err != nil {
 				t.Errorf("NormalizeBackend(%q) unexpected error: %v", tt.input, err)
 				return
 			}
+
 			if got != tt.want {
 				t.Errorf("NormalizeBackend(%q) = %q; want %q", tt.input, got, tt.want)
 			}
@@ -138,6 +155,7 @@ func TestRegisterFlags(t *testing.T) {
 			t.Errorf("flag %q not registered", c.flag)
 			continue
 		}
+
 		if f.DefValue != c.want {
 			t.Errorf("flag %q default = %q; want %q", c.flag, f.DefValue, c.want)
 		}
@@ -161,12 +179,15 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Paths.ModelPath != defaults.Paths.ModelPath {
 		t.Errorf("ModelPath = %q; want %q", cfg.Paths.ModelPath, defaults.Paths.ModelPath)
 	}
+
 	if cfg.Server.Workers != defaults.Server.Workers {
 		t.Errorf("Server.Workers = %d; want %d", cfg.Server.Workers, defaults.Server.Workers)
 	}
+
 	if cfg.TTS.Backend != defaults.TTS.Backend {
 		t.Errorf("TTS.Backend = %q; want %q", cfg.TTS.Backend, defaults.TTS.Backend)
 	}
+
 	if cfg.LogLevel != defaults.LogLevel {
 		t.Errorf("LogLevel = %q; want %q", cfg.LogLevel, defaults.LogLevel)
 	}
@@ -196,9 +217,11 @@ func TestLoad_FlagOverride(t *testing.T) {
 	if cfg.TTS.Backend != "cli" {
 		t.Errorf("TTS.Backend = %q; want %q", cfg.TTS.Backend, "cli")
 	}
+
 	if cfg.Server.Workers != 8 {
 		t.Errorf("Server.Workers = %d; want 8", cfg.Server.Workers)
 	}
+
 	if cfg.LogLevel != "debug" {
 		t.Errorf("LogLevel = %q; want %q", cfg.LogLevel, "debug")
 	}
@@ -209,6 +232,7 @@ func TestLoad_EnvOverride(t *testing.T) {
 	t.Setenv("POCKETTTS_SERVER_LISTEN_ADDR", ":9999")
 
 	defaults := DefaultConfig()
+
 	cfg, err := Load(LoadOptions{
 		Defaults: defaults,
 	})
@@ -219,6 +243,7 @@ func TestLoad_EnvOverride(t *testing.T) {
 	if cfg.LogLevel != "warn" {
 		t.Errorf("LogLevel = %q; want %q", cfg.LogLevel, "warn")
 	}
+
 	if cfg.Server.ListenAddr != ":9999" {
 		t.Errorf("Server.ListenAddr = %q; want %q", cfg.Server.ListenAddr, ":9999")
 	}
@@ -227,6 +252,7 @@ func TestLoad_EnvOverride(t *testing.T) {
 func TestLoad_ConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "pockettts.yaml")
+
 	content := `
 log_level: error
 server:
@@ -245,6 +271,7 @@ tts:
 	defaults := DefaultConfig()
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	RegisterFlags(fs, defaults)
+
 	if err := fs.Parse([]string{
 		"--log-level=error",
 		"--workers=16",
@@ -266,12 +293,15 @@ tts:
 	if cfg.LogLevel != "error" {
 		t.Errorf("LogLevel = %q; want %q", cfg.LogLevel, "error")
 	}
+
 	if cfg.Server.Workers != 16 {
 		t.Errorf("Server.Workers = %d; want 16", cfg.Server.Workers)
 	}
+
 	if cfg.Server.ListenAddr != ":7777" {
 		t.Errorf("Server.ListenAddr = %q; want %q", cfg.Server.ListenAddr, ":7777")
 	}
+
 	if cfg.TTS.Backend != "cli" {
 		t.Errorf("TTS.Backend = %q; want %q", cfg.TTS.Backend, "cli")
 	}
@@ -280,12 +310,14 @@ tts:
 func TestLoad_ConfigFileExists_NoError(t *testing.T) {
 	// Verify Load succeeds and returns valid config when an explicit config file is provided.
 	dir := t.TempDir()
+
 	cfgFile := filepath.Join(dir, "pockettts.yaml")
 	if err := os.WriteFile(cfgFile, []byte("log_level: warn\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
 	defaults := DefaultConfig()
+
 	cfg, err := Load(LoadOptions{
 		ConfigFile: cfgFile,
 		Defaults:   defaults,
@@ -342,6 +374,7 @@ func TestRegisterFlags_TokenizerModelFlag(t *testing.T) {
 	if f == nil {
 		t.Fatal("flag --paths-tokenizer-model not registered")
 	}
+
 	if f.DefValue != "models/tokenizer.model" {
 		t.Errorf("flag default = %q; want %q", f.DefValue, "models/tokenizer.model")
 	}
@@ -351,6 +384,7 @@ func TestLoad_FlagOverride_TokenizerModel(t *testing.T) {
 	defaults := DefaultConfig()
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	RegisterFlags(fs, defaults)
+
 	if err := fs.Parse([]string{"--paths-tokenizer-model=/custom/tokenizer.model"}); err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -359,6 +393,7 @@ func TestLoad_FlagOverride_TokenizerModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
+
 	if cfg.Paths.TokenizerModel != "/custom/tokenizer.model" {
 		t.Errorf("Paths.TokenizerModel = %q; want %q", cfg.Paths.TokenizerModel, "/custom/tokenizer.model")
 	}
@@ -368,10 +403,12 @@ func TestLoad_EnvOverride_TokenizerModel(t *testing.T) {
 	t.Setenv("POCKETTTS_PATHS_TOKENIZER_MODEL", "/env/tokenizer.model")
 
 	defaults := DefaultConfig()
+
 	cfg, err := Load(LoadOptions{Defaults: defaults})
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
+
 	if cfg.Paths.TokenizerModel != "/env/tokenizer.model" {
 		t.Errorf("Paths.TokenizerModel = %q; want %q", cfg.Paths.TokenizerModel, "/env/tokenizer.model")
 	}
@@ -384,12 +421,15 @@ func TestDefaultConfig_GenerationFields(t *testing.T) {
 	if cfg.TTS.Temperature != 0.7 {
 		t.Errorf("TTS.Temperature = %v; want 0.7", cfg.TTS.Temperature)
 	}
+
 	if cfg.TTS.EOSThreshold != -4.0 {
 		t.Errorf("TTS.EOSThreshold = %v; want -4.0", cfg.TTS.EOSThreshold)
 	}
+
 	if cfg.TTS.MaxSteps != 256 {
 		t.Errorf("TTS.MaxSteps = %d; want 256", cfg.TTS.MaxSteps)
 	}
+
 	if cfg.TTS.LSDDecodeSteps != 1 {
 		t.Errorf("TTS.LSDDecodeSteps = %d; want 1", cfg.TTS.LSDDecodeSteps)
 	}
@@ -415,6 +455,7 @@ func TestRegisterFlags_GenerationFlags(t *testing.T) {
 			t.Errorf("flag %q not registered", c.flag)
 			continue
 		}
+
 		if f.DefValue != c.want {
 			t.Errorf("flag %q default = %q; want %q", c.flag, f.DefValue, c.want)
 		}
@@ -425,6 +466,7 @@ func TestLoad_FlagOverride_GenerationFields(t *testing.T) {
 	defaults := DefaultConfig()
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	RegisterFlags(fs, defaults)
+
 	if err := fs.Parse([]string{
 		"--temperature=0.5",
 		"--eos-threshold=-2.0",
@@ -438,15 +480,19 @@ func TestLoad_FlagOverride_GenerationFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
+
 	if cfg.TTS.Temperature != 0.5 {
 		t.Errorf("TTS.Temperature = %v; want 0.5", cfg.TTS.Temperature)
 	}
+
 	if cfg.TTS.EOSThreshold != -2.0 {
 		t.Errorf("TTS.EOSThreshold = %v; want -2.0", cfg.TTS.EOSThreshold)
 	}
+
 	if cfg.TTS.MaxSteps != 128 {
 		t.Errorf("TTS.MaxSteps = %d; want 128", cfg.TTS.MaxSteps)
 	}
+
 	if cfg.TTS.LSDDecodeSteps != 3 {
 		t.Errorf("TTS.LSDDecodeSteps = %d; want 3", cfg.TTS.LSDDecodeSteps)
 	}

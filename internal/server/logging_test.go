@@ -27,10 +27,12 @@ func (c *capturingHandler) WithGroup(name string) slog.Handler       { return c 
 
 func (c *capturingHandler) attrMap(idx int) map[string]any {
 	m := make(map[string]any)
+
 	c.records[idx].Attrs(func(a slog.Attr) bool {
 		m[a.Key] = a.Value.Any()
 		return true
 	})
+
 	return m
 }
 
@@ -62,21 +64,26 @@ func TestTTS_LogsVoiceAndTextLen(t *testing.T) {
 
 	// Find the synthesis log record.
 	var found bool
+
 	for i := range cap.records {
 		attrs := cap.attrMap(i)
 		if _, ok := attrs["voice"]; ok {
 			found = true
+
 			if attrs["voice"] != "en-default" {
 				t.Errorf("want voice=en-default, got %v", attrs["voice"])
 			}
+
 			if _, ok := attrs["text_len"]; !ok {
 				t.Error("want text_len attribute in log record")
 			}
+
 			if _, ok := attrs["duration_ms"]; !ok {
 				t.Error("want duration_ms attribute in log record")
 			}
 		}
 	}
+
 	if !found {
 		t.Error("no log record contained a 'voice' attribute")
 	}
@@ -103,12 +110,14 @@ func TestTTS_LogsStatusOnError(t *testing.T) {
 	}
 
 	var foundError bool
+
 	for i := range cap.records {
 		attrs := cap.attrMap(i)
 		if _, ok := attrs["error"]; ok {
 			foundError = true
 		}
 	}
+
 	if !foundError {
 		t.Error("want a log record with an 'error' attribute on synthesis failure")
 	}
@@ -132,6 +141,7 @@ func TestSetupLogger_LevelFromString(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseLogLevel(%q) error: %v", tc.level, err)
 			}
+
 			if lvl != tc.wantLvl {
 				t.Errorf("ParseLogLevel(%q) = %v, want %v", tc.level, lvl, tc.wantLvl)
 			}

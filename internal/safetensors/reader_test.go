@@ -33,6 +33,7 @@ func buildSafetensors(t *testing.T, tensors map[string]struct {
 
 	// Build header and compute offsets.
 	header := make(map[string]tensorMeta)
+
 	var rawData []byte
 	for name, info := range tensors {
 		start := len(rawData)
@@ -56,6 +57,7 @@ func buildSafetensors(t *testing.T, tensors map[string]struct {
 	buf = append(buf, lenBuf...)
 	buf = append(buf, headerJSON...)
 	buf = append(buf, rawData...)
+
 	return buf
 }
 
@@ -65,16 +67,20 @@ func float32Bytes(vals []float32) []byte {
 	for i, v := range vals {
 		binary.LittleEndian.PutUint32(buf[i*4:], math.Float32bits(v))
 	}
+
 	return buf
 }
 
 // writeTempSafetensors writes raw bytes to a temp file and returns the path.
 func writeTempSafetensors(t *testing.T, data []byte) string {
 	t.Helper()
+
 	path := filepath.Join(t.TempDir(), "test.safetensors")
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	err := os.WriteFile(path, data, 0o644)
+	if err != nil {
 		t.Fatalf("write temp safetensors: %v", err)
 	}
+
 	return path
 }
 
@@ -94,6 +100,7 @@ func TestLoadFirstTensor_Float32_2D(t *testing.T) {
 	})
 
 	path := writeTempSafetensors(t, blob)
+
 	tensor, err := LoadFirstTensor(path)
 	if err != nil {
 		t.Fatalf("LoadFirstTensor: %v", err)
@@ -102,12 +109,15 @@ func TestLoadFirstTensor_Float32_2D(t *testing.T) {
 	if tensor.Name != "voice_emb" {
 		t.Errorf("Name = %q, want %q", tensor.Name, "voice_emb")
 	}
+
 	if len(tensor.Shape) != 2 || tensor.Shape[0] != 2 || tensor.Shape[1] != 3 {
 		t.Errorf("Shape = %v, want [2 3]", tensor.Shape)
 	}
+
 	if len(tensor.Data) != 6 {
 		t.Fatalf("Data length = %d, want 6", len(tensor.Data))
 	}
+
 	for i, v := range vals {
 		if tensor.Data[i] != v {
 			t.Errorf("Data[%d] = %v, want %v", i, tensor.Data[i], v)
@@ -121,6 +131,7 @@ func TestLoadFirstTensor_Float32_3D(t *testing.T) {
 	for i := range vals {
 		vals[i] = float32(i) * 0.5
 	}
+
 	blob := buildSafetensors(t, map[string]struct {
 		dtype string
 		shape []int64
@@ -130,6 +141,7 @@ func TestLoadFirstTensor_Float32_3D(t *testing.T) {
 	})
 
 	path := writeTempSafetensors(t, blob)
+
 	tensor, err := LoadFirstTensor(path)
 	if err != nil {
 		t.Fatalf("LoadFirstTensor: %v", err)
@@ -138,6 +150,7 @@ func TestLoadFirstTensor_Float32_3D(t *testing.T) {
 	if len(tensor.Shape) != 3 || tensor.Shape[0] != 1 || tensor.Shape[1] != 2 || tensor.Shape[2] != 4 {
 		t.Errorf("Shape = %v, want [1 2 4]", tensor.Shape)
 	}
+
 	if len(tensor.Data) != 8 {
 		t.Fatalf("Data length = %d, want 8", len(tensor.Data))
 	}
@@ -155,6 +168,7 @@ func TestLoadFirstTensor_MultiTensor_ReturnsFirst(t *testing.T) {
 	})
 
 	path := writeTempSafetensors(t, blob)
+
 	tensor, err := LoadFirstTensor(path)
 	if err != nil {
 		t.Fatalf("LoadFirstTensor: %v", err)
@@ -168,6 +182,7 @@ func TestLoadFirstTensor_MultiTensor_ReturnsFirst(t *testing.T) {
 
 func TestLoadFirstTensor_EmptyFile(t *testing.T) {
 	path := writeTempSafetensors(t, []byte{})
+
 	_, err := LoadFirstTensor(path)
 	if err == nil {
 		t.Fatal("expected error for empty file")
@@ -177,6 +192,7 @@ func TestLoadFirstTensor_EmptyFile(t *testing.T) {
 func TestLoadFirstTensor_TruncatedHeader(t *testing.T) {
 	// Only 4 bytes — not enough for the 8-byte length prefix.
 	path := writeTempSafetensors(t, []byte{0, 0, 0, 0})
+
 	_, err := LoadFirstTensor(path)
 	if err == nil {
 		t.Fatal("expected error for truncated header")
@@ -193,6 +209,7 @@ func TestLoadFirstTensor_NoTensors(t *testing.T) {
 	buf = append(buf, headerJSON...)
 
 	path := writeTempSafetensors(t, buf)
+
 	_, err := LoadFirstTensor(path)
 	if err == nil {
 		t.Fatal("expected error for file with no tensors")
@@ -211,6 +228,7 @@ func TestLoadFirstTensor_UnsupportedDtype(t *testing.T) {
 	})
 
 	path := writeTempSafetensors(t, blob)
+
 	_, err := LoadFirstTensor(path)
 	if err == nil {
 		t.Fatal("expected error for unsupported dtype I64")
@@ -234,6 +252,7 @@ func TestLoadFirstTensor_InvalidJSON(t *testing.T) {
 	buf = append(buf, headerJSON...)
 
 	path := writeTempSafetensors(t, buf)
+
 	_, err := LoadFirstTensor(path)
 	if err == nil {
 		t.Fatal("expected error for invalid JSON header")
@@ -253,6 +272,7 @@ func TestLoadFirstTensor_DataTruncated(t *testing.T) {
 
 	// Manually truncate the data section.
 	path := writeTempSafetensors(t, blob[:len(blob)-8]) // remove 8 bytes from end
+
 	_, err := LoadFirstTensor(path)
 	if err == nil {
 		t.Fatal("expected error for truncated tensor data")
@@ -269,6 +289,7 @@ func TestLoadVoiceEmbedding_2D_ReshapesTo3D(t *testing.T) {
 	for i := range vals {
 		vals[i] = float32(i) * 0.001
 	}
+
 	blob := buildSafetensors(t, map[string]struct {
 		dtype string
 		shape []int64
@@ -278,6 +299,7 @@ func TestLoadVoiceEmbedding_2D_ReshapesTo3D(t *testing.T) {
 	})
 
 	path := writeTempSafetensors(t, blob)
+
 	data, shape, err := LoadVoiceEmbedding(path)
 	if err != nil {
 		t.Fatalf("LoadVoiceEmbedding: %v", err)
@@ -286,6 +308,7 @@ func TestLoadVoiceEmbedding_2D_ReshapesTo3D(t *testing.T) {
 	if len(shape) != 3 || shape[0] != 1 || shape[1] != 3 || shape[2] != 1024 {
 		t.Errorf("shape = %v, want [1 3 1024]", shape)
 	}
+
 	if len(data) != 3*1024 {
 		t.Fatalf("data length = %d, want %d", len(data), 3*1024)
 	}
@@ -301,6 +324,7 @@ func TestLoadVoiceEmbedding_3D_PassesThrough(t *testing.T) {
 	for i := range vals {
 		vals[i] = float32(i) * 0.01
 	}
+
 	blob := buildSafetensors(t, map[string]struct {
 		dtype string
 		shape []int64
@@ -310,6 +334,7 @@ func TestLoadVoiceEmbedding_3D_PassesThrough(t *testing.T) {
 	})
 
 	path := writeTempSafetensors(t, blob)
+
 	data, shape, err := LoadVoiceEmbedding(path)
 	if err != nil {
 		t.Fatalf("LoadVoiceEmbedding: %v", err)
@@ -318,6 +343,7 @@ func TestLoadVoiceEmbedding_3D_PassesThrough(t *testing.T) {
 	if len(shape) != 3 || shape[0] != 1 || shape[1] != 2 || shape[2] != 1024 {
 		t.Errorf("shape = %v, want [1 2 1024]", shape)
 	}
+
 	if len(data) != 2*1024 {
 		t.Fatalf("data length = %d, want %d", len(data), 2*1024)
 	}
@@ -334,6 +360,7 @@ func TestLoadVoiceEmbedding_1D_ReturnsError(t *testing.T) {
 	})
 
 	path := writeTempSafetensors(t, blob)
+
 	_, _, err := LoadVoiceEmbedding(path)
 	if err == nil {
 		t.Fatal("expected error for 1D tensor")
@@ -351,6 +378,7 @@ func TestLoadVoiceEmbedding_4D_ReturnsError(t *testing.T) {
 	})
 
 	path := writeTempSafetensors(t, blob)
+
 	_, _, err := LoadVoiceEmbedding(path)
 	if err == nil {
 		t.Fatal("expected error for 4D tensor")
@@ -375,6 +403,7 @@ func TestLoadVoiceEmbedding_DataValuesPreserved(t *testing.T) {
 	})
 
 	path := writeTempSafetensors(t, blob)
+
 	data, shape, err := LoadVoiceEmbedding(path)
 	if err != nil {
 		t.Fatalf("LoadVoiceEmbedding: %v", err)
@@ -389,6 +418,7 @@ func TestLoadVoiceEmbedding_DataValuesPreserved(t *testing.T) {
 	if len(data) != len(vals) {
 		t.Fatalf("data length = %d, want %d", len(data), len(vals))
 	}
+
 	for i, want := range vals {
 		if data[i] != want {
 			t.Errorf("data[%d] = %v, want %v", i, data[i], want)
@@ -416,6 +446,7 @@ func TestLoadFirstTensor_MetadataKeyIgnored(t *testing.T) {
 			"data_offsets": []int{0, len(rawData)},
 		},
 	}
+
 	headerJSON, err := json.Marshal(headerMap)
 	if err != nil {
 		t.Fatalf("marshal header: %v", err)
@@ -429,16 +460,20 @@ func TestLoadFirstTensor_MetadataKeyIgnored(t *testing.T) {
 	buf = append(buf, rawData...)
 
 	path := writeTempSafetensors(t, buf)
+
 	tensor, err := LoadFirstTensor(path)
 	if err != nil {
 		t.Fatalf("LoadFirstTensor with __metadata__: %v", err)
 	}
+
 	if tensor.Name != "voice_emb" {
 		t.Errorf("tensor name = %q, want %q", tensor.Name, "voice_emb")
 	}
+
 	if len(tensor.Data) != 3 {
 		t.Fatalf("data length = %d, want 3", len(tensor.Data))
 	}
+
 	for i, want := range vals {
 		if tensor.Data[i] != want {
 			t.Errorf("data[%d] = %v, want %v", i, tensor.Data[i], want)
@@ -457,6 +492,7 @@ func TestValidateModelKeys_AllKeysPresent(t *testing.T) {
 		shape []int64
 		data  []byte
 	})
+
 	dummyData := float32Bytes([]float32{1.0})
 	for _, key := range requiredModelKeys {
 		tensors[key] = struct {
@@ -465,10 +501,12 @@ func TestValidateModelKeys_AllKeysPresent(t *testing.T) {
 			data  []byte
 		}{"F32", []int64{1}, dummyData}
 	}
+
 	data := buildSafetensors(t, tensors)
 	path := writeTempSafetensors(t, data)
 
-	if err := ValidateModelKeys(path); err != nil {
+	err := ValidateModelKeys(path)
+	if err != nil {
 		t.Errorf("ValidateModelKeys should pass; got: %v", err)
 	}
 }
@@ -489,6 +527,7 @@ func TestValidateModelKeys_MissingKey(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing keys")
 	}
+
 	if !strings.Contains(err.Error(), "missing required tensors") {
 		t.Errorf("error should mention missing tensors; got: %v", err)
 	}
@@ -506,6 +545,7 @@ func TestValidateModelKeys_InvalidFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not a safetensors file"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+
 	err := ValidateModelKeys(path)
 	if err == nil {
 		t.Fatal("expected error for invalid file")

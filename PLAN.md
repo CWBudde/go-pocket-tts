@@ -435,20 +435,20 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
 
 - [x] Task 29.2: **Streaming synthesis**
   - [x] Chunk-level streaming: each ≤50-token text chunk is generated, decoded, and flushed as a
-    `PCMChunk` to the client immediately via `/tts/stream` (POST, `audio/wav`, chunked transfer
-    encoding with `0xFFFFFFFF` unknown-length WAV header).
+        `PCMChunk` to the client immediately via `/tts/stream` (POST, `audio/wav`, chunked transfer
+        encoding with `0xFFFFFFFF` unknown-length WAV header).
   - [x] `Service.SynthesizeStream(ctx, input, voice, out chan<- PCMChunk)` sends one chunk per text
-    segment, closes channel on return, respects context cancellation and backpressure.
+        segment, closes channel on return, respects context cancellation and backpressure.
   - [x] `StreamingSynthesizer` interface + `WithStreamer` option; `nativeSynthesizer` implements both
-    `Synthesizer` and `StreamingSynthesizer`. CLI backend returns 501 Not Implemented.
+        `Synthesizer` and `StreamingSynthesizer`. CLI backend returns 501 Not Implemented.
   - [x] New `internal/audio/wav_stream.go`: `WriteWAVHeaderStreaming`, `WritePCM16Samples`.
   - [x] Note: true frame-level Mimi streaming deferred (requires stateful decoder rewrite).
 
 - [x] Task 29.3: **Concurrency + resource control**
   - [x] Context propagation: new `Service.SynthesizeCtx(ctx, …)` method; `Synthesize` delegates with
-    `context.Background()`. `nativeSynthesizer.Synthesize` now passes HTTP handler context through.
+        `context.Background()`. `nativeSynthesizer.Synthesize` now passes HTTP handler context through.
   - [x] Native backend semaphore enabled: `runtimeDeps()` returns `workers=2` (default) instead of 0.
-    Existing semaphore, timeout, and queueing logic now applies to native mode.
+        Existing semaphore, timeout, and queueing logic now applies to native mode.
   - [x] Queue awareness logging via `acquireWorker` helper (two-stage select, logs when queued).
   - [ ] Memory budgeting for model weights, cache, and per-request buffers (deferred to future phase)
 
@@ -491,6 +491,7 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
 **Root cause analysis:** The ONNX `FlowLMMainWrapper` (in `scripts/export_onnx.py`) creates a **fresh KV-cache state every call** (`state = clone_model_state(self.base_state)`). The Go AR loop passes the full growing sequence + text embeddings each step, so the ONNX model re-processes the entire `[voice(125) + text(T) + seq(S)]` context from scratch on every iteration — no persistent KV-cache across steps.
 
 This non-incremental approach is architecturally different from the Python reference, which:
+
 1. Initializes KV-cache once (or loads pre-computed v2 voice embeddings)
 2. Prompts text into the cache (incremental prefill)
 3. Steps autoregressively with single-frame inputs, cached K/V from prior steps

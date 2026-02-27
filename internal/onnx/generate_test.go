@@ -2,6 +2,7 @@ package onnx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"testing"
@@ -11,6 +12,7 @@ import (
 // EOS fires after eosAfterSteps step calls.
 func fakeStatefulEngine(t *testing.T, eosAfterSteps int) *Engine {
 	t.Helper()
+
 	stepCount := 0
 	const numLayers = 2
 	T := int64(3)
@@ -20,6 +22,7 @@ func fakeStatefulEngine(t *testing.T, eosAfterSteps int) *Engine {
 		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 			tLen := inputs["tokens"].Shape()[1]
 			out, _ := NewTensor(make([]float32, tLen*1024), []int64{1, tLen, 1024})
+
 			return map[string]*Tensor{"text_embeddings": out}, nil
 		},
 	}
@@ -27,12 +30,15 @@ func fakeStatefulEngine(t *testing.T, eosAfterSteps int) *Engine {
 		name: "flow_lm_prefill",
 		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
 			out := map[string]*Tensor{}
+
 			for i := range numLayers {
 				kv, _ := NewTensor(make([]float32, 2*1*int(T)*2*4), []int64{2, 1, T, 2, 4})
 				out[fmt.Sprintf("kv_%d", i)] = kv
 			}
+
 			off, _ := NewTensor([]int64{T}, []int64{1})
 			out["offset"] = off
+
 			return out, nil
 		},
 	}
@@ -42,20 +48,25 @@ func fakeStatefulEngine(t *testing.T, eosAfterSteps int) *Engine {
 			stepCount++
 			newOff := T + int64(stepCount)
 			out := map[string]*Tensor{}
+
 			for i := range numLayers {
 				kv, _ := NewTensor(make([]float32, 2*1*int(newOff)*2*4), []int64{2, 1, newOff, 2, 4})
 				out[fmt.Sprintf("kv_%d", i)] = kv
 			}
+
 			off, _ := NewTensor([]int64{newOff}, []int64{1})
 			out["offset"] = off
 			hidden, _ := NewTensor(make([]float32, 1024), []int64{1, 1024})
 			out["last_hidden"] = hidden
+
 			eosVal := float32(-10.0)
 			if stepCount >= eosAfterSteps {
 				eosVal = 0.0
 			}
+
 			eos, _ := NewTensor([]float32{eosVal}, []int64{1, 1})
 			out["eos_logits"] = eos
+
 			return out, nil
 		},
 	}
@@ -71,6 +82,7 @@ func fakeStatefulEngine(t *testing.T, eosAfterSteps int) *Engine {
 		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 			tLen := inputs["latent"].Shape()[1]
 			out, _ := NewTensor(make([]float32, 512*tLen), []int64{1, 512, tLen})
+
 			return map[string]*Tensor{"mimi_latent": out}, nil
 		},
 	}
@@ -79,9 +91,11 @@ func fakeStatefulEngine(t *testing.T, eosAfterSteps int) *Engine {
 		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 			tLen := inputs["latent"].Shape()[2]
 			out, _ := NewTensor(make([]float32, tLen*480), []int64{1, 1, tLen * 480})
+
 			return map[string]*Tensor{"audio": out}, nil
 		},
 	}
+
 	return engineWithFakeRunners(map[string]runnerIface{
 		"text_conditioner": textCond,
 		"flow_lm_prefill":  prefill,
@@ -95,10 +109,12 @@ func fakeStatefulEngine(t *testing.T, eosAfterSteps int) *Engine {
 func TestGenerateAudio_StatefulPath_ProducesNonEmptyPCM(t *testing.T) {
 	e := fakeStatefulEngine(t, 3)
 	cfg := GenerateConfig{Temperature: 0.0, EOSThreshold: -4.0, MaxSteps: 256, LSDDecodeSteps: 1}
+
 	pcm, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, cfg)
 	if err != nil {
 		t.Fatalf("GenerateAudio (stateful): %v", err)
 	}
+
 	if len(pcm) == 0 {
 		t.Fatal("expected non-empty PCM from stateful path")
 	}
@@ -108,10 +124,12 @@ func TestGenerateAudio_FallbackToStateless_WhenNoPrefillGraph(t *testing.T) {
 	// fakeGenerateEngine only has flow_lm_main (no flow_lm_prefill) → stateless fallback.
 	e := fakeGenerateEngine(t, 3)
 	cfg := GenerateConfig{Temperature: 0.0, EOSThreshold: -4.0, MaxSteps: 256, LSDDecodeSteps: 1}
+
 	pcm, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, cfg)
 	if err != nil {
 		t.Fatalf("GenerateAudio (stateless fallback): %v", err)
 	}
+
 	if len(pcm) == 0 {
 		t.Fatal("expected non-empty PCM from stateless fallback")
 	}
@@ -136,6 +154,7 @@ func fakeGenerateEngine(t *testing.T, eosAfterSteps int) *Engine {
 			T := tokTensor.Shape()[1]
 			data := make([]float32, T*1024)
 			out, _ := NewTensor(data, []int64{1, T, 1024})
+
 			return map[string]*Tensor{"text_embeddings": out}, nil
 		},
 	}
@@ -152,7 +171,9 @@ func fakeGenerateEngine(t *testing.T, eosAfterSteps int) *Engine {
 			if stepCount >= eosAfterSteps {
 				eosVal = 0.0 // above default threshold -4.0
 			}
+
 			eos, _ := NewTensor([]float32{eosVal}, []int64{1, 1})
+
 			return map[string]*Tensor{"last_hidden": h, "eos_logits": eos}, nil
 		},
 	}
@@ -164,7 +185,9 @@ func fakeGenerateEngine(t *testing.T, eosAfterSteps int) *Engine {
 			for i := range dir {
 				dir[i] = 0.5
 			}
+
 			out, _ := NewTensor(dir, []int64{1, 32})
+
 			return map[string]*Tensor{"flow_direction": out}, nil
 		},
 	}
@@ -175,6 +198,7 @@ func fakeGenerateEngine(t *testing.T, eosAfterSteps int) *Engine {
 			T := inputs["latent"].Shape()[1]
 			data := make([]float32, 512*T)
 			out, _ := NewTensor(data, []int64{1, 512, T})
+
 			return map[string]*Tensor{"mimi_latent": out}, nil
 		},
 	}
@@ -185,11 +209,14 @@ func fakeGenerateEngine(t *testing.T, eosAfterSteps int) *Engine {
 			T := inputs["latent"].Shape()[2]
 			// Each latent frame produces 480 audio samples (24kHz / 50fps).
 			nSamples := T * 480
+
 			data := make([]float32, nSamples)
 			for i := range data {
 				data[i] = 0.1
 			}
+
 			out, _ := NewTensor(data, []int64{1, 1, nSamples})
+
 			return map[string]*Tensor{"audio": out}, nil
 		},
 	}
@@ -214,10 +241,12 @@ func TestGenerateAudio_ProducesNonEmptyPCM(t *testing.T) {
 	}
 
 	tokens := []int64{1, 2, 3, 4, 5}
+
 	pcm, err := e.GenerateAudio(context.Background(), tokens, cfg)
 	if err != nil {
 		t.Fatalf("GenerateAudio: %v", err)
 	}
+
 	if len(pcm) == 0 {
 		t.Fatal("expected non-empty PCM output")
 	}
@@ -232,6 +261,7 @@ func TestGenerateAudio_RespectsMaxSteps(t *testing.T) {
 			stepCount++
 			h, _ := NewTensor(make([]float32, 1024), []int64{1, 1024})
 			eos, _ := NewTensor([]float32{-10.0}, []int64{1, 1}) // never fires
+
 			return map[string]*Tensor{"last_hidden": h, "eos_logits": eos}, nil
 		},
 	}
@@ -242,6 +272,7 @@ func TestGenerateAudio_RespectsMaxSteps(t *testing.T) {
 			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 				T := inputs["tokens"].Shape()[1]
 				out, _ := NewTensor(make([]float32, T*1024), []int64{1, T, 1024})
+
 				return map[string]*Tensor{"text_embeddings": out}, nil
 			},
 		},
@@ -258,6 +289,7 @@ func TestGenerateAudio_RespectsMaxSteps(t *testing.T) {
 			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 				T := inputs["latent"].Shape()[1]
 				out, _ := NewTensor(make([]float32, 512*T), []int64{1, 512, T})
+
 				return map[string]*Tensor{"mimi_latent": out}, nil
 			},
 		},
@@ -266,6 +298,7 @@ func TestGenerateAudio_RespectsMaxSteps(t *testing.T) {
 			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 				T := inputs["latent"].Shape()[2]
 				out, _ := NewTensor(make([]float32, T*480), []int64{1, 1, T * 480})
+
 				return map[string]*Tensor{"audio": out}, nil
 			},
 		},
@@ -282,6 +315,7 @@ func TestGenerateAudio_RespectsMaxSteps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GenerateAudio: %v", err)
 	}
+
 	if stepCount != 10 {
 		t.Errorf("flow_lm_main called %d times, want 10 (MaxSteps)", stepCount)
 	}
@@ -297,11 +331,14 @@ func TestGenerateAudio_EOSCountdown(t *testing.T) {
 		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
 			stepCount++
 			h, _ := NewTensor(make([]float32, 1024), []int64{1, 1024})
+
 			eosVal := float32(-10.0)
 			if stepCount >= 2 {
 				eosVal = 0.0 // fires on step 2+
 			}
+
 			eos, _ := NewTensor([]float32{eosVal}, []int64{1, 1})
+
 			return map[string]*Tensor{"last_hidden": h, "eos_logits": eos}, nil
 		},
 	}
@@ -312,6 +349,7 @@ func TestGenerateAudio_EOSCountdown(t *testing.T) {
 			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 				T := inputs["tokens"].Shape()[1]
 				out, _ := NewTensor(make([]float32, T*1024), []int64{1, T, 1024})
+
 				return map[string]*Tensor{"text_embeddings": out}, nil
 			},
 		},
@@ -328,6 +366,7 @@ func TestGenerateAudio_EOSCountdown(t *testing.T) {
 			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 				T := inputs["latent"].Shape()[1]
 				out, _ := NewTensor(make([]float32, 512*T), []int64{1, 512, T})
+
 				return map[string]*Tensor{"mimi_latent": out}, nil
 			},
 		},
@@ -336,6 +375,7 @@ func TestGenerateAudio_EOSCountdown(t *testing.T) {
 			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 				T := inputs["latent"].Shape()[2]
 				out, _ := NewTensor(make([]float32, T*480), []int64{1, 1, T * 480})
+
 				return map[string]*Tensor{"audio": out}, nil
 			},
 		},
@@ -387,13 +427,14 @@ func TestGenerateAudio_PropagatesFlowLMError(t *testing.T) {
 			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 				T := inputs["tokens"].Shape()[1]
 				out, _ := NewTensor(make([]float32, T*1024), []int64{1, T, 1024})
+
 				return map[string]*Tensor{"text_embeddings": out}, nil
 			},
 		},
 		"flow_lm_main": &fakeRunner{
 			name: "flow_lm_main",
 			fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
-				return nil, fmt.Errorf("flow_lm_main exploded")
+				return nil, errors.New("flow_lm_main exploded")
 			},
 		},
 	})
@@ -428,6 +469,7 @@ func TestGenerateAudio_NaNHiddenStateProducesSilence(t *testing.T) {
 			h, _ := NewTensor(nanHidden, []int64{1, 1024})
 			// NaN logit: NaN > -4.0 is false, so EOS never fires.
 			eos, _ := NewTensor([]float32{float32(math.NaN())}, []int64{1, 1})
+
 			return map[string]*Tensor{"last_hidden": h, "eos_logits": eos}, nil
 		},
 	}
@@ -439,7 +481,9 @@ func TestGenerateAudio_NaNHiddenStateProducesSilence(t *testing.T) {
 			for i := range dir {
 				dir[i] = float32(math.NaN())
 			}
+
 			out, _ := NewTensor(dir, []int64{1, 32})
+
 			return map[string]*Tensor{"flow_direction": out}, nil
 		},
 	}
@@ -450,6 +494,7 @@ func TestGenerateAudio_NaNHiddenStateProducesSilence(t *testing.T) {
 			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 				T := inputs["tokens"].Shape()[1]
 				out, _ := NewTensor(make([]float32, T*1024), []int64{1, T, 1024})
+
 				return map[string]*Tensor{"text_embeddings": out}, nil
 			},
 		},
@@ -464,7 +509,9 @@ func TestGenerateAudio_NaNHiddenStateProducesSilence(t *testing.T) {
 				for i := range data {
 					data[i] = float32(math.NaN())
 				}
+
 				out, _ := NewTensor(data, []int64{1, 512, T})
+
 				return map[string]*Tensor{"mimi_latent": out}, nil
 			},
 		},
@@ -477,7 +524,9 @@ func TestGenerateAudio_NaNHiddenStateProducesSilence(t *testing.T) {
 				for i := range data {
 					data[i] = float32(math.NaN())
 				}
+
 				out, _ := NewTensor(data, []int64{1, 1, T * 480})
+
 				return map[string]*Tensor{"audio": out}, nil
 			},
 		},
@@ -499,13 +548,16 @@ func TestGenerateAudio_NaNHiddenStateProducesSilence(t *testing.T) {
 	// Either symptom indicates the pipeline is corrupted.
 	var sumSq float64
 	hasNaN := false
+
 	for _, s := range pcm {
 		if math.IsNaN(float64(s)) {
 			hasNaN = true
 			break
 		}
+
 		sumSq += float64(s) * float64(s)
 	}
+
 	rms := math.Sqrt(sumSq / float64(len(pcm)))
 
 	if !hasNaN && rms >= 0.01 {

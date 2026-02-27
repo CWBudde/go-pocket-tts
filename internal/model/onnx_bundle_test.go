@@ -20,6 +20,7 @@ func TestResolveBundleFromLock_ByVariant(t *testing.T) {
 			SHA256:  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 		}},
 	}
+
 	data, _ := json.Marshal(lock)
 	if err := os.WriteFile(lockPath, data, 0o644); err != nil {
 		t.Fatalf("write lock: %v", err)
@@ -29,6 +30,7 @@ func TestResolveBundleFromLock_ByVariant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve bundle: %v", err)
 	}
+
 	if b.ID != "b6369a24-cpu" {
 		t.Fatalf("unexpected id: %s", b.ID)
 	}
@@ -42,7 +44,8 @@ func TestVerifyONNXManifestDir(t *testing.T) {
 		"flow_lm_flow.onnx",
 		"mimi_decoder.onnx",
 	} {
-		if err := os.WriteFile(filepath.Join(tmp, fn), []byte("x"), 0o644); err != nil {
+		err := os.WriteFile(filepath.Join(tmp, fn), []byte("x"), 0o644)
+		if err != nil {
 			t.Fatalf("write fake graph: %v", err)
 		}
 	}
@@ -55,12 +58,15 @@ func TestVerifyONNXManifestDir(t *testing.T) {
 			{"name": "mimi_decoder", "filename": "mimi_decoder.onnx"},
 		},
 	}
+
 	data, _ := json.Marshal(manifest)
-	if err := os.WriteFile(filepath.Join(tmp, "manifest.json"), data, 0o644); err != nil {
+	err := os.WriteFile(filepath.Join(tmp, "manifest.json"), data, 0o644)
+	if err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	if err := verifyONNXManifestDir(tmp); err != nil {
+	err = verifyONNXManifestDir(tmp)
+	if err != nil {
 		t.Fatalf("verify manifest dir: %v", err)
 	}
 }
@@ -74,15 +80,20 @@ func TestExtractBundle_Zip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create zip: %v", err)
 	}
+
 	zw := zip.NewWriter(fh)
+
 	w, err := zw.Create("manifest.json")
 	if err != nil {
 		t.Fatalf("create zip entry: %v", err)
 	}
+
 	_, _ = w.Write([]byte(`{"graphs":[]}`))
+
 	if err := zw.Close(); err != nil {
 		t.Fatalf("close zip writer: %v", err)
 	}
+
 	if err := fh.Close(); err != nil {
 		t.Fatalf("close zip file: %v", err)
 	}
@@ -90,6 +101,7 @@ func TestExtractBundle_Zip(t *testing.T) {
 	if err := extractZip(zipPath, outDir); err != nil {
 		t.Fatalf("extract zip: %v", err)
 	}
+
 	if _, err := os.Stat(filepath.Join(outDir, "manifest.json")); err != nil {
 		t.Fatalf("expected extracted file: %v", err)
 	}

@@ -26,6 +26,7 @@ func DecodeWAV(data []byte) ([]float32, error) {
 	}
 
 	r := bytes.NewReader(data)
+
 	dec := wav.NewDecoder(r)
 	if !dec.IsValidFile() {
 		return nil, errors.New("invalid WAV file")
@@ -34,9 +35,11 @@ func DecodeWAV(data []byte) ([]float32, error) {
 	if dec.SampleRate != ExpectedSampleRate {
 		return nil, fmt.Errorf("%w: sample rate %d, want %d", ErrFormatMismatch, dec.SampleRate, ExpectedSampleRate)
 	}
+
 	if dec.NumChans != ExpectedChannels {
 		return nil, fmt.Errorf("%w: channels %d, want %d", ErrFormatMismatch, dec.NumChans, ExpectedChannels)
 	}
+
 	if dec.BitDepth != ExpectedBitDepth {
 		return nil, fmt.Errorf("%w: bit depth %d, want %d", ErrFormatMismatch, dec.BitDepth, ExpectedBitDepth)
 	}

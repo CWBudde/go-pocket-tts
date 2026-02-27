@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/example/go-pocket-tts/internal/config"
-	nativemodel "github.com/example/go-pocket-tts/internal/native"
 	"github.com/example/go-pocket-tts/internal/model"
+	nativemodel "github.com/example/go-pocket-tts/internal/native"
 	"github.com/example/go-pocket-tts/internal/safetensors"
 	"github.com/spf13/cobra"
 )
@@ -30,6 +30,7 @@ func newModelVerifyCmd() *cobra.Command {
 			if be == "" {
 				be = cfg.TTS.Backend
 			}
+
 			be, err = config.NormalizeBackend(be)
 			if err != nil {
 				return err
@@ -53,38 +54,58 @@ func newModelVerifyCmd() *cobra.Command {
 
 func verifyNativeSafetensors(cfg config.Config) error {
 	modelPath := cfg.Paths.ModelPath
-	fmt.Fprintf(os.Stdout, "verifying safetensors model: %s\n", modelPath)
+	if _, err := fmt.Fprintf(os.Stdout, "verifying safetensors model: %s\n", modelPath); err != nil {
+		return fmt.Errorf("write status: %w", err)
+	}
 
 	// 1. Check file exists.
 	if _, err := os.Stat(modelPath); err != nil {
 		return fmt.Errorf("model file not found: %w", err)
 	}
-	fmt.Fprintf(os.Stdout, "  ✓ file exists\n")
+
+	if _, err := fmt.Fprintf(os.Stdout, "  ✓ file exists\n"); err != nil {
+		return fmt.Errorf("write status: %w", err)
+	}
 
 	// 2. Validate header keys.
 	if err := safetensors.ValidateModelKeys(modelPath); err != nil {
 		return fmt.Errorf("key validation failed: %w", err)
 	}
-	fmt.Fprintf(os.Stdout, "  ✓ tensor keys valid\n")
+
+	if _, err := fmt.Fprintf(os.Stdout, "  ✓ tensor keys valid\n"); err != nil {
+		return fmt.Errorf("write status: %w", err)
+	}
 
 	// 3. Smoke load the model.
 	m, err := nativemodel.LoadModelFromSafetensors(modelPath, nativemodel.DefaultConfig())
 	if err != nil {
 		return fmt.Errorf("smoke load failed: %w", err)
 	}
+
 	m.Close()
-	fmt.Fprintf(os.Stdout, "  ✓ model loads successfully\n")
+
+	if _, err := fmt.Fprintf(os.Stdout, "  ✓ model loads successfully\n"); err != nil {
+		return fmt.Errorf("write status: %w", err)
+	}
 
 	// 4. Check tokenizer.
 	tokPath := cfg.Paths.TokenizerModel
 	if _, err := os.Stat(tokPath); err != nil {
 		slog.Warn("tokenizer model not found", "path", tokPath)
-		fmt.Fprintf(os.Stdout, "  ⚠ tokenizer model not found: %s\n", tokPath)
+
+		if _, err := fmt.Fprintf(os.Stdout, "  ⚠ tokenizer model not found: %s\n", tokPath); err != nil {
+			return fmt.Errorf("write status: %w", err)
+		}
 	} else {
-		fmt.Fprintf(os.Stdout, "  ✓ tokenizer model: %s\n", tokPath)
+		if _, err := fmt.Fprintf(os.Stdout, "  ✓ tokenizer model: %s\n", tokPath); err != nil {
+			return fmt.Errorf("write status: %w", err)
+		}
 	}
 
-	fmt.Fprintln(os.Stdout, "native-safetensors model verification passed")
+	if _, err := fmt.Fprintln(os.Stdout, "native-safetensors model verification passed"); err != nil {
+		return fmt.Errorf("write status: %w", err)
+	}
+
 	return nil
 }
 
@@ -99,5 +120,6 @@ func verifyONNX(manifestPath string, cfg config.Config, ortAPIVersion uint32) er
 	if err != nil {
 		return fmt.Errorf("model verify failed: %w", err)
 	}
+
 	return nil
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -27,6 +28,7 @@ var buildVoiceEncoder = func(cfg config.Config, modelWeightsPath string) (voiceE
 		if err != nil {
 			return nil, fmt.Errorf("detect ORT runtime: %w", err)
 		}
+
 		rcfg.LibraryPath = info.LibraryPath
 	}
 
@@ -34,6 +36,7 @@ var buildVoiceEncoder = func(cfg config.Config, modelWeightsPath string) (voiceE
 	if err != nil {
 		return nil, fmt.Errorf("init onnx engine: %w", err)
 	}
+
 	return engine, nil
 }
 
@@ -68,12 +71,15 @@ func newExportVoiceCmd() *cobra.Command {
 			if audioPath == "" {
 				audioPath = strings.TrimSpace(audioPathAlias)
 			}
+
 			if audioPath == "" {
-				return fmt.Errorf("--input is required")
+				return errors.New("--input is required")
 			}
+
 			if strings.TrimSpace(outPath) == "" {
-				return fmt.Errorf("--out is required")
+				return errors.New("--out is required")
 			}
+
 			if _, err := os.Stat(audioPath); err != nil {
 				return fmt.Errorf("read --input %q: %w", audioPath, err)
 			}
@@ -90,9 +96,11 @@ func newExportVoiceCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
 			if len(embedding) == 0 {
-				return fmt.Errorf("encoded voice embedding is empty")
+				return errors.New("encoded voice embedding is empty")
 			}
+
 			if len(embedding)%onnx.VoiceEmbeddingDim != 0 {
 				return fmt.Errorf(
 					"encoded voice embedding length %d is not divisible by %d",
@@ -109,6 +117,7 @@ func newExportVoiceCmd() *cobra.Command {
 			_, _ = fmt.Fprintln(os.Stdout, "export-voice completed")
 			_, _ = fmt.Fprintf(os.Stdout, "Suggested manifest entry:\n")
 			_, _ = fmt.Fprintf(os.Stdout, "{\"id\":\"%s\",\"path\":\"%s\",\"license\":\"%s\"}\n", id, outPath, license)
+
 			return nil
 		},
 	}
@@ -132,8 +141,10 @@ func resolveExportVoiceModelPath(cfg config.Config, flagPath string) string {
 	if p := strings.TrimSpace(flagPath); p != "" {
 		return p
 	}
+
 	if p := strings.TrimSpace(cfg.Paths.ModelPath); strings.HasSuffix(strings.ToLower(p), ".safetensors") {
 		return p
 	}
+
 	return ""
 }

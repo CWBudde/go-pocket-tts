@@ -22,16 +22,21 @@ func CompareTensor(name string, got, want *tensor.Tensor, tol ops.Tolerance) (Te
 	if got == nil || want == nil {
 		return r, fmt.Errorf("native parity: %s got/want tensor must be non-nil", name)
 	}
+
 	gShape := got.Shape()
+
 	wShape := want.Shape()
 	if !equalShape(gShape, wShape) {
 		r.ShapeMatch = false
 		r.Pass = false
+
 		return r, nil
 	}
+
 	r.ShapeMatch = true
 
 	gd := got.RawData()
+
 	wd := want.RawData()
 	if len(gd) != len(wd) {
 		r.Pass = false
@@ -41,19 +46,25 @@ func CompareTensor(name string, got, want *tensor.Tensor, tol ops.Tolerance) (Te
 	for i := range gd {
 		a := float64(gd[i])
 		b := float64(wd[i])
+
 		absErr := math.Abs(a - b)
 		if absErr > r.MaxAbsErr {
 			r.MaxAbsErr = absErr
 		}
+
 		den := math.Abs(b)
+
 		relErr := absErr
 		if den > 0 {
 			relErr = absErr / den
 		}
+
 		if relErr > r.MaxRelErr {
 			r.MaxRelErr = relErr
 		}
 	}
+
 	r.Pass = r.MaxAbsErr <= tol.Abs && r.MaxRelErr <= tol.Rel
+
 	return r, nil
 }

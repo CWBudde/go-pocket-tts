@@ -51,12 +51,15 @@ func TestHealth_Returns200WithStatusOK(t *testing.T) {
 	}
 
 	var body map[string]string
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+	err := json.NewDecoder(rec.Body).Decode(&body)
+	if err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
+
 	if body["status"] != "ok" {
 		t.Errorf("want status=ok, got %q", body["status"])
 	}
+
 	if _, ok := body["version"]; !ok {
 		t.Error("want version field in response")
 	}
@@ -82,12 +85,15 @@ func TestVoices_ReturnsJSONArray(t *testing.T) {
 	}
 
 	var got []tts.Voice
-	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+	err := json.NewDecoder(rec.Body).Decode(&got)
+	if err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
+
 	if len(got) != 2 {
 		t.Fatalf("want 2 voices, got %d", len(got))
 	}
+
 	if got[0].ID != "en-default" || got[1].ID != "de-default" {
 		t.Errorf("unexpected voice IDs: %v", got)
 	}
@@ -105,9 +111,11 @@ func TestVoices_ReturnsEmptyArrayWhenNoVoices(t *testing.T) {
 	}
 
 	var got []tts.Voice
-	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+	err := json.NewDecoder(rec.Body).Decode(&got)
+	if err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
+
 	if len(got) != 0 {
 		t.Errorf("want empty array, got %v", got)
 	}
@@ -130,9 +138,11 @@ func TestTTS_ReturnsMissingBodyAs400(t *testing.T) {
 	}
 
 	var body map[string]string
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+	err := json.NewDecoder(rec.Body).Decode(&body)
+	if err != nil {
 		t.Fatalf("decode error body: %v", err)
 	}
+
 	if body["error"] == "" {
 		t.Error("want non-empty error field")
 	}
@@ -166,9 +176,11 @@ func TestTTS_ReturnsWAVBytesOnSuccess(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d (body: %s)", rec.Code, rec.Body.String())
 	}
+
 	if ct := rec.Header().Get("Content-Type"); ct != "audio/wav" {
 		t.Errorf("want Content-Type audio/wav, got %q", ct)
 	}
+
 	if !bytes.Equal(rec.Body.Bytes(), fakeWAV) {
 		t.Errorf("want WAV bytes back, got %d bytes", rec.Body.Len())
 	}
@@ -189,9 +201,11 @@ func TestTTS_SynthesizerErrorReturns500(t *testing.T) {
 	}
 
 	var errBody map[string]string
-	if err := json.NewDecoder(rec.Body).Decode(&errBody); err != nil {
+	err := json.NewDecoder(rec.Body).Decode(&errBody)
+	if err != nil {
 		t.Fatalf("decode error body: %v", err)
 	}
+
 	if errBody["error"] == "" {
 		t.Error("want non-empty error field")
 	}

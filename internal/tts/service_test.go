@@ -44,9 +44,11 @@ func newTestService(t *testing.T) *Service {
 	if libPath == "" {
 		libPath = os.Getenv("ORT_LIBRARY_PATH")
 	}
+
 	if libPath != "" {
 		cfg := config.DefaultConfig()
 		cfg.Runtime.ORTLibraryPath = libPath
+
 		svc, err := NewService(cfg)
 		if err == nil {
 			return svc
@@ -57,13 +59,16 @@ func newTestService(t *testing.T) *Service {
 	// Create a temp dir with identity model + manifest.
 	tmp := t.TempDir()
 	src := filepath.Join("..", "onnx", "..", "model", "testdata", "identity_float32.onnx")
+
 	data, err := os.ReadFile(src)
 	if err != nil {
 		t.Skipf("identity model unavailable: %v", err)
 	}
+
 	if err := os.WriteFile(filepath.Join(tmp, "identity.onnx"), data, 0o644); err != nil {
 		t.Fatalf("write identity model: %v", err)
 	}
+
 	manifest := `{"graphs":[{"name":"identity","filename":"identity.onnx","inputs":[{"name":"input","dtype":"float","shape":[1,3]}],"outputs":[{"name":"output","dtype":"float","shape":[1,3]}]}]}`
 	if err := os.WriteFile(filepath.Join(tmp, "manifest.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -83,11 +88,13 @@ func newTestService(t *testing.T) *Service {
 	// Use the real tokenizer model if available, otherwise a nil tokenizer
 	// is acceptable for these tests (they only test Synthesize error paths).
 	var tok tokenizer.Tokenizer
+
 	if tokPath := config.DefaultConfig().Paths.TokenizerModel; tokPath != "" {
 		if t, err := tokenizer.NewSentencePieceTokenizer(tokPath); err == nil {
 			tok = t
 		}
 	}
+
 	return &Service{
 		runtime:   newONNXRuntime(engine),
 		tokenizer: tok,
@@ -101,6 +108,7 @@ func TestNewService_MissingTokenizerModel(t *testing.T) {
 	if libPath == "" {
 		libPath = os.Getenv("ORT_LIBRARY_PATH")
 	}
+
 	if libPath == "" {
 		t.Skip("no ORT library available; set POCKETTTS_ORT_LIB")
 	}
@@ -130,6 +138,7 @@ func TestNewService_NativeSafetensors_NoORTRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewService(native-safetensors) returned error: %v", err)
 	}
+
 	svc.Close()
 }
 
@@ -140,6 +149,7 @@ func TestSynthesize_EmptyInput(t *testing.T) {
 	if err == nil {
 		t.Error("Synthesize(\"\") = nil; want error for empty input")
 	}
+
 	if !strings.Contains(err.Error(), "tokens") {
 		t.Errorf("error %q should mention tokens", err.Error())
 	}
@@ -181,10 +191,12 @@ type wordCountTokenizer struct{}
 
 func (w wordCountTokenizer) Encode(text string) ([]int64, error) {
 	words := strings.Fields(text)
+
 	out := make([]int64, len(words))
 	for i := range words {
 		out[i] = int64(i + 1)
 	}
+
 	return out, nil
 }
 
@@ -199,11 +211,14 @@ type captureRuntime struct {
 
 func (c *captureRuntime) GenerateAudio(_ context.Context, tokens []int64, cfg RuntimeGenerateConfig) ([]float32, error) {
 	c.calls++
+
 	c.lastTokens = append([]int64(nil), tokens...)
+
 	c.lastCfg = cfg
 	if len(c.audio) == 0 {
 		return []float32{0.1}, nil
 	}
+
 	return append([]float32(nil), c.audio...), nil
 }
 
@@ -230,6 +245,7 @@ func TestSynthesize_BadSafetensorsPath_ReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Synthesize with missing voice file = nil; want error")
 	}
+
 	if !strings.Contains(err.Error(), "load voice embedding") {
 		t.Errorf("error %q should mention 'load voice embedding'", err.Error())
 	}
@@ -251,6 +267,7 @@ func TestSynthesize_InvalidSafetensorsFile_ReturnsError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Synthesize with invalid safetensors = nil; want error")
 	}
+
 	if !strings.Contains(err.Error(), "load voice embedding") {
 		t.Errorf("error %q should mention 'load voice embedding'", err.Error())
 	}
@@ -295,18 +312,22 @@ func TestSynthesize_ReusesGenerationConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Synthesize returned error: %v", err)
 	}
+
 	if len(got) != 2 {
 		t.Fatalf("Synthesize samples len = %d; want 2", len(got))
 	}
+
 	if rt.calls != 1 {
 		t.Fatalf("runtime calls = %d; want 1", rt.calls)
 	}
+
 	if rt.lastCfg.Temperature != 0.9 ||
 		rt.lastCfg.EOSThreshold != -3.5 ||
 		rt.lastCfg.MaxSteps != 123 ||
 		rt.lastCfg.LSDDecodeSteps != 5 {
 		t.Fatalf("runtime config mismatch: %+v", rt.lastCfg)
 	}
+
 	if rt.lastCfg.VoiceEmbedding != nil {
 		t.Fatalf("VoiceEmbedding = %+v; want nil", rt.lastCfg.VoiceEmbedding)
 	}
@@ -327,6 +348,7 @@ func TestSynthesize_UsesSentenceChunkingPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Synthesize returned error: %v", err)
 	}
+
 	if rt.calls < 2 {
 		t.Fatalf("runtime calls = %d; want at least 2 chunks", rt.calls)
 	}
@@ -347,22 +369,28 @@ func TestSynthesize_ReusesVoiceEmbeddingIngestion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Synthesize returned error: %v", err)
 	}
+
 	if rt.calls != 1 {
 		t.Fatalf("runtime calls = %d; want 1", rt.calls)
 	}
+
 	if rt.lastCfg.VoiceEmbedding == nil {
 		t.Fatal("VoiceEmbedding = nil; want non-nil")
 	}
+
 	gotShape := rt.lastCfg.VoiceEmbedding.Shape
+
 	wantShape := []int64{1, 2, 3}
 	if len(gotShape) != len(wantShape) {
 		t.Fatalf("VoiceEmbedding shape rank = %d; want %d", len(gotShape), len(wantShape))
 	}
+
 	for i := range wantShape {
 		if gotShape[i] != wantShape[i] {
 			t.Fatalf("VoiceEmbedding shape[%d] = %d; want %d", i, gotShape[i], wantShape[i])
 		}
 	}
+
 	if len(rt.lastCfg.VoiceEmbedding.Data) != 6 {
 		t.Fatalf("VoiceEmbedding data len = %d; want 6", len(rt.lastCfg.VoiceEmbedding.Data))
 	}
@@ -378,6 +406,7 @@ func writeVoiceSafetensors(t *testing.T, path string, shape []int64, values []fl
 			"data_offsets": []int{0, len(values) * 4},
 		},
 	}
+
 	hdrJSON, err := json.Marshal(header)
 	if err != nil {
 		t.Fatalf("marshal safetensors header: %v", err)
@@ -386,6 +415,7 @@ func writeVoiceSafetensors(t *testing.T, path string, shape []int64, values []fl
 	buf := make([]byte, 8+len(hdrJSON)+len(values)*4)
 	binary.LittleEndian.PutUint64(buf[:8], uint64(len(hdrJSON)))
 	copy(buf[8:8+len(hdrJSON)], hdrJSON)
+
 	dataOff := 8 + len(hdrJSON)
 	for i, v := range values {
 		binary.LittleEndian.PutUint32(buf[dataOff+i*4:], math.Float32bits(v))
@@ -398,6 +428,7 @@ func writeVoiceSafetensors(t *testing.T, path string, shape []int64, values []fl
 
 func requireNativeSafetensorsAssetsForUnit(t testing.TB) (modelPath, tokPath string) {
 	t.Helper()
+
 	modelCandidates := []string{
 		filepath.Join("models", "tts_b6369a24.safetensors"),
 		filepath.Join("..", "..", "models", "tts_b6369a24.safetensors"),
@@ -406,20 +437,24 @@ func requireNativeSafetensorsAssetsForUnit(t testing.TB) (modelPath, tokPath str
 		filepath.Join("models", "tokenizer.model"),
 		filepath.Join("..", "..", "models", "tokenizer.model"),
 	}
+
 	for _, p := range modelCandidates {
 		if _, err := os.Stat(p); err == nil {
 			modelPath = p
 			break
 		}
 	}
+
 	for _, p := range tokCandidates {
 		if _, err := os.Stat(p); err == nil {
 			tokPath = p
 			break
 		}
 	}
+
 	if modelPath == "" || tokPath == "" {
 		t.Skipf("native safetensors assets unavailable (model=%q tokenizer=%q)", modelPath, tokPath)
 	}
+
 	return modelPath, tokPath
 }

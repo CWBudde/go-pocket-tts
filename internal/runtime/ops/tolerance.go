@@ -28,5 +28,6 @@ func KernelTolerance(name string) (Tolerance, error) {
 	if !ok {
 		return Tolerance{}, fmt.Errorf("ops: no tolerance configured for kernel %q", name)
 	}
+
 	return t, nil
 }

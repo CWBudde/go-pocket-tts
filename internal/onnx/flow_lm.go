@@ -2,6 +2,7 @@ package onnx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand/v2"
@@ -18,7 +19,9 @@ func NewBOSSequence() *Tensor {
 	for i := range data {
 		data[i] = float32(math.NaN())
 	}
+
 	t, _ := NewTensor(data, []int64{1, 1, int64(latentDim)})
+
 	return t
 }
 
@@ -31,6 +34,7 @@ func AppendLatentFrame(sequence, frame *Tensor) (*Tensor, error) {
 	if len(seqShape) != 3 || seqShape[0] != 1 || seqShape[2] != int64(latentDim) {
 		return nil, fmt.Errorf("sequence shape %v invalid, want [1, S, %d]", seqShape, latentDim)
 	}
+
 	if len(frameShape) != 3 || frameShape[0] != 1 || frameShape[1] != 1 || frameShape[2] != int64(latentDim) {
 		return nil, fmt.Errorf("frame shape %v invalid, want [1, 1, %d]", frameShape, latentDim)
 	}
@@ -39,6 +43,7 @@ func AppendLatentFrame(sequence, frame *Tensor) (*Tensor, error) {
 	if err != nil {
 		return nil, fmt.Errorf("extract sequence data: %w", err)
 	}
+
 	frameData, err := ExtractFloat32(frame)
 	if err != nil {
 		return nil, fmt.Errorf("extract frame data: %w", err)
@@ -46,6 +51,7 @@ func AppendLatentFrame(sequence, frame *Tensor) (*Tensor, error) {
 
 	combined := append(seqData, frameData...)
 	newS := seqShape[1] + 1
+
 	return NewTensor(combined, []int64{1, newS, int64(latentDim)})
 }
 
@@ -61,7 +67,7 @@ func AppendLatentFrame(sequence, frame *Tensor) (*Tensor, error) {
 func (e *Engine) FlowLMStep(ctx context.Context, sequence, textEmbeddings *Tensor) (lastHidden, eosLogits *Tensor, err error) {
 	runner, ok := e.runners["flow_lm_main"]
 	if !ok {
-		return nil, nil, fmt.Errorf("flow_lm_main graph not found in manifest")
+		return nil, nil, errors.New("flow_lm_main graph not found in manifest")
 	}
 
 	outputs, err := runner.Run(ctx, map[string]*Tensor{
@@ -74,11 +80,12 @@ func (e *Engine) FlowLMStep(ctx context.Context, sequence, textEmbeddings *Tenso
 
 	lastHidden, ok = outputs["last_hidden"]
 	if !ok {
-		return nil, nil, fmt.Errorf("flow_lm_main: missing 'last_hidden' in output")
+		return nil, nil, errors.New("flow_lm_main: missing 'last_hidden' in output")
 	}
+
 	eosLogits, ok = outputs["eos_logits"]
 	if !ok {
-		return nil, nil, fmt.Errorf("flow_lm_main: missing 'eos_logits' in output")
+		return nil, nil, errors.New("flow_lm_main: missing 'eos_logits' in output")
 	}
 
 	return lastHidden, eosLogits, nil
@@ -95,11 +102,12 @@ func (e *Engine) FlowLMStep(ctx context.Context, sequence, textEmbeddings *Tenso
 func (e *Engine) FlowLMFlow(ctx context.Context, lastHidden *Tensor, temperature float64, steps int) (*Tensor, error) {
 	runner, ok := e.runners["flow_lm_flow"]
 	if !ok {
-		return nil, fmt.Errorf("flow_lm_flow graph not found in manifest")
+		return nil, errors.New("flow_lm_flow graph not found in manifest")
 	}
 
 	// Sample initial noise x [1, 32].
 	x := make([]float32, latentDim)
+
 	if temperature > 0 {
 		stddev := math.Sqrt(temperature)
 		for i := range x {
@@ -158,6 +166,7 @@ func EOSDetected(eosLogits *Tensor, threshold float64) bool {
 	if err != nil || len(data) == 0 {
 		return false
 	}
+
 	return float64(data[0]) > threshold
 }
 
@@ -175,7 +184,7 @@ type FlowLMKVState struct {
 func (e *Engine) FlowLMPrefill(ctx context.Context, textEmbeddings *Tensor) (*FlowLMKVState, error) {
 	runner, ok := e.runners["flow_lm_prefill"]
 	if !ok {
-		return nil, fmt.Errorf("flow_lm_prefill graph not found in manifest")
+		return nil, errors.New("flow_lm_prefill graph not found in manifest")
 	}
 
 	outputs, err := runner.Run(ctx, map[string]*Tensor{
@@ -187,28 +196,34 @@ func (e *Engine) FlowLMPrefill(ctx context.Context, textEmbeddings *Tensor) (*Fl
 
 	// Unpack kv_0, kv_1, ... until a key is missing.
 	var kvTensors []*Tensor
+
 	for i := 0; ; i++ {
 		key := fmt.Sprintf("kv_%d", i)
+
 		kv, ok := outputs[key]
 		if !ok {
 			break
 		}
+
 		kvTensors = append(kvTensors, kv)
 	}
+
 	if len(kvTensors) == 0 {
-		return nil, fmt.Errorf("flow_lm_prefill: no kv_N outputs in result")
+		return nil, errors.New("flow_lm_prefill: no kv_N outputs in result")
 	}
 
 	offsetTensor, ok := outputs["offset"]
 	if !ok {
-		return nil, fmt.Errorf("flow_lm_prefill: missing 'offset' in output")
+		return nil, errors.New("flow_lm_prefill: missing 'offset' in output")
 	}
+
 	offsetData, err := ExtractInt64(offsetTensor)
 	if err != nil {
 		return nil, fmt.Errorf("flow_lm_prefill: extract offset: %w", err)
 	}
+
 	if len(offsetData) == 0 {
-		return nil, fmt.Errorf("flow_lm_prefill: offset tensor is empty")
+		return nil, errors.New("flow_lm_prefill: offset tensor is empty")
 	}
 
 	return &FlowLMKVState{KV: kvTensors, Offset: offsetData[0]}, nil
@@ -223,7 +238,7 @@ func (e *Engine) FlowLMPrefill(ctx context.Context, textEmbeddings *Tensor) (*Fl
 func (e *Engine) FlowLMStepStateful(ctx context.Context, sequenceFrame *Tensor, state *FlowLMKVState) (lastHidden, eosLogits *Tensor, err error) {
 	runner, found := e.runners["flow_lm_step"]
 	if !found {
-		return nil, nil, fmt.Errorf("flow_lm_step graph not found in manifest")
+		return nil, nil, errors.New("flow_lm_step graph not found in manifest")
 	}
 
 	inputs := map[string]*Tensor{
@@ -232,10 +247,12 @@ func (e *Engine) FlowLMStepStateful(ctx context.Context, sequenceFrame *Tensor, 
 	for i, kv := range state.KV {
 		inputs[fmt.Sprintf("kv_%d", i)] = kv
 	}
+
 	offsetTensor, err := NewTensor([]int64{state.Offset}, []int64{1})
 	if err != nil {
 		return nil, nil, fmt.Errorf("flow_lm_step: build offset tensor: %w", err)
 	}
+
 	inputs["offset"] = offsetTensor
 
 	outputs, err := runner.Run(ctx, inputs)
@@ -245,33 +262,40 @@ func (e *Engine) FlowLMStepStateful(ctx context.Context, sequenceFrame *Tensor, 
 
 	lastHidden, found = outputs["last_hidden"]
 	if !found {
-		return nil, nil, fmt.Errorf("flow_lm_step: missing 'last_hidden' in output")
+		return nil, nil, errors.New("flow_lm_step: missing 'last_hidden' in output")
 	}
+
 	eosLogits, found = outputs["eos_logits"]
 	if !found {
-		return nil, nil, fmt.Errorf("flow_lm_step: missing 'eos_logits' in output")
+		return nil, nil, errors.New("flow_lm_step: missing 'eos_logits' in output")
 	}
 
 	// Update state in-place.
 	for i := range state.KV {
 		key := fmt.Sprintf("kv_%d", i)
+
 		updated, ok := outputs[key]
 		if !ok {
 			return nil, nil, fmt.Errorf("flow_lm_step: missing '%s' in output", key)
 		}
+
 		state.KV[i] = updated
 	}
+
 	updatedOffset, ok := outputs["offset"]
 	if !ok {
-		return nil, nil, fmt.Errorf("flow_lm_step: missing 'offset' in output")
+		return nil, nil, errors.New("flow_lm_step: missing 'offset' in output")
 	}
+
 	offsetData, err := ExtractInt64(updatedOffset)
 	if err != nil {
 		return nil, nil, fmt.Errorf("flow_lm_step: extract offset: %w", err)
 	}
+
 	if len(offsetData) == 0 {
-		return nil, nil, fmt.Errorf("flow_lm_step: offset tensor is empty")
+		return nil, nil, errors.New("flow_lm_step: offset tensor is empty")
 	}
+
 	state.Offset = offsetData[0]
 
 	return lastHidden, eosLogits, nil

@@ -16,15 +16,18 @@ func PeakNormalize(samples []float32) []float32 {
 			peak = a
 		}
 	}
+
 	if peak == 0 {
 		return samples
 	}
 
 	gain := 1.0 / peak
+
 	out := make([]float32, len(samples))
 	for i, v := range samples {
 		out[i] = v * gain
 	}
+
 	return out
 }
 
@@ -38,39 +41,38 @@ func DCBlock(samples []float32, sampleRate int) []float32 {
 	for i, v := range samples {
 		out[i] = float32(section.ProcessSample(float64(v)))
 	}
+
 	return out
 }
 
 // FadeIn applies a linear fade-in ramp over the given duration in milliseconds.
 func FadeIn(samples []float32, sampleRate int, ms float64) []float32 {
-	fadeSamples := int(ms / 1000.0 * float64(sampleRate))
-	if fadeSamples > len(samples) {
-		fadeSamples = len(samples)
-	}
+	fadeSamples := min(int(ms/1000.0*float64(sampleRate)), len(samples))
 
 	out := make([]float32, len(samples))
 	copy(out, samples)
+
 	for i := range fadeSamples {
 		gain := float32(i) / float32(fadeSamples)
 		out[i] = samples[i] * gain
 	}
+
 	return out
 }
 
 // FadeOut applies a linear fade-out ramp over the given duration in milliseconds.
 func FadeOut(samples []float32, sampleRate int, ms float64) []float32 {
-	fadeSamples := int(ms / 1000.0 * float64(sampleRate))
-	if fadeSamples > len(samples) {
-		fadeSamples = len(samples)
-	}
+	fadeSamples := min(int(ms/1000.0*float64(sampleRate)), len(samples))
 
 	out := make([]float32, len(samples))
 	copy(out, samples)
+
 	start := len(samples) - fadeSamples
 	for i := start; i < len(samples); i++ {
 		remaining := len(samples) - 1 - i
 		gain := float32(remaining) / float32(fadeSamples)
 		out[i] = samples[i] * gain
 	}
+
 	return out
 }

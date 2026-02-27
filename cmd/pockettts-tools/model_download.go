@@ -43,6 +43,7 @@ func newModelDownloadCmd() *cobra.Command {
 					err,
 					fallbackRepo,
 				)
+
 				err = model.Download(model.DownloadOptions{
 					Repo:    fallbackRepo,
 					OutDir:  outDir,
@@ -55,6 +56,7 @@ func newModelDownloadCmd() *cobra.Command {
 						os.Stderr,
 						"note: downloaded ungated model set (without voice cloning).\n",
 					)
+
 					return nil
 				}
 			}
@@ -62,6 +64,7 @@ func newModelDownloadCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("model download failed: %w", err)
 			}
+
 			return nil
 		},
 	}

@@ -17,7 +17,8 @@ func TestNewSessionManagerLoadsManifest(t *testing.T) {
 	tmp := t.TempDir()
 
 	for _, name := range []string{"text_conditioner.onnx", "flow_lm_main.onnx"} {
-		if err := os.WriteFile(filepath.Join(tmp, name), []byte("fake"), 0o644); err != nil {
+		err := os.WriteFile(filepath.Join(tmp, name), []byte("fake"), 0o644)
+		if err != nil {
 			t.Fatalf("write fake onnx file: %v", err)
 		}
 	}
@@ -38,6 +39,7 @@ func TestNewSessionManagerLoadsManifest(t *testing.T) {
     }
   ]
 }`
+
 	manifestPath := filepath.Join(tmp, "manifest.json")
 	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -57,9 +59,11 @@ func TestNewSessionManagerLoadsManifest(t *testing.T) {
 	if !ok {
 		t.Fatal("expected text_conditioner session")
 	}
+
 	if s.Path != filepath.Join(tmp, "text_conditioner.onnx") {
 		t.Fatalf("unexpected session path: %s", s.Path)
 	}
+
 	if len(s.Inputs) != 1 || s.Inputs[0].Name != "tokens" {
 		t.Fatalf("unexpected inputs: %+v", s.Inputs)
 	}
@@ -72,8 +76,10 @@ func TestNewSessionManagerRejectsMissingFile(t *testing.T) {
     {"name": "missing", "filename": "missing.onnx", "inputs": [], "outputs": []}
   ]
 }`
+
 	manifestPath := filepath.Join(tmp, "manifest.json")
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+	err := os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 
@@ -89,9 +95,11 @@ func TestLoadSessionsOnceKeepsFirstManifest(t *testing.T) {
 
 	firstFile := filepath.Join(tmp, "a.onnx")
 	secondFile := filepath.Join(tmp, "b.onnx")
+
 	if err := os.WriteFile(firstFile, []byte("a"), 0o644); err != nil {
 		t.Fatalf("write first file: %v", err)
 	}
+
 	if err := os.WriteFile(secondFile, []byte("b"), 0o644); err != nil {
 		t.Fatalf("write second file: %v", err)
 	}
@@ -102,6 +110,7 @@ func TestLoadSessionsOnceKeepsFirstManifest(t *testing.T) {
 	if err := os.WriteFile(firstManifest, []byte(`{"graphs":[{"name":"a","filename":"a.onnx","inputs":[],"outputs":[]}]}`), 0o644); err != nil {
 		t.Fatalf("write first manifest: %v", err)
 	}
+
 	if err := os.WriteFile(secondManifest, []byte(`{"graphs":[{"name":"b","filename":"b.onnx","inputs":[],"outputs":[]}]}`), 0o644); err != nil {
 		t.Fatalf("write second manifest: %v", err)
 	}
@@ -110,6 +119,7 @@ func TestLoadSessionsOnceKeepsFirstManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load first once: %v", err)
 	}
+
 	two, err := LoadSessionsOnce(secondManifest)
 	if err != nil {
 		t.Fatalf("load second once: %v", err)
@@ -118,9 +128,11 @@ func TestLoadSessionsOnceKeepsFirstManifest(t *testing.T) {
 	if one != two {
 		t.Fatal("expected same session manager pointer from once loader")
 	}
+
 	if _, ok := two.Session("a"); !ok {
 		t.Fatal("expected to keep first loaded session set")
 	}
+
 	if _, ok := two.Session("b"); ok {
 		t.Fatal("did not expect second manifest to replace first in once loader")
 	}

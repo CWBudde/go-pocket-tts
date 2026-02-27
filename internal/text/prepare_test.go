@@ -11,10 +11,12 @@ type stubTokenizer struct{}
 func (s *stubTokenizer) Encode(text string) ([]int64, error) {
 	// Split naively on spaces; each non-empty word = 1 token.
 	words := splitWords(text)
+
 	ids := make([]int64, len(words))
 	for i := range ids {
 		ids[i] = int64(i + 1)
 	}
+
 	return ids, nil
 }
 
@@ -25,6 +27,7 @@ func (s *stubTokenizer) Encode(text string) ([]int64, error) {
 func TestPrepareText_CapitalizesFirstLetter(t *testing.T) {
 	// "hello world." has 2 words → padded with 8 spaces; first non-space should be 'H'.
 	got := PrepareText("hello world.")
+
 	trimmed := strings.TrimLeft(got, " ")
 	if len(trimmed) == 0 || trimmed[0] != 'H' {
 		t.Errorf("PrepareText(%q) = %q, want first letter capitalized (after stripping leading spaces)", "hello world.", got)
@@ -33,6 +36,7 @@ func TestPrepareText_CapitalizesFirstLetter(t *testing.T) {
 
 func TestPrepareText_AlreadyCapitalized(t *testing.T) {
 	got := PrepareText("Hello world.")
+
 	trimmed := strings.TrimLeft(got, " ")
 	if len(trimmed) == 0 || trimmed[0] != 'H' {
 		t.Errorf("PrepareText(%q) = %q, want H after stripping leading spaces", "Hello world.", got)
@@ -142,6 +146,7 @@ func TestChunkMetadata_FramesAfterEOS_ShortInput(t *testing.T) {
 	if got := (ChunkMetadata{NumWords: 4}).FramesAfterEOS(); got != 5 {
 		t.Errorf("FramesAfterEOS() = %d, want 5", got)
 	}
+
 	if got := (ChunkMetadata{NumWords: 1}).FramesAfterEOS(); got != 5 {
 		t.Errorf("FramesAfterEOS() = %d, want 5", got)
 	}
@@ -160,10 +165,12 @@ func TestChunkMetadata_FramesAfterEOS_LongInput(t *testing.T) {
 
 func TestPrepareChunks_SingleChunkShortText(t *testing.T) {
 	tok := &stubTokenizer{}
+
 	chunks, err := PrepareChunks("hello world.", tok, 50)
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
+
 	if len(chunks) != 1 {
 		t.Fatalf("PrepareChunks returned %d chunks, want 1", len(chunks))
 	}
@@ -171,17 +178,21 @@ func TestPrepareChunks_SingleChunkShortText(t *testing.T) {
 
 func TestPrepareChunks_MetadataPopulated(t *testing.T) {
 	tok := &stubTokenizer{}
+
 	chunks, err := PrepareChunks("hello world.", tok, 50)
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
+
 	c := chunks[0]
 	if c.NumTokens <= 0 {
 		t.Errorf("NumTokens = %d, want > 0", c.NumTokens)
 	}
+
 	if c.NumWords <= 0 {
 		t.Errorf("NumWords = %d, want > 0", c.NumWords)
 	}
+
 	if c.MaxFrames() <= 0 {
 		t.Errorf("MaxFrames() = %v, want > 0", c.MaxFrames())
 	}
@@ -189,10 +200,12 @@ func TestPrepareChunks_MetadataPopulated(t *testing.T) {
 
 func TestPrepareChunks_ReturnsTokenIDs(t *testing.T) {
 	tok := &stubTokenizer{}
+
 	chunks, err := PrepareChunks("hello world.", tok, 50)
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
+
 	if len(chunks[0].TokenIDs) == 0 {
 		t.Error("TokenIDs should be non-empty")
 	}
@@ -203,10 +216,12 @@ func TestPrepareChunks_SplitsLongText(t *testing.T) {
 	// Two sentences each with 2 words → 2 tokens each, but after PrepareText
 	// they get padding words. Force split with maxTokens=3.
 	tok := &stubTokenizer{}
+
 	chunks, err := PrepareChunks("First sentence. Second sentence.", tok, 3)
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
+
 	if len(chunks) < 2 {
 		t.Errorf("PrepareChunks returned %d chunks, want ≥2 for small maxTokens with multi-sentence input", len(chunks))
 	}
@@ -214,6 +229,7 @@ func TestPrepareChunks_SplitsLongText(t *testing.T) {
 
 func TestPrepareChunks_EmptyTextError(t *testing.T) {
 	tok := &stubTokenizer{}
+
 	_, err := PrepareChunks("", tok, 50)
 	if err == nil {
 		t.Error("PrepareChunks(\"\") should return error")
@@ -222,6 +238,7 @@ func TestPrepareChunks_EmptyTextError(t *testing.T) {
 
 func TestPrepareChunks_WhitespaceOnlyError(t *testing.T) {
 	tok := &stubTokenizer{}
+
 	_, err := PrepareChunks("   \n\t  ", tok, 50)
 	if err == nil {
 		t.Error("PrepareChunks(whitespace) should return error")
@@ -236,6 +253,7 @@ func TestPrepareText_CollapseTripleSpaces(t *testing.T) {
 	// Go collapses all runs of multiple spaces (unlike Python which only does
 	// a single replace("  ", " ") pass). Verify Go fully collapses ≥ 3 spaces.
 	got := PrepareText("hello   world   test")
+
 	inner := strings.TrimLeft(got, " ")
 	if strings.Contains(inner, "  ") {
 		t.Errorf("PrepareText with triple spaces: %q still contains double spaces in content", got)
@@ -244,10 +262,12 @@ func TestPrepareText_CollapseTripleSpaces(t *testing.T) {
 
 func TestPrepareText_MixedNewlinesAndSpaces(t *testing.T) {
 	got := PrepareText("hello\r\nworld\n\ntest")
+
 	inner := strings.TrimLeft(got, " ")
 	if strings.ContainsAny(inner, "\r\n") {
 		t.Errorf("PrepareText(%q) still contains newlines: %q", "hello\r\nworld\n\ntest", got)
 	}
+
 	if strings.Contains(inner, "  ") {
 		t.Errorf("PrepareText with newlines should collapse to single spaces: %q", got)
 	}
@@ -256,6 +276,7 @@ func TestPrepareText_MixedNewlinesAndSpaces(t *testing.T) {
 func TestPrepareText_DigitFirstChar(t *testing.T) {
 	// First char is a digit — ToUpper is a no-op, should not crash.
 	got := PrepareText("3 cats")
+
 	inner := strings.TrimLeft(got, " ")
 	if inner[0] != '3' {
 		t.Errorf("PrepareText(%q) = %q, expected to start with '3'", "3 cats", inner)
@@ -283,11 +304,13 @@ func TestSplitSentences_Ellipsis(t *testing.T) {
 	// then "." at second dot, "." at third dot, and " world" as trailing text.
 	// The empty strings from "." are filtered out.
 	nonEmpty := 0
+
 	for _, s := range got {
 		if strings.TrimSpace(s) != "" {
 			nonEmpty++
 		}
 	}
+
 	if nonEmpty < 1 {
 		t.Errorf("splitSentences(%q) produced no non-empty sentences, got %v", "Hello... world", got)
 	}
@@ -333,9 +356,11 @@ func TestSplitSentences_BasicTwoSentences(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("splitSentences = %v, want 2 sentences", got)
 	}
+
 	if got[0] != "First sentence." {
 		t.Errorf("sentence[0] = %q, want %q", got[0], "First sentence.")
 	}
+
 	if got[1] != "Second sentence." {
 		t.Errorf("sentence[1] = %q, want %q", got[1], "Second sentence.")
 	}
@@ -349,10 +374,12 @@ func TestPrepareChunks_NumWordsFromRawText(t *testing.T) {
 	// NumWords should reflect the raw (un-prepared) joined text, not the
 	// PrepareText output. Verify that short-text padding does not inflate NumWords.
 	tok := &stubTokenizer{}
+
 	chunks, err := PrepareChunks("Hi.", tok, 50)
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
+
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -365,10 +392,12 @@ func TestPrepareChunks_NumWordsFromRawText(t *testing.T) {
 
 func TestPrepareChunks_NumWordsMultiSentence(t *testing.T) {
 	tok := &stubTokenizer{}
+
 	chunks, err := PrepareChunks("First sentence. Second sentence.", tok, 50)
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
+
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -383,19 +412,23 @@ func TestPrepareChunks_ChunkTextIsPrepared(t *testing.T) {
 	// The final chunk Text should be the output of PrepareText on the joined
 	// raw sentences, not raw text.
 	tok := &stubTokenizer{}
+
 	chunks, err := PrepareChunks("hello world", tok, 50)
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
+
 	c := chunks[0]
 	// Should be capitalized, have trailing period, and be padded (2 words < 5).
 	if !strings.HasPrefix(c.Text, "        ") {
 		t.Errorf("chunk Text = %q, want 8-space padding for short text", c.Text)
 	}
+
 	trimmed := strings.TrimLeft(c.Text, " ")
 	if trimmed[0] != 'H' {
 		t.Errorf("chunk Text = %q, want capitalized after padding", c.Text)
 	}
+
 	if c.Text[len(c.Text)-1] != '.' {
 		t.Errorf("chunk Text = %q, want trailing period", c.Text)
 	}
@@ -409,6 +442,7 @@ func TestPrepareChunks_FramesAfterEOS_MatchesWordCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if chunks[0].FramesAfterEOS() != 5 {
 		t.Errorf("FramesAfterEOS() = %d for 1-word chunk, want 5", chunks[0].FramesAfterEOS())
 	}
@@ -418,6 +452,7 @@ func TestPrepareChunks_FramesAfterEOS_MatchesWordCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if chunks[0].FramesAfterEOS() != 3 {
 		t.Errorf("FramesAfterEOS() = %d for 5-word chunk, want 3", chunks[0].FramesAfterEOS())
 	}
@@ -427,6 +462,7 @@ func TestPrepareChunks_FramesAfterEOS_MatchesWordCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if chunks[0].FramesAfterEOS() != 5 {
 		t.Errorf("FramesAfterEOS() = %d for 4-word chunk, want 5", chunks[0].FramesAfterEOS())
 	}
@@ -436,11 +472,14 @@ func TestPrepareChunks_TokenCountMatchesPreparedText(t *testing.T) {
 	// Verify that NumTokens matches what the tokenizer produces for the
 	// final prepared chunk Text (not some intermediate representation).
 	tok := &stubTokenizer{}
+
 	chunks, err := PrepareChunks("Hello world.", tok, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	c := chunks[0]
+
 	directIDs, _ := tok.Encode(c.Text)
 	if c.NumTokens != len(directIDs) {
 		t.Errorf("NumTokens = %d, but re-encoding chunk Text gives %d tokens", c.NumTokens, len(directIDs))

@@ -24,6 +24,7 @@ func (f *fakeVoiceEncoder) EncodeVoice(audioPath string) ([]float32, error) {
 	if f.runErr != nil {
 		return nil, f.runErr
 	}
+
 	return append([]float32(nil), f.output...), nil
 }
 
@@ -55,6 +56,7 @@ func TestNewExportVoiceCmd_Flags(t *testing.T) {
 		if flag == nil {
 			t.Fatalf("flag %q not registered", tc.name)
 		}
+
 		if flag.DefValue != tc.def {
 			t.Fatalf("flag %q default = %q, want %q", tc.name, flag.DefValue, tc.def)
 		}
@@ -70,6 +72,7 @@ func TestExportVoiceCmd_RequiresInput(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when --input is missing")
 	}
+
 	if !strings.Contains(err.Error(), "--input") {
 		t.Fatalf("error %q should mention --input", err.Error())
 	}
@@ -89,6 +92,7 @@ func TestExportVoiceCmd_RequiresOut(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when --out is missing")
 	}
+
 	if !strings.Contains(err.Error(), "--out") {
 		t.Fatalf("error %q should mention --out", err.Error())
 	}
@@ -96,6 +100,7 @@ func TestExportVoiceCmd_RequiresOut(t *testing.T) {
 
 func TestExportVoiceCmd_WritesSafetensorsViaNativeEncoder(t *testing.T) {
 	origBuilder := buildVoiceEncoder
+
 	t.Cleanup(func() { buildVoiceEncoder = origBuilder })
 
 	fake := &fakeVoiceEncoder{
@@ -114,7 +119,9 @@ func TestExportVoiceCmd_WritesSafetensorsViaNativeEncoder(t *testing.T) {
 	if err := os.WriteFile(in, []byte{1, 2, 3, 4}, 0o644); err != nil {
 		t.Fatalf("write input fixture: %v", err)
 	}
+
 	out := filepath.Join(t.TempDir(), "voice.safetensors")
+
 	modelPath := filepath.Join(t.TempDir(), "tts_b6369a24.safetensors")
 	if err := os.WriteFile(modelPath, []byte("stub"), 0o644); err != nil {
 		t.Fatalf("write model fixture: %v", err)
@@ -138,9 +145,11 @@ func TestExportVoiceCmd_WritesSafetensorsViaNativeEncoder(t *testing.T) {
 	if fake.input != in {
 		t.Fatalf("EncodeVoice called with input %q, want %q", fake.input, in)
 	}
+
 	if !fake.closed {
 		t.Fatal("expected encoder.Close() to be called")
 	}
+
 	if capturedWeightsPath != modelPath {
 		t.Fatalf("model weights path = %q, want %q", capturedWeightsPath, modelPath)
 	}
@@ -149,12 +158,15 @@ func TestExportVoiceCmd_WritesSafetensorsViaNativeEncoder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadVoiceEmbedding(%s): %v", out, err)
 	}
+
 	if len(shape) != 3 || shape[0] != 1 || shape[1] != 2 || shape[2] != onnx.VoiceEmbeddingDim {
 		t.Fatalf("shape = %v, want [1 2 %d]", shape, onnx.VoiceEmbeddingDim)
 	}
+
 	if len(got) != len(fake.output) {
 		t.Fatalf("data length = %d, want %d", len(got), len(fake.output))
 	}
+
 	if got[0] != fake.output[0] || got[onnx.VoiceEmbeddingDim+1] != fake.output[onnx.VoiceEmbeddingDim+1] {
 		t.Fatalf("output values mismatch")
 	}

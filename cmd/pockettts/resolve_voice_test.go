@@ -11,6 +11,7 @@ func TestResolveVoiceOrPath_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveVoiceOrPath(\"\") returned error: %v", err)
 	}
+
 	if got != "" {
 		t.Errorf("expected empty string, got %q", got)
 	}
@@ -22,11 +23,14 @@ func TestResolveVoiceOrPath_NoManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
+
 	t.Cleanup(func() {
-		if err := os.Chdir(orig); err != nil {
+		err := os.Chdir(orig)
+		if err != nil {
 			t.Logf("chdir restore failed: %v", err)
 		}
 	})
+
 	if err := os.Chdir(t.TempDir()); err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
@@ -35,6 +39,7 @@ func TestResolveVoiceOrPath_NoManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if got != "my-voice" {
 		t.Errorf("expected passthrough %q, got %q", "my-voice", got)
 	}
@@ -42,15 +47,19 @@ func TestResolveVoiceOrPath_NoManifest(t *testing.T) {
 
 func TestResolveVoiceOrPath_KnownVoiceInManifest(t *testing.T) {
 	tmp := t.TempDir()
+
 	orig, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
+
 	t.Cleanup(func() {
-		if err := os.Chdir(orig); err != nil {
+		err := os.Chdir(orig)
+		if err != nil {
 			t.Logf("chdir restore failed: %v", err)
 		}
 	})
+
 	if err := os.Chdir(tmp); err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
@@ -64,6 +73,7 @@ func TestResolveVoiceOrPath_KnownVoiceInManifest(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(voiceDir, "alice.bin"), []byte("voice-data"), 0o644); err != nil {
 		t.Fatalf("WriteFile alice.bin: %v", err)
 	}
+
 	manifest := `{"voices":[{"id":"alice","path":"alice.bin","license":"MIT"}]}`
 	if err := os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -84,15 +94,19 @@ func TestResolveVoiceOrPath_KnownVoiceInManifest(t *testing.T) {
 
 func TestResolveVoiceOrPath_UnknownVoicePassesThrough(t *testing.T) {
 	tmp := t.TempDir()
+
 	orig, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Getwd: %v", err)
 	}
+
 	t.Cleanup(func() {
-		if err := os.Chdir(orig); err != nil {
+		err := os.Chdir(orig)
+		if err != nil {
 			t.Logf("chdir restore failed: %v", err)
 		}
 	})
+
 	if err := os.Chdir(tmp); err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
@@ -101,6 +115,7 @@ func TestResolveVoiceOrPath_UnknownVoicePassesThrough(t *testing.T) {
 	if err := os.MkdirAll(voiceDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
+
 	manifest := `{"voices":[{"id":"alice","path":"voices/alice.bin","license":"MIT"}]}`
 	if err := os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -111,6 +126,7 @@ func TestResolveVoiceOrPath_UnknownVoicePassesThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+
 	if got != "bob" {
 		t.Errorf("expected passthrough %q, got %q", "bob", got)
 	}
