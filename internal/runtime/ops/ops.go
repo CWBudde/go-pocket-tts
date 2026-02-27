@@ -346,7 +346,8 @@ func convTranspose1DGroups1(
 	inputT := getScratch(inputTSize)
 	defer putScratch(inputT)
 
-	for b := range batch {
+	batchI := int(batch)
+	for b := range batchI {
 		// Step 2: transpose input [inCh, inLen] → inputT [inLen, inCh].
 		// Zero first (getScratch zeroes on first use, but re-zero for b > 0).
 		if b > 0 {
