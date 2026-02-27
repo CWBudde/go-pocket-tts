@@ -76,6 +76,7 @@ func TestResolveBundleFromLock_Errors(t *testing.T) {
 	lockPath := filepath.Join(tmp, "lock.json")
 
 	writeLockFile(t, lockPath, ONNXBundleLock{Version: 1, Bundles: nil})
+
 	_, err := resolveBundleFromLock(lockPath, "", "x")
 	if err == nil || !strings.Contains(err.Error(), "has no bundles") {
 		t.Fatalf("expected no-bundles error, got: %v", err)
@@ -85,6 +86,7 @@ func TestResolveBundleFromLock_Errors(t *testing.T) {
 		Version: 1,
 		Bundles: []ONNXBundle{{ID: "cpu", Variant: "a", URL: "x"}},
 	})
+
 	_, err = resolveBundleFromLock(lockPath, "missing", "a")
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected missing id error, got: %v", err)
@@ -110,6 +112,7 @@ func TestFetchBundleArchive_LocalAndFileURL(t *testing.T) {
 	tmp := t.TempDir()
 	src := filepath.Join(tmp, "bundle.zip")
 	content := []byte("bundle-bytes")
+
 	err := os.WriteFile(src, content, 0o644)
 	if err != nil {
 		t.Fatalf("write source file: %v", err)
@@ -205,6 +208,7 @@ func TestExtractBundle_NoExtensionFallsBack(t *testing.T) {
 	tmp := t.TempDir()
 	noExtPath := filepath.Join(tmp, "bundle.bin")
 	outDir := filepath.Join(tmp, "out")
+
 	writeZipArchive(t, noExtPath, map[string][]byte{
 		"manifest.json": []byte(`{"graphs":[]}`),
 	})
@@ -224,6 +228,7 @@ func TestExtractBundle_UnsafePathRejected(t *testing.T) {
 	tmp := t.TempDir()
 	zipPath := filepath.Join(tmp, "bundle.zip")
 	outDir := filepath.Join(tmp, "out")
+
 	writeZipArchive(t, zipPath, map[string][]byte{
 		"../escape.txt": []byte("x"),
 	})
@@ -301,6 +306,7 @@ func TestDownloadONNXBundle_HTTP(t *testing.T) {
 	archivePath := filepath.Join(tmp, "bundle.zip")
 	files := validBundleFiles(t)
 	writeZipArchive(t, archivePath, files)
+
 	bundleBytes, err := os.ReadFile(archivePath)
 	if err != nil {
 		t.Fatalf("read bundle: %v", err)
@@ -360,6 +366,7 @@ func TestVerifyONNXManifestDir(t *testing.T) {
 
 	for path, content := range validBundleFiles(t) {
 		target := filepath.Join(tmp, path)
+
 		err := os.MkdirAll(filepath.Dir(target), 0o755)
 		if err != nil {
 			t.Fatalf("mkdir parent: %v", err)
@@ -391,6 +398,7 @@ func TestVerifyONNXManifestDir_Errors(t *testing.T) {
 	}
 
 	manifest := `{"graphs":[{"name":"text_conditioner","filename":"text_conditioner.onnx"}]}`
+
 	err = os.WriteFile(filepath.Join(tmp, "manifest.json"), []byte(manifest), 0o644)
 	if err != nil {
 		t.Fatalf("write incomplete manifest: %v", err)
@@ -451,6 +459,7 @@ func writeZipArchive(t *testing.T, path string, files map[string][]byte) {
 	err = zw.Close()
 	if err != nil {
 		_ = fh.Close()
+
 		t.Fatalf("close zip writer: %v", err)
 	}
 
@@ -477,6 +486,7 @@ func writeTarGzArchive(t *testing.T, path string, files map[string][]byte) {
 			Mode: 0o644,
 			Size: int64(len(content)),
 		}
+
 		err = tw.WriteHeader(h)
 		if err != nil {
 			_ = tw.Close()
@@ -507,6 +517,7 @@ func writeTarGzArchive(t *testing.T, path string, files map[string][]byte) {
 	err = gw.Close()
 	if err != nil {
 		_ = fh.Close()
+
 		t.Fatalf("close gzip writer: %v", err)
 	}
 
@@ -566,6 +577,7 @@ func TestExtractTarGz_UnsafePathRejected(t *testing.T) {
 	var b bytes.Buffer
 	gw := gzip.NewWriter(&b)
 	tw := tar.NewWriter(gw)
+
 	err := tw.WriteHeader(&tar.Header{Name: "../escape", Mode: 0o644, Size: int64(len("x"))})
 	if err != nil {
 		t.Fatalf("write tar header: %v", err)

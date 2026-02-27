@@ -17,12 +17,14 @@ func TestFlowLMInitState(t *testing.T) {
 	}
 
 	f := &FlowLM{}
+
 	_, err = f.InitState()
 	if err == nil || !strings.Contains(err.Error(), "transformer unavailable") {
 		t.Fatalf("expected missing transformer error, got: %v", err)
 	}
 
 	f.transformer = &flowTransformer{layers: []*flowTransformerLayer{{}, {}}}
+
 	state, err := f.InitState()
 	if err != nil {
 		t.Fatalf("InitState returned error: %v", err)
@@ -79,12 +81,14 @@ func TestFlowLMPromptTextGuards(t *testing.T) {
 	}
 
 	empty := mustTensorN(t, []float32{}, []int64{1, 0, 4})
+
 	err = f.PromptText(state, empty)
 	if err != nil {
 		t.Fatalf("PromptText empty sequence returned error: %v", err)
 	}
 
 	f.transformer.layers = []*flowTransformerLayer{{}}
+
 	err = f.PromptText(state, mustTensorN(t, []float32{1, 2, 3, 4}, []int64{1, 1, 4}))
 	if err == nil || !strings.Contains(err.Error(), "state layer count") {
 		t.Fatalf("expected prefill layer-count error, got: %v", err)
@@ -102,6 +106,7 @@ func TestFlowLSDDecodeGuards(t *testing.T) {
 	}
 
 	badX0 := mustTensorN(t, []float32{1, 2}, []int64{1, 1, 2})
+
 	_, err = f.LSDDecode(cond, badX0, 1)
 	if err == nil || !strings.Contains(err.Error(), "must be [B, D]") {
 		t.Fatalf("expected x0 rank error, got: %v", err)
@@ -147,12 +152,14 @@ func TestMakeGaussianNoise(t *testing.T) {
 
 func TestFlowTransformerStateGuards(t *testing.T) {
 	var nilTransformer *flowTransformer
+
 	_, err := nilTransformer.initState()
 	if err == nil || !strings.Contains(err.Error(), "flow transformer is nil") {
 		t.Fatalf("expected nil transformer error, got: %v", err)
 	}
 
 	tfm := &flowTransformer{layers: []*flowTransformerLayer{{}, {}}}
+
 	state, err := tfm.initState()
 	if err != nil {
 		t.Fatalf("initState returned error: %v", err)
@@ -197,12 +204,14 @@ func TestFlowTransformerStateGuards(t *testing.T) {
 
 func TestFlowTransformerAppendKVAndDetectNumHeads(t *testing.T) {
 	var nilState *flowTransformerLayerState
+
 	err := nilState.appendKV(nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "state is nil") {
 		t.Fatalf("expected nil state appendKV error, got: %v", err)
 	}
 
 	s := &flowTransformerLayerState{}
+
 	err = s.appendKV(nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "requires non-nil") {
 		t.Fatalf("expected nil k/v appendKV error, got: %v", err)
@@ -210,6 +219,7 @@ func TestFlowTransformerAppendKVAndDetectNumHeads(t *testing.T) {
 
 	k1 := mustTensorN(t, []float32{1}, []int64{1, 1, 1, 1})
 	v1 := mustTensorN(t, []float32{2}, []int64{1, 1, 1, 1})
+
 	err = s.appendKV(k1, v1)
 	if err != nil {
 		t.Fatalf("appendKV first call error: %v", err)
@@ -221,6 +231,7 @@ func TestFlowTransformerAppendKVAndDetectNumHeads(t *testing.T) {
 
 	k2 := mustTensorN(t, []float32{3, 4}, []int64{1, 1, 2, 1})
 	v2 := mustTensorN(t, []float32{5, 6}, []int64{1, 1, 2, 1})
+
 	err = s.appendKV(k2, v2)
 	if err != nil {
 		t.Fatalf("appendKV second call error: %v", err)

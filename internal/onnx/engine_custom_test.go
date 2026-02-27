@@ -24,6 +24,7 @@ func TestNewEngineWithRunners_CopiesInputMap(t *testing.T) {
 		name: "text_conditioner",
 		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
 			called = true
+
 			out, err := NewTensor([]float32{0.1, 0.2}, []int64{1, 1, 2})
 			if err != nil {
 				t.Fatalf("NewTensor: %v", err)
@@ -77,6 +78,7 @@ func TestEngineRunnerAndClose(t *testing.T) {
 	}
 
 	e.Close()
+
 	if !spy.closed {
 		t.Fatal("expected spy runner to be closed")
 	}

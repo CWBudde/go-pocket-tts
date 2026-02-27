@@ -59,6 +59,7 @@ func TestLeftPadShape(t *testing.T) {
 	}
 
 	gotEqual[0] = 99
+
 	if shape[0] != 2 {
 		t.Fatalf("leftPadShape should return a copy when rank matches, source mutated: %v", shape)
 	}

@@ -30,6 +30,7 @@ func TestVerifyONNX_MissingManifest(t *testing.T) {
 
 func TestNewModelVerifyCmd_InvalidBackend(t *testing.T) {
 	orig := activeCfg
+
 	t.Cleanup(func() { activeCfg = orig })
 
 	activeCfg = config.DefaultConfig()
@@ -45,6 +46,7 @@ func TestNewModelVerifyCmd_InvalidBackend(t *testing.T) {
 
 func TestNewModelVerifyCmd_DefaultBackendNative(t *testing.T) {
 	orig := activeCfg
+
 	t.Cleanup(func() { activeCfg = orig })
 
 	activeCfg = config.DefaultConfig()
@@ -62,6 +64,7 @@ func TestNewModelVerifyCmd_DefaultBackendNative(t *testing.T) {
 
 func TestNewModelVerifyCmd_DefaultBackendONNX(t *testing.T) {
 	orig := activeCfg
+
 	t.Cleanup(func() { activeCfg = orig })
 
 	activeCfg = config.DefaultConfig()
