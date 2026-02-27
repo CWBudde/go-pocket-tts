@@ -400,6 +400,7 @@ func writeSynthOutput(outPath string, wavData []byte, stdout io.Writer) error {
 		return err
 	}
 
+	// #nosec G703 -- outPath is an explicit CLI output destination chosen by the user.
 	return os.WriteFile(outPath, wavData, 0o600)
 }
 

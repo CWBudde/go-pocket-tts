@@ -75,7 +75,7 @@ jobs:
           mkdir -p release
 
           if [[ "${{ matrix.archive_ext }}" == "zip" ]]; then
-            (cd dist && zip -q "../release/${archive_base}.zip" ./*)
+            powershell.exe -NoProfile -Command "Compress-Archive -Path 'dist/*' -DestinationPath 'release/${archive_base}.zip' -Force"
             echo "asset=release/${archive_base}.zip" >> "$GITHUB_OUTPUT"
           else
             tar -C dist -czf "release/${archive_base}.tar.gz" .
