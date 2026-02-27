@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -442,5 +443,71 @@ func TestLoadFirstTensor_MetadataKeyIgnored(t *testing.T) {
 		if tensor.Data[i] != want {
 			t.Errorf("data[%d] = %v, want %v", i, tensor.Data[i], want)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ValidateModelKeys
+// ---------------------------------------------------------------------------
+
+func TestValidateModelKeys_AllKeysPresent(t *testing.T) {
+	// Build a file that contains all required keys.
+	tensors := make(map[string]struct {
+		dtype string
+		shape []int64
+		data  []byte
+	})
+	dummyData := float32Bytes([]float32{1.0})
+	for _, key := range requiredModelKeys {
+		tensors[key] = struct {
+			dtype string
+			shape []int64
+			data  []byte
+		}{"F32", []int64{1}, dummyData}
+	}
+	data := buildSafetensors(t, tensors)
+	path := writeTempSafetensors(t, data)
+
+	if err := ValidateModelKeys(path); err != nil {
+		t.Errorf("ValidateModelKeys should pass; got: %v", err)
+	}
+}
+
+func TestValidateModelKeys_MissingKey(t *testing.T) {
+	// Build a file that only has some of the required keys.
+	tensors := map[string]struct {
+		dtype string
+		shape []int64
+		data  []byte
+	}{
+		"text_emb.weight": {"F32", []int64{1}, float32Bytes([]float32{1.0})},
+	}
+	data := buildSafetensors(t, tensors)
+	path := writeTempSafetensors(t, data)
+
+	err := ValidateModelKeys(path)
+	if err == nil {
+		t.Fatal("expected error for missing keys")
+	}
+	if !strings.Contains(err.Error(), "missing required tensors") {
+		t.Errorf("error should mention missing tensors; got: %v", err)
+	}
+}
+
+func TestValidateModelKeys_FileNotFound(t *testing.T) {
+	err := ValidateModelKeys("/nonexistent/model.safetensors")
+	if err == nil {
+		t.Fatal("expected error for nonexistent file")
+	}
+}
+
+func TestValidateModelKeys_InvalidFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "bad.safetensors")
+	if err := os.WriteFile(path, []byte("not a safetensors file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := ValidateModelKeys(path)
+	if err == nil {
+		t.Fatal("expected error for invalid file")
 	}
 }

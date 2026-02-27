@@ -11,6 +11,7 @@ import (
 	"github.com/example/go-pocket-tts/internal/config"
 	"github.com/example/go-pocket-tts/internal/doctor"
 	"github.com/example/go-pocket-tts/internal/model"
+	"github.com/example/go-pocket-tts/internal/safetensors"
 	"github.com/example/go-pocket-tts/internal/tts"
 	"github.com/spf13/cobra"
 )
@@ -46,6 +47,11 @@ func newDoctorCmd() *cobra.Command {
 				},
 				SkipPython: nativeMode,
 				VoiceFiles: collectVoiceFiles(),
+			}
+			if backend == config.BackendNative {
+				dcfg.NativeModelPath = cfg.Paths.ModelPath
+				dcfg.TokenizerModelPath = cfg.Paths.TokenizerModel
+				dcfg.ValidateSafetensors = safetensors.ValidateModelKeys
 			}
 
 			result := doctor.Run(dcfg, os.Stdout)

@@ -66,7 +66,7 @@ type flagBinder interface {
 func DefaultConfig() Config {
 	return Config{
 		Paths: PathsConfig{
-			ModelPath:      "models/model.onnx",
+			ModelPath:      "models/tts_b6369a24.safetensors",
 			VoicePath:      "models/voice.bin",
 			ONNXManifest:   "models/onnx/manifest.json",
 			TokenizerModel: "models/tokenizer.model",
@@ -103,12 +103,12 @@ func DefaultConfig() Config {
 }
 
 func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
-	fs.String("paths-model-path", defaults.Paths.ModelPath, "Path to ONNX model")
+	fs.String("paths-model-path", defaults.Paths.ModelPath, "Path to model file (.safetensors for native, .onnx for native-onnx)")
 	fs.String("paths-voice-path", defaults.Paths.VoicePath, "Path to voice/profile asset")
 	fs.String("paths-onnx-manifest", defaults.Paths.ONNXManifest, "Path to ONNX model manifest JSON")
 	fs.String("paths-tokenizer-model", defaults.Paths.TokenizerModel, "Path to SentencePiece tokenizer model")
-	fs.Int("runtime-threads", defaults.Runtime.Threads, "ONNX Runtime intra-op thread count")
-	fs.Int("runtime-inter-op-threads", defaults.Runtime.InterOpThreads, "ONNX Runtime inter-op thread count")
+	fs.Int("runtime-threads", defaults.Runtime.Threads, "Inference thread count (ONNX intra-op for native-onnx backend)")
+	fs.Int("runtime-inter-op-threads", defaults.Runtime.InterOpThreads, "Inter-op thread count (ONNX-only, native-onnx backend)")
 	fs.Int("conv-workers", defaults.Runtime.ConvWorkers, "Parallel goroutines for Conv1D/ConvTranspose1D (1 = sequential, default 2)")
 	fs.String("runtime-ort-library-path", defaults.Runtime.ORTLibraryPath, "Path to ONNX Runtime shared library")
 	fs.String("ort-lib", defaults.Runtime.ORTLibraryPath, "Path to ONNX Runtime shared library (alias for --runtime-ort-library-path)")
@@ -122,7 +122,7 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.String(
 		"backend",
 		defaults.TTS.Backend,
-		"Synthesis backend (native-onnx|native-safetensors|cli; native is alias for native-onnx)",
+		"Synthesis backend (native-safetensors|native-onnx|cli; native is alias for native-safetensors)",
 	)
 	fs.String("tts-voice", defaults.TTS.Voice, "Voice name or .safetensors file path")
 	fs.String("tts-cli-path", defaults.TTS.CLIPath, "Path to pocket-tts executable")

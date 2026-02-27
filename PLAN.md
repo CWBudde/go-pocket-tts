@@ -433,13 +433,24 @@ The ONNX export (`scripts/export_onnx.py`) produces **6 graphs** (not 5 — incl
     - state is initialized per chunk/request in runtime and never shared across synth calls
     - ONNX (`native-onnx`) path remains unchanged and selectable
 
-- [ ] Task 29.2: **Streaming synthesis**
-  - [ ] Reuse Phase 22 producer/consumer design with safetensors-native latent/audio stages
-  - [ ] Support HTTP chunked streaming with cancellation and backpressure handling
+- [x] Task 29.2: **Streaming synthesis**
+  - [x] Chunk-level streaming: each ≤50-token text chunk is generated, decoded, and flushed as a
+    `PCMChunk` to the client immediately via `/tts/stream` (POST, `audio/wav`, chunked transfer
+    encoding with `0xFFFFFFFF` unknown-length WAV header).
+  - [x] `Service.SynthesizeStream(ctx, input, voice, out chan<- PCMChunk)` sends one chunk per text
+    segment, closes channel on return, respects context cancellation and backpressure.
+  - [x] `StreamingSynthesizer` interface + `WithStreamer` option; `nativeSynthesizer` implements both
+    `Synthesizer` and `StreamingSynthesizer`. CLI backend returns 501 Not Implemented.
+  - [x] New `internal/audio/wav_stream.go`: `WriteWAVHeaderStreaming`, `WritePCM16Samples`.
+  - [x] Note: true frame-level Mimi streaming deferred (requires stateful decoder rewrite).
 
-- [ ] Task 29.3: **Concurrency + resource control**
-  - [ ] Integrate with existing worker pool/semaphore controls in `internal/server`
-  - [ ] Add memory budgeting for model weights, cache, and per-request buffers
+- [x] Task 29.3: **Concurrency + resource control**
+  - [x] Context propagation: new `Service.SynthesizeCtx(ctx, …)` method; `Synthesize` delegates with
+    `context.Background()`. `nativeSynthesizer.Synthesize` now passes HTTP handler context through.
+  - [x] Native backend semaphore enabled: `runtimeDeps()` returns `workers=2` (default) instead of 0.
+    Existing semaphore, timeout, and queueing logic now applies to native mode.
+  - [x] Queue awareness logging via `acquireWorker` helper (two-stage select, logs when queued).
+  - [ ] Memory budgeting for model weights, cache, and per-request buffers (deferred to future phase)
 
 ---
 

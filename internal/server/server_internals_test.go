@@ -92,7 +92,7 @@ func TestRuntimeDeps_CLIBackend(t *testing.T) {
 	cfg.Server.Workers = 4
 	s := New(cfg, nil)
 
-	synth, voices, workers, err := s.runtimeDeps("cli")
+	synth, voices, workers, streamer, err := s.runtimeDeps("cli")
 	if err != nil {
 		t.Fatalf("runtimeDeps(cli) error = %v", err)
 	}
@@ -105,13 +105,16 @@ func TestRuntimeDeps_CLIBackend(t *testing.T) {
 	if workers != 4 {
 		t.Errorf("workers = %d; want 4", workers)
 	}
+	if streamer != nil {
+		t.Error("streamer should be nil for cli backend")
+	}
 }
 
 func TestRuntimeDeps_InvalidBackend(t *testing.T) {
 	cfg := config.DefaultConfig()
 	s := New(cfg, nil)
 
-	_, _, _, err := s.runtimeDeps("unknown")
+	_, _, _, _, err := s.runtimeDeps("unknown")
 	if err == nil {
 		t.Error("runtimeDeps(unknown) = nil; want error")
 	}
@@ -129,15 +132,18 @@ func TestRuntimeDeps_NativeSafetensors(t *testing.T) {
 	}
 	s := New(cfg, nil)
 
-	synth, voices, workers, err := s.runtimeDeps(config.BackendNative)
+	synth, voices, workers, streamer, err := s.runtimeDeps(config.BackendNative)
 	if err != nil {
 		t.Fatalf("runtimeDeps(native-safetensors) error = %v", err)
 	}
 	if synth == nil || voices == nil {
 		t.Fatalf("runtimeDeps(native-safetensors) returned nil deps")
 	}
-	if workers != 0 {
-		t.Fatalf("runtimeDeps(native-safetensors) workers = %d; want 0", workers)
+	if workers != 2 {
+		t.Fatalf("runtimeDeps(native-safetensors) workers = %d; want 2", workers)
+	}
+	if streamer == nil {
+		t.Fatal("runtimeDeps(native-safetensors) streamer is nil; want non-nil")
 	}
 }
 

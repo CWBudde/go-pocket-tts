@@ -21,6 +21,13 @@ type RuntimeGenerateConfig struct {
 	VoiceEmbedding *VoiceEmbedding
 }
 
+// PCMChunk is a chunk of PCM audio produced during streaming synthesis.
+type PCMChunk struct {
+	Samples    []float32 // PCM float32 samples at 24 kHz
+	ChunkIndex int       // 0-based index of the text chunk that produced this
+	Final      bool      // true if this is the last chunk
+}
+
 // Runtime abstracts TTS graph execution so multiple native runtimes can share
 // the same service pipeline (tokenization/chunking/voice conditioning).
 type Runtime interface {
