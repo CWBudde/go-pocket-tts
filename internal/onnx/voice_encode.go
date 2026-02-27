@@ -203,6 +203,7 @@ func (e *Engine) speakerProjectionWeight() ([]float32, error) {
 
 func (e *Engine) resolveModelWeightsPath() (string, error) {
 	if p := strings.TrimSpace(e.modelWeightsPath); p != "" {
+		// #nosec G703 -- Path is an explicit local file path provided by config; this only validates readability.
 		_, err := os.Stat(p)
 		if err != nil {
 			return "", fmt.Errorf("model safetensors path %q is not readable: %w", p, err)

@@ -46,6 +46,7 @@ func RequireONNXRuntime(tb testing.TB) {
 
 	for _, env := range []string{"ORT_LIBRARY_PATH", "POCKETTTS_ORT_LIB"} {
 		if p := os.Getenv(env); p != "" {
+			// #nosec G703 -- Integration tests intentionally accept explicit env-provided local library paths.
 			_, err := os.Stat(p)
 			if err == nil {
 				return // found

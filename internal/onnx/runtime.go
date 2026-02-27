@@ -98,6 +98,7 @@ func DetectRuntime(cfg config.RuntimeConfig) (RuntimeInfo, error) {
 		return RuntimeInfo{LibraryPath: "not found", Version: "unknown"}, errors.New("unable to detect ONNX Runtime library path")
 	}
 
+	// #nosec G703 -- Path is a local runtime library path from explicit config/env and is only checked for existence.
 	_, err := os.Stat(path)
 	if err != nil {
 		return RuntimeInfo{LibraryPath: path, Version: "unknown"}, fmt.Errorf("onnx runtime library path check failed: %w", err)

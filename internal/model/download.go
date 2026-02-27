@@ -195,6 +195,7 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 
 	setAuth(req, token)
 
+	// #nosec G704 -- URL is built by resolveURL against a fixed Hugging Face host using pinned manifest data.
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download request failed: %w", err)
@@ -245,8 +246,10 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 			if time.Since(lastPrint) > 700*time.Millisecond {
 				if total > 0 {
 					pct := float64(written) * 100 / float64(total)
+					// #nosec G705 -- Progress is written to CLI stdout, not rendered as HTML.
 					_, _ = fmt.Fprintf(stdout, "  progress: %.1f%% (%d/%d bytes)\n", pct, written, total)
 				} else {
+					// #nosec G705 -- Progress is written to CLI stdout, not rendered as HTML.
 					_, _ = fmt.Fprintf(stdout, "  progress: %d bytes\n", written)
 				}
 
@@ -289,6 +292,7 @@ func resolveChecksumFromMetadata(client *http.Client, repo string, f ModelFile, 
 
 	setAuth(req, token)
 
+	// #nosec G704 -- URL is built by resolveURL against a fixed Hugging Face host using pinned manifest data.
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("metadata request failed for %s: %w", f.Filename, err)
