@@ -171,7 +171,8 @@ func TestEncodeVoiceSamples_MissingMimiEncoderGraph(t *testing.T) {
 	e := engineWithFakeRunners(map[string]runnerIface{})
 	e.speakerProjWeight = make([]float32, VoiceEmbeddingDim*mimiEncoderLatentDim)
 
-	if _, err := e.encodeVoiceSamples(context.Background(), []float32{1}); err == nil {
+	_, err := e.encodeVoiceSamples(context.Background(), []float32{1})
+	if err == nil {
 		t.Fatal("expected error when mimi_encoder graph is missing")
 	}
 }

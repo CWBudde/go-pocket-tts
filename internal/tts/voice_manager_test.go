@@ -26,11 +26,13 @@ func TestNewVoiceManager_InvalidJSON(t *testing.T) {
 	tmp := t.TempDir()
 
 	manifestPath := filepath.Join(tmp, "manifest.json")
-	if err := os.WriteFile(manifestPath, []byte("{bad json"), 0o644); err != nil {
+
+	err := os.WriteFile(manifestPath, []byte("{bad json"), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	_, err := NewVoiceManager(manifestPath)
+	_, err = NewVoiceManager(manifestPath)
 	if err == nil {
 		t.Error("NewVoiceManager(invalid json) = nil; want error")
 	}

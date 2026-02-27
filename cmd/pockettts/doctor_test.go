@@ -141,8 +141,8 @@ func TestCollectVoiceFiles_PathResolvedRelativeToManifest(t *testing.T) {
 	tmp := t.TempDir()
 
 	voiceDir := filepath.Join(tmp, "voices")
-	err := os.MkdirAll(voiceDir, 0o755)
 
+	err := os.MkdirAll(voiceDir, 0o755)
 	if err != nil {
 		t.Fatalf("MkdirAll voiceDir: %v", err)
 	}
@@ -154,8 +154,8 @@ func TestCollectVoiceFiles_PathResolvedRelativeToManifest(t *testing.T) {
 	}
 
 	manifest := `{"voices":[{"id":"mimi","path":"mimi.safetensors","license":"CC-BY-4.0"}]}`
-	err = os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644)
 
+	err = os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile manifest: %v", err)
 	}
@@ -175,7 +175,8 @@ func TestCollectVoiceFiles_PathResolvedRelativeToManifest(t *testing.T) {
 		}
 	})
 
-	if err := os.Chdir(tmp); err != nil {
+	err = os.Chdir(tmp)
+	if err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
 
@@ -189,7 +190,8 @@ func TestCollectVoiceFiles_PathResolvedRelativeToManifest(t *testing.T) {
 		t.Errorf("path is not absolute: %q", files[0])
 	}
 
-	if _, err := os.Stat(files[0]); err != nil {
+	_, err = os.Stat(files[0])
+	if err != nil {
 		t.Errorf("returned path does not exist: %q (%v)", files[0], err)
 	}
 }

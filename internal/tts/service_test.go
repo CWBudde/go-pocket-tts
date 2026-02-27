@@ -93,8 +93,9 @@ func newTestService(t *testing.T) *Service {
 	var tok tokenizer.Tokenizer
 
 	if tokPath := config.DefaultConfig().Paths.TokenizerModel; tokPath != "" {
-		if t, err := tokenizer.NewSentencePieceTokenizer(tokPath); err == nil {
-			tok = t
+		tokCandidate, err := tokenizer.NewSentencePieceTokenizer(tokPath)
+		if err == nil {
+			tok = tokCandidate
 		}
 	}
 
@@ -262,11 +263,13 @@ func TestSynthesize_InvalidSafetensorsFile_ReturnsError(t *testing.T) {
 
 	// Write a file that is definitely not a valid safetensors file.
 	tmp := filepath.Join(t.TempDir(), "bad.safetensors")
-	if err := os.WriteFile(tmp, []byte("not a safetensors file"), 0o644); err != nil {
+
+	err := os.WriteFile(tmp, []byte("not a safetensors file"), 0o644)
+	if err != nil {
 		t.Fatalf("write temp file: %v", err)
 	}
 
-	_, err := svc.Synthesize("hello world", tmp)
+	_, err = svc.Synthesize("hello world", tmp)
 	if err == nil {
 		t.Fatal("Synthesize with invalid safetensors = nil; want error")
 	}
@@ -424,7 +427,8 @@ func writeVoiceSafetensors(t *testing.T, path string, shape []int64, values []fl
 		binary.LittleEndian.PutUint32(buf[dataOff+i*4:], math.Float32bits(v))
 	}
 
-	if err := os.WriteFile(path, buf, 0o644); err != nil {
+	err = os.WriteFile(path, buf, 0o644)
+	if err != nil {
 		t.Fatalf("write safetensors file: %v", err)
 	}
 }
@@ -442,14 +446,16 @@ func requireNativeSafetensorsAssetsForUnit(t testing.TB) (modelPath, tokPath str
 	}
 
 	for _, p := range modelCandidates {
-		if _, err := os.Stat(p); err == nil {
+		_, err := os.Stat(p)
+		if err == nil {
 			modelPath = p
 			break
 		}
 	}
 
 	for _, p := range tokCandidates {
-		if _, err := os.Stat(p); err == nil {
+		_, err := os.Stat(p)
+		if err == nil {
 			tokPath = p
 			break
 		}

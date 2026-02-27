@@ -143,11 +143,13 @@ func TestExtractors(t *testing.T) {
 		t.Fatalf("unexpected int extract: %v", ints)
 	}
 
-	if _, err := ExtractFloat32([]int64{1}); err == nil {
+	_, err = ExtractFloat32([]int64{1})
+	if err == nil {
 		t.Fatal("expected float extractor type error")
 	}
 
-	if _, err := ExtractInt64([]float32{1}); err == nil {
+	_, err = ExtractInt64([]float32{1})
+	if err == nil {
 		t.Fatal("expected int extractor type error")
 	}
 }
