@@ -253,6 +253,7 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "audio/wav")
 	w.WriteHeader(http.StatusOK)
+	// #nosec G705 -- Writes binary audio bytes to an HTTP response with audio/wav content type, not HTML.
 	_, _ = w.Write(wav)
 }
 

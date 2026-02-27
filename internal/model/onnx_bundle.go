@@ -181,6 +181,7 @@ func fetchBundleArchive(client *http.Client, bundleURL string) (string, string, 
 			return "", "", fmt.Errorf("build bundle request: %w", err)
 		}
 
+		// #nosec G704 -- Bundle URL comes from explicit CLI/lock configuration and is expected to support remote HTTPS downloads.
 		resp, err := client.Do(req)
 		if err != nil {
 			_ = tmpFile.Close()
@@ -415,11 +416,16 @@ func verifyONNXManifestDir(outDir string) error {
 		return errors.New("ONNX manifest has no graphs")
 	}
 
-	required := map[string]bool{
-		"text_conditioner": false,
-		"flow_lm_main":     false,
-		"flow_lm_flow":     false,
-		"mimi_decoder":     false,
+	requiredNames := []string{
+		"text_conditioner",
+		"flow_lm_main",
+		"flow_lm_flow",
+		"mimi_decoder",
+	}
+
+	required := make(map[string]bool, len(requiredNames))
+	for _, name := range requiredNames {
+		required[name] = false
 	}
 
 	for _, g := range m.Graphs {
@@ -443,8 +449,8 @@ func verifyONNXManifestDir(outDir string) error {
 		}
 	}
 
-	for name, ok := range required {
-		if !ok {
+	for _, name := range requiredNames {
+		if !required[name] {
 			return fmt.Errorf("manifest missing required graph %q", name)
 		}
 	}
