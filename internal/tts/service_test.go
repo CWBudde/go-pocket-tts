@@ -65,12 +65,15 @@ func newTestService(t *testing.T) *Service {
 		t.Skipf("identity model unavailable: %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(tmp, "identity.onnx"), data, 0o644); err != nil {
+	err = os.WriteFile(filepath.Join(tmp, "identity.onnx"), data, 0o644)
+	if err != nil {
 		t.Fatalf("write identity model: %v", err)
 	}
 
 	manifest := `{"graphs":[{"name":"identity","filename":"identity.onnx","inputs":[{"name":"input","dtype":"float","shape":[1,3]}],"outputs":[{"name":"output","dtype":"float","shape":[1,3]}]}]}`
-	if err := os.WriteFile(filepath.Join(tmp, "manifest.json"), []byte(manifest), 0o644); err != nil {
+
+	err = os.WriteFile(filepath.Join(tmp, "manifest.json"), []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 

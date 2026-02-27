@@ -114,7 +114,8 @@ func TestParitySnapshots_SaveLoadRoundTrip(t *testing.T) {
 		},
 	}
 
-	if err := SaveParitySnapshots(path, in); err != nil {
+	err := SaveParitySnapshots(path, in)
+	if err != nil {
 		t.Fatalf("SaveParitySnapshots returned error: %v", err)
 	}
 

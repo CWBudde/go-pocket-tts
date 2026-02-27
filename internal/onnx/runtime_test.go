@@ -52,7 +52,8 @@ func TestBootstrapRunsOnce(t *testing.T) {
 		t.Fatalf("write lib1: %v", err)
 	}
 
-	if err := os.WriteFile(lib2, []byte("two"), 0o644); err != nil {
+	err = os.WriteFile(lib2, []byte("two"), 0o644)
+	if err != nil {
 		t.Fatalf("write lib2: %v", err)
 	}
 
@@ -77,7 +78,8 @@ func TestBootstrapRunsOnce(t *testing.T) {
 		t.Fatalf("expected once semantics to keep %q, got %q", lib1, info2.LibraryPath)
 	}
 
-	if err := Shutdown(); err != nil {
+	err = Shutdown()
+	if err != nil {
 		t.Fatalf("shutdown failed: %v", err)
 	}
 }
