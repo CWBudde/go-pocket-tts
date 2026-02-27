@@ -243,97 +243,41 @@ func ConvTranspose1DPrePacked(input, kernel, bias *tensor.Tensor, kernelT []floa
 	if kernelT == nil {
 		return ConvTranspose1D(input, kernel, bias, stride, padding, outputPadding, dilation, groups)
 	}
-	// Validate shapes (same as ConvTranspose1D).
-	if input == nil || kernel == nil {
-		return nil, errors.New("ops: convtranspose1d requires non-nil input/kernel")
-	}
 
-	if stride <= 0 || dilation <= 0 {
-		return nil, errors.New("ops: convtranspose1d stride/dilation must be > 0")
-	}
-
-	if outputPadding < 0 || outputPadding >= stride {
-		return nil, fmt.Errorf("ops: convtranspose1d output_padding must be in [0, stride), got %d", outputPadding)
-	}
-
-	inShape := input.Shape()
-
-	kShape := kernel.Shape()
-	if len(inShape) != 3 || len(kShape) != 3 {
-		return nil, fmt.Errorf("ops: convtranspose1d expects input/kernel rank 3, got %v and %v", inShape, kShape)
-	}
-
-	batch, inChannels, inLength := inShape[0], inShape[1], inShape[2]
-
-	kInChannels, outPerGroup, kernelSize := kShape[0], kShape[1], kShape[2]
-	if kInChannels != inChannels {
-		return nil, fmt.Errorf("ops: convtranspose1d kernel in_channels mismatch %d vs %d", kInChannels, inChannels)
-	}
-
-	outChannels := outPerGroup // groups=1
-
-	if bias != nil {
-		bShape := bias.Shape()
-		if len(bShape) != 1 || bShape[0] != outChannels {
-			return nil, fmt.Errorf("ops: convtranspose1d bias shape %v does not match out_channels %d", bShape, outChannels)
-		}
-	}
-
-	outLength := (inLength-1)*stride - 2*padding + dilation*(kernelSize-1) + outputPadding + 1
-	if outLength <= 0 {
-		return nil, fmt.Errorf("ops: convtranspose1d produced non-positive output length %d", outLength)
-	}
-
-	out, err := tensor.Zeros([]int64{batch, outChannels, outLength})
+	p, out, biasData, err := prepareConvTranspose1D(input, kernel, bias, stride, padding, outputPadding, dilation, groups)
 	if err != nil {
 		return nil, err
 	}
 
-	var biasData []float32
-	if bias != nil {
-		biasData = bias.RawData()
+	inShape := input.Shape()
+	kShape := kernel.Shape()
+
+	expected := int(inShape[1] * kShape[1] * kShape[2])
+	if len(kernelT) != expected {
+		return nil, fmt.Errorf("ops: prepacked kernel length mismatch: got %d want %d", len(kernelT), expected)
 	}
 
 	convTranspose1DGroups1(input.RawData(), nil, biasData, kernelT,
-		batch, inChannels, inLength, outChannels, kernelSize, outLength,
+		p.batch, p.inChannels, p.inLength, p.outChannels, p.kernelSize, p.outLength,
 		stride, padding, dilation, out.RawData())
 
 	return out, nil
 }
 
-// convTranspose1DGroups1 is the fast path for ConvTranspose1D with groups=1.
-//
-// If prePackedKernelT is non-nil, it is used directly (skipping the repack).
-// Otherwise the kernel is repacked from kernelData on the fly.
-//
-// To enable AVX2 dot-product acceleration the function:
-//  1. Uses kernelT in [kSize, outCh, inCh] layout so that kernelT[kx, oc, :]
-//     is a contiguous float32 slice of length inCh.
-//  2. Transposes the input from [batch, inCh, inLen] → inputT [batch, inLen, inCh]
-//     so that inputT[b, ix, :] is contiguous.
-//  3. For each (kx, ix) pair computes a GEMV (outCh dot-products of length inCh)
-//     and scatters the result into the output column outPos = ix*stride + kx*dilation − padding.
-//
-// Bias (if non-nil) is added in a final vectorised pass.
 func convTranspose1DGroups1(
-	inputData, kernelData, biasData []float32,
-	prePackedKernelT []float32,
+	inputData, kernelData, biasData, kernelT []float32,
 	batch, inCh, inLen, outCh, kSize, outLen,
 	stride, padding, dilation int64,
 	outData []float32,
 ) {
 	inChI := int(inCh)
-	outChI := int(outCh)
-	kSizeI := int(kSize)
-	outLenI := int(outLen)
 	inLenI := int(inLen)
+	outChI := int(outCh)
+	outLenI := int(outLen)
+	kSizeI := int(kSize)
 
-	// Step 1: use pre-packed kernel or repack on the fly.
-	kernelT := prePackedKernelT
 	if kernelT == nil {
-		kernelTSize := kSizeI * outChI * inChI
-
-		kernelT = getScratch(kernelTSize)
+		kernelT = getScratch(kSizeI * outChI * inChI)
 		defer putScratch(kernelT)
 
 		for ic := range inChI {
@@ -345,16 +289,12 @@ func convTranspose1DGroups1(
 		}
 	}
 
-	// Allocate inputT once and reuse across batch elements.
-	inputTSize := inLenI * inChI
-
-	inputT := getScratch(inputTSize)
+	inputT := getScratch(inLenI * inChI)
 	defer putScratch(inputT)
 
-	batchI := int(batch)
-	for b := range batchI {
-		// Step 2: transpose input [inCh, inLen] → inputT [inLen, inCh].
-		// Zero first (getScratch zeroes on first use, but re-zero for b > 0).
+	for b := range batch {
+		bI := int(b)
+
 		if b > 0 {
 			for i := range inputT {
 				inputT[i] = 0
@@ -362,16 +302,16 @@ func convTranspose1DGroups1(
 		}
 
 		for ic := range inChI {
-			src := inputData[(b*inChI+ic)*inLenI : (b*inChI+ic+1)*inLenI]
+			base := (bI*inChI + ic) * inLenI
+
+			src := inputData[base : base+inLenI]
 			for ix, v := range src {
 				inputT[ix*inChI+ic] = v
 			}
 		}
 
-		// Step 3: GEMV scatter with oc as the outer dimension.
-		// Each oc range writes only to outBatch[oc*outLenI : (oc+1)*outLenI],
-		// so the loop is embarrassingly parallel across output channels.
-		outBatch := outData[b*outChI*outLenI : (b+1)*outChI*outLenI]
+		outBase := bI * outChI * outLenI
+		outBatch := outData[outBase : outBase+outChI*outLenI]
 		parallelFor(outChI, getConvWorkers(), func(ocLo, ocHi int) {
 			for oc := ocLo; oc < ocHi; oc++ {
 				outRow := outBatch[oc*outLenI : (oc+1)*outLenI]
@@ -389,7 +329,7 @@ func convTranspose1DGroups1(
 						outRow[outPos] += tensor.DotProduct(kernelTRow, inputRow)
 					}
 				}
-				// Add bias for this channel.
+
 				if biasData != nil {
 					bv := biasData[oc]
 					for i := range outRow {
@@ -500,58 +440,82 @@ func CausalMask(scores *tensor.Tensor, offset int64) (*tensor.Tensor, error) {
 // pair format: (..., seq, dim) where dim must be even.
 // cos/sin are expected as [max_seq, dim/2].
 func RoPE(x, cos, sin *tensor.Tensor, pos int64) (*tensor.Tensor, error) {
+	p, out, outData, cosData, sinData, err := prepareRoPE(x, cos, sin, pos)
+	if err != nil {
+		return nil, err
+	}
+
+	applyRoPE(outData, cosData, sinData, p)
+
+	return out, nil
+}
+
+type ropeParams struct {
+	seq    int64
+	dim    int64
+	half   int64
+	pos    int64
+	prefix int64
+}
+
+func prepareRoPE(x, cos, sin *tensor.Tensor, pos int64) (ropeParams, *tensor.Tensor, []float32, []float32, []float32, error) {
 	if x == nil || cos == nil || sin == nil {
-		return nil, errors.New("ops: rope requires non-nil x/cos/sin")
+		return ropeParams{}, nil, nil, nil, nil, errors.New("ops: rope requires non-nil x/cos/sin")
 	}
 
 	if pos < 0 {
-		return nil, errors.New("ops: rope position must be >= 0")
+		return ropeParams{}, nil, nil, nil, nil, errors.New("ops: rope position must be >= 0")
 	}
 
 	xShape := x.Shape()
 	if len(xShape) < 2 {
-		return nil, fmt.Errorf("ops: rope requires rank >= 2 input, got %d", len(xShape))
+		return ropeParams{}, nil, nil, nil, nil, fmt.Errorf("ops: rope requires rank >= 2 input, got %d", len(xShape))
 	}
 
-	seq := xShape[len(xShape)-2]
-
-	dim := xShape[len(xShape)-1]
-	if dim%2 != 0 {
-		return nil, fmt.Errorf("ops: rope last dimension must be even, got %d", dim)
+	p := ropeParams{
+		seq: xShape[len(xShape)-2],
+		dim: xShape[len(xShape)-1],
+		pos: pos,
+	}
+	if p.dim%2 != 0 {
+		return ropeParams{}, nil, nil, nil, nil, fmt.Errorf("ops: rope last dimension must be even, got %d", p.dim)
 	}
 
-	half := dim / 2
+	p.half = p.dim / 2
 
 	cosShape := cos.Shape()
-
 	sinShape := sin.Shape()
 	if len(cosShape) != 2 || len(sinShape) != 2 {
-		return nil, fmt.Errorf("ops: rope cos/sin must be rank 2, got %v and %v", cosShape, sinShape)
+		return ropeParams{}, nil, nil, nil, nil, fmt.Errorf("ops: rope cos/sin must be rank 2, got %v and %v", cosShape, sinShape)
 	}
 
-	if cosShape[0] < pos+seq || sinShape[0] < pos+seq {
-		return nil, fmt.Errorf("ops: rope cos/sin sequence length too small for pos=%d seq=%d", pos, seq)
+	if cosShape[0] < p.pos+p.seq || sinShape[0] < p.pos+p.seq {
+		return ropeParams{}, nil, nil, nil, nil, fmt.Errorf("ops: rope cos/sin sequence length too small for pos=%d seq=%d", p.pos, p.seq)
 	}
 
-	if cosShape[1] != half || sinShape[1] != half {
-		return nil, fmt.Errorf("ops: rope cos/sin width mismatch, want %d got %d and %d", half, cosShape[1], sinShape[1])
+	if cosShape[1] != p.half || sinShape[1] != p.half {
+		return ropeParams{}, nil, nil, nil, nil, fmt.Errorf("ops: rope cos/sin width mismatch, want %d got %d and %d", p.half, cosShape[1], sinShape[1])
 	}
 
 	out := x.Clone()
 	outData := out.RawData()
 	cosData := cos.RawData()
 	sinData := sin.RawData()
+	p.prefix = int64(len(outData)) / (p.seq * p.dim)
 
-	prefix := int64(len(outData)) / (seq * dim)
-	seqI := int(seq)
-	dimI := int(dim)
-	halfI := int(half)
+	return p, out, outData, cosData, sinData, nil
+}
 
-	for p := range prefix {
-		prefixBase := int(p * seq * dim)
+func applyRoPE(outData, cosData, sinData []float32, p ropeParams) {
+	seqI := int(p.seq)
+	dimI := int(p.dim)
+	halfI := int(p.half)
+
+	for pre := range p.prefix {
+		prefixBase := int(pre * p.seq * p.dim)
 
 		for t := range seqI {
-			trigBase := int((pos + int64(t)) * half)
+			trigBase := int((p.pos + int64(t)) * p.half)
 
 			xBase := prefixBase + t*dimI
 			for j := range halfI {
@@ -566,8 +530,6 @@ func RoPE(x, cos, sin *tensor.Tensor, pos int64) (*tensor.Tensor, error) {
 			}
 		}
 	}
-
-	return out, nil
 }
 
 // Attention computes scaled dot-product attention.
@@ -656,45 +618,7 @@ func MLP(x, w1, b1, w2, b2 *tensor.Tensor) (*tensor.Tensor, error) {
 // input: [batch, in_channels, length]
 // kernel: [out_channels, in_channels/groups, kernel_size]
 func Conv1D(input, kernel, bias *tensor.Tensor, stride, padding, dilation, groups int64) (*tensor.Tensor, error) {
-	if input == nil || kernel == nil {
-		return nil, errors.New("ops: conv1d requires non-nil input/kernel")
-	}
-
-	if stride <= 0 || dilation <= 0 || groups <= 0 {
-		return nil, errors.New("ops: conv1d stride/dilation/groups must be > 0")
-	}
-
-	inShape := input.Shape()
-
-	kShape := kernel.Shape()
-	if len(inShape) != 3 || len(kShape) != 3 {
-		return nil, fmt.Errorf("ops: conv1d expects input/kernel rank 3, got %v and %v", inShape, kShape)
-	}
-
-	batch, inChannels, length := inShape[0], inShape[1], inShape[2]
-	outChannels, kInChannels, kernelSize := kShape[0], kShape[1], kShape[2]
-
-	if inChannels%groups != 0 || outChannels%groups != 0 {
-		return nil, fmt.Errorf("ops: conv1d channels not divisible by groups (%d, %d, groups=%d)", inChannels, outChannels, groups)
-	}
-
-	if kInChannels != inChannels/groups {
-		return nil, fmt.Errorf("ops: conv1d kernel in_channels/groups mismatch: got %d want %d", kInChannels, inChannels/groups)
-	}
-
-	if bias != nil {
-		bShape := bias.Shape()
-		if len(bShape) != 1 || bShape[0] != outChannels {
-			return nil, fmt.Errorf("ops: conv1d bias shape %v does not match out_channels %d", bShape, outChannels)
-		}
-	}
-
-	outLength := (length+2*padding-dilation*(kernelSize-1)-1)/stride + 1
-	if outLength <= 0 {
-		return nil, fmt.Errorf("ops: conv1d produced non-positive output length %d", outLength)
-	}
-
-	out, err := tensor.Zeros([]int64{batch, outChannels, outLength})
+	p, out, biasData, err := prepareConv1D(input, kernel, bias, stride, padding, dilation, groups)
 	if err != nil {
 		return nil, err
 	}
@@ -703,23 +627,100 @@ func Conv1D(input, kernel, bias *tensor.Tensor, stride, padding, dilation, group
 	kernelData := kernel.RawData()
 	outData := out.RawData()
 
-	var biasData []float32
-	if bias != nil {
-		biasData = bias.RawData()
-	}
-
-	// Fast path: groups=1 uses im2col + AVX2 dot-product GEMM.
 	if groups == 1 {
 		conv1DFastGroups1(inputData, kernelData, biasData,
-			batch, inChannels, length, outChannels, kernelSize, outLength,
+			p.batch, p.inChannels, p.length, p.outChannels, p.kernelSize, p.outLength,
 			stride, padding, dilation, outData)
 
 		return out, nil
 	}
 
-	inPerGroup := inChannels / groups
+	conv1DGrouped(inputData, kernelData, biasData, outData,
+		p.batch, p.inChannels, p.length, p.outChannels, p.kernelSize, p.outLength,
+		p.kInChannels, p.inPerGroup, p.outPerGroup, stride, padding, dilation)
 
-	outPerGroup := outChannels / groups
+	return out, nil
+}
+
+type conv1DParams struct {
+	batch       int64
+	inChannels  int64
+	length      int64
+	outChannels int64
+	kInChannels int64
+	kernelSize  int64
+	outLength   int64
+	inPerGroup  int64
+	outPerGroup int64
+}
+
+func prepareConv1D(
+	input, kernel, bias *tensor.Tensor,
+	stride, padding, dilation, groups int64,
+) (conv1DParams, *tensor.Tensor, []float32, error) {
+	if input == nil || kernel == nil {
+		return conv1DParams{}, nil, nil, errors.New("ops: conv1d requires non-nil input/kernel")
+	}
+
+	if stride <= 0 || dilation <= 0 || groups <= 0 {
+		return conv1DParams{}, nil, nil, errors.New("ops: conv1d stride/dilation/groups must be > 0")
+	}
+
+	inShape := input.Shape()
+	kShape := kernel.Shape()
+	if len(inShape) != 3 || len(kShape) != 3 {
+		return conv1DParams{}, nil, nil, fmt.Errorf("ops: conv1d expects input/kernel rank 3, got %v and %v", inShape, kShape)
+	}
+
+	p := conv1DParams{
+		batch:       inShape[0],
+		inChannels:  inShape[1],
+		length:      inShape[2],
+		outChannels: kShape[0],
+		kInChannels: kShape[1],
+		kernelSize:  kShape[2],
+	}
+
+	if p.inChannels%groups != 0 || p.outChannels%groups != 0 {
+		return conv1DParams{}, nil, nil, fmt.Errorf("ops: conv1d channels not divisible by groups (%d, %d, groups=%d)", p.inChannels, p.outChannels, groups)
+	}
+
+	if p.kInChannels != p.inChannels/groups {
+		return conv1DParams{}, nil, nil, fmt.Errorf("ops: conv1d kernel in_channels/groups mismatch: got %d want %d", p.kInChannels, p.inChannels/groups)
+	}
+
+	p.inPerGroup = p.inChannels / groups
+	p.outPerGroup = p.outChannels / groups
+
+	if bias != nil {
+		bShape := bias.Shape()
+		if len(bShape) != 1 || bShape[0] != p.outChannels {
+			return conv1DParams{}, nil, nil, fmt.Errorf("ops: conv1d bias shape %v does not match out_channels %d", bShape, p.outChannels)
+		}
+	}
+
+	p.outLength = (p.length+2*padding-dilation*(p.kernelSize-1)-1)/stride + 1
+	if p.outLength <= 0 {
+		return conv1DParams{}, nil, nil, fmt.Errorf("ops: conv1d produced non-positive output length %d", p.outLength)
+	}
+
+	out, err := tensor.Zeros([]int64{p.batch, p.outChannels, p.outLength})
+	if err != nil {
+		return conv1DParams{}, nil, nil, err
+	}
+
+	var biasData []float32
+	if bias != nil {
+		biasData = bias.RawData()
+	}
+
+	return p, out, biasData, nil
+}
+
+func conv1DGrouped(
+	inputData, kernelData, biasData, outData []float32,
+	batch, inChannels, length, outChannels, kernelSize, outLength, kInChannels, inPerGroup, outPerGroup, stride, padding, dilation int64,
+) {
 	for b := range batch {
 		for oc := range outChannels {
 			g := oc / outPerGroup
@@ -751,91 +752,129 @@ func Conv1D(input, kernel, bias *tensor.Tensor, stride, padding, dilation, group
 			}
 		}
 	}
-
-	return out, nil
 }
 
 // ConvTranspose1D performs a deterministic CPU ConvTranspose1d.
 // input: [batch, in_channels, length]
 // kernel: [in_channels, out_channels/groups, kernel_size]
 func ConvTranspose1D(input, kernel, bias *tensor.Tensor, stride, padding, outputPadding, dilation, groups int64) (*tensor.Tensor, error) {
+	p, out, biasData, err := prepareConvTranspose1D(input, kernel, bias, stride, padding, outputPadding, dilation, groups)
+	if err != nil {
+		return nil, err
+	}
+
+	inputData := input.RawData()
+	kernelData := kernel.RawData()
+	outData := out.RawData()
+
+	if groups == 1 {
+		convTranspose1DGroups1(inputData, kernelData, biasData, nil,
+			p.batch, p.inChannels, p.inLength, p.outChannels, p.kernelSize, p.outLength,
+			stride, padding, dilation, outData)
+
+		return out, nil
+	}
+
+	if groups == p.inChannels {
+		convTranspose1DFastDepthwise(inputData, kernelData, biasData,
+			p.batch, p.inChannels, p.inLength, p.outPerGroup, p.kernelSize, p.outLength,
+			stride, padding, dilation, outData)
+
+		return out, nil
+	}
+
+	convTranspose1DGrouped(inputData, kernelData, outData,
+		p.batch, p.inChannels, p.inLength, p.outChannels, p.kernelSize, p.outLength,
+		p.inPerGroup, p.outPerGroup, stride, padding, dilation)
+
+	addConvTransposeBias(outData, biasData, p.batch, p.outChannels, p.outLength)
+
+	return out, nil
+}
+
+type convTranspose1DParams struct {
+	batch       int64
+	inChannels  int64
+	inLength    int64
+	outChannels int64
+	outPerGroup int64
+	inPerGroup  int64
+	kernelSize  int64
+	outLength   int64
+}
+
+func prepareConvTranspose1D(
+	input, kernel, bias *tensor.Tensor,
+	stride, padding, outputPadding, dilation, groups int64,
+) (convTranspose1DParams, *tensor.Tensor, []float32, error) {
 	if input == nil || kernel == nil {
-		return nil, errors.New("ops: convtranspose1d requires non-nil input/kernel")
+		return convTranspose1DParams{}, nil, nil, errors.New("ops: convtranspose1d requires non-nil input/kernel")
 	}
 
 	if stride <= 0 || dilation <= 0 || groups <= 0 {
-		return nil, errors.New("ops: convtranspose1d stride/dilation/groups must be > 0")
+		return convTranspose1DParams{}, nil, nil, errors.New("ops: convtranspose1d stride/dilation/groups must be > 0")
 	}
 
 	if outputPadding < 0 || outputPadding >= stride {
-		return nil, fmt.Errorf("ops: convtranspose1d output_padding must be in [0, stride), got %d", outputPadding)
+		return convTranspose1DParams{}, nil, nil, fmt.Errorf("ops: convtranspose1d output_padding must be in [0, stride), got %d", outputPadding)
 	}
 
 	inShape := input.Shape()
 
 	kShape := kernel.Shape()
 	if len(inShape) != 3 || len(kShape) != 3 {
-		return nil, fmt.Errorf("ops: convtranspose1d expects input/kernel rank 3, got %v and %v", inShape, kShape)
+		return convTranspose1DParams{}, nil, nil, fmt.Errorf("ops: convtranspose1d expects input/kernel rank 3, got %v and %v", inShape, kShape)
 	}
 
-	batch, inChannels, inLength := inShape[0], inShape[1], inShape[2]
-
-	kInChannels, outPerGroup, kernelSize := kShape[0], kShape[1], kShape[2]
-	if kInChannels != inChannels {
-		return nil, fmt.Errorf("ops: convtranspose1d kernel in_channels mismatch %d vs %d", kInChannels, inChannels)
+	p := convTranspose1DParams{
+		batch:       inShape[0],
+		inChannels:  inShape[1],
+		inLength:    inShape[2],
+		outPerGroup: kShape[1],
+		kernelSize:  kShape[2],
 	}
 
-	if inChannels%groups != 0 {
-		return nil, fmt.Errorf("ops: convtranspose1d in_channels %d must be divisible by groups %d", inChannels, groups)
+	kInChannels := kShape[0]
+	if kInChannels != p.inChannels {
+		return convTranspose1DParams{}, nil, nil, fmt.Errorf("ops: convtranspose1d kernel in_channels mismatch %d vs %d", kInChannels, p.inChannels)
 	}
 
-	outChannels := outPerGroup * groups
+	if p.inChannels%groups != 0 {
+		return convTranspose1DParams{}, nil, nil, fmt.Errorf("ops: convtranspose1d in_channels %d must be divisible by groups %d", p.inChannels, groups)
+	}
+
+	p.outChannels = p.outPerGroup * groups
+	p.inPerGroup = p.inChannels / groups
 
 	if bias != nil {
 		bShape := bias.Shape()
-		if len(bShape) != 1 || bShape[0] != outChannels {
-			return nil, fmt.Errorf("ops: convtranspose1d bias shape %v does not match out_channels %d", bShape, outChannels)
+		if len(bShape) != 1 || bShape[0] != p.outChannels {
+			return convTranspose1DParams{}, nil, nil, fmt.Errorf("ops: convtranspose1d bias shape %v does not match out_channels %d", bShape, p.outChannels)
 		}
 	}
 
-	outLength := (inLength-1)*stride - 2*padding + dilation*(kernelSize-1) + outputPadding + 1
-	if outLength <= 0 {
-		return nil, fmt.Errorf("ops: convtranspose1d produced non-positive output length %d", outLength)
+	p.outLength = (p.inLength-1)*stride - 2*padding + dilation*(p.kernelSize-1) + outputPadding + 1
+	if p.outLength <= 0 {
+		return convTranspose1DParams{}, nil, nil, fmt.Errorf("ops: convtranspose1d produced non-positive output length %d", p.outLength)
 	}
 
-	out, err := tensor.Zeros([]int64{batch, outChannels, outLength})
+	out, err := tensor.Zeros([]int64{p.batch, p.outChannels, p.outLength})
 	if err != nil {
-		return nil, err
+		return convTranspose1DParams{}, nil, nil, err
 	}
-
-	inPerGroup := inChannels / groups
-	inputData := input.RawData()
-	kernelData := kernel.RawData()
-	outData := out.RawData()
 
 	var biasData []float32
 	if bias != nil {
 		biasData = bias.RawData()
 	}
 
-	// Fast path: groups=1 uses kernel-repack + GEMV scatter with AVX2 dot-products.
-	if groups == 1 {
-		convTranspose1DGroups1(inputData, kernelData, biasData, nil,
-			batch, inChannels, inLength, outChannels, kernelSize, outLength,
-			stride, padding, dilation, outData)
+	return p, out, biasData, nil
+}
 
-		return out, nil
-	}
-
-	// Fast path: depthwise (groups == inChannels) avoids redundant group arithmetic.
-	if groups == inChannels {
-		convTranspose1DFastDepthwise(inputData, kernelData, biasData,
-			batch, inChannels, inLength, outPerGroup, kernelSize, outLength,
-			stride, padding, dilation, outData)
-
-		return out, nil
-	}
-
+func convTranspose1DGrouped(
+	inputData, kernelData, outData []float32,
+	batch, inChannels, inLength, outChannels, kernelSize, outLength, inPerGroup, outPerGroup, stride, padding, dilation int64,
+) {
 	for b := range batch {
 		for ic := range inChannels {
 			g := ic / inPerGroup
@@ -861,19 +900,21 @@ func ConvTranspose1D(input, kernel, bias *tensor.Tensor, stride, padding, output
 			}
 		}
 	}
+}
 
-	if biasData != nil {
-		for b := range batch {
-			for oc := range outChannels {
-				base := ((b*outChannels + oc) * outLength)
-				for ox := range outLength {
-					outData[base+ox] += biasData[oc]
-				}
+func addConvTransposeBias(outData, biasData []float32, batch, outChannels, outLength int64) {
+	if biasData == nil {
+		return
+	}
+
+	for b := range batch {
+		for oc := range outChannels {
+			base := ((b*outChannels + oc) * outLength)
+			for ox := range outLength {
+				outData[base+ox] += biasData[oc]
 			}
 		}
 	}
-
-	return out, nil
 }
 
 func silu(x float32) float32 {
