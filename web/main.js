@@ -16,6 +16,7 @@ const state = {
   modelLoaded: false,
   modelError: "",
   modelBytesPromise: null,
+  tokenizerBytesPromise: null,
   isSynthesizing: false,
   activeAudioURL: "",
   voiceManifest: null,
@@ -30,6 +31,7 @@ const modelConfig = {
 };
 
 const modelAssetPath = "./models/tts_b6369a24.safetensors";
+const tokenizerAssetPath = "./models/tokenizer.model";
 const preferredVoiceID = "alba";
 
 function formatError(err) {
@@ -61,6 +63,7 @@ function setAudioBlob(wavBytes) {
   const url = URL.createObjectURL(blob);
   state.activeAudioURL = url;
   player.src = url;
+  player.style.display = "";
 }
 
 function selectedVoiceID() {
@@ -238,7 +241,7 @@ async function ensureVoiceDownloaded(voiceID) {
   let lastPct = -1;
   const promise = (async () => {
     const bytes = await fetchBytesWithProgress(`./voices/${voice.path}`, (received, total) => {
-      const pct = total > 0 ? Math.round((received / total) * 100) : 0;
+      const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
       if (pct !== lastPct && pct % 10 === 0 && selectedVoiceID() === voiceID) {
         lastPct = pct;
         setAction(`Downloading voice ${voiceID} (${pct}%)...`);
@@ -294,6 +297,25 @@ async function downloadSelectedVoiceIfNeeded() {
   }
 }
 
+function ensureTokenizerBytesFetched() {
+  if (state.tokenizerBytesPromise) {
+    return state.tokenizerBytesPromise;
+  }
+
+  state.tokenizerBytesPromise = fetch(tokenizerAssetPath)
+    .then((res) => {
+      if (!res.ok) throw new Error(`fetch tokenizer failed (${res.status})`);
+      return res.arrayBuffer();
+    })
+    .then((buf) => new Uint8Array(buf))
+    .catch((err) => {
+      state.tokenizerBytesPromise = null;
+      throw err;
+    });
+
+  return state.tokenizerBytesPromise;
+}
+
 function ensureModelBytesFetched() {
   if (state.modelBytesPromise) {
     return state.modelBytesPromise;
@@ -306,7 +328,7 @@ function ensureModelBytesFetched() {
 
   showProgress("Downloading model...", 0, false);
   state.modelBytesPromise = fetchBytesWithProgress(modelAssetPath, (received, total) => {
-    const pct = total > 0 ? Math.round((received / total) * 100) : 0;
+    const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
     showProgress(`Downloading model... ${pct}%`, pct, false);
     setAction(`Downloading model (${pct}%)...`);
   }).catch((err) => {
@@ -329,14 +351,18 @@ async function autoLoadModel() {
   }
 
   try {
-    const modelBytes = await ensureModelBytesFetched();
+    const [modelBytes, tokenizerBytes] = await Promise.all([
+      ensureModelBytesFetched(),
+      ensureTokenizerBytesFetched(),
+    ]);
 
     state.modelPhase = "initializing";
     showProgress("Initializing model...", 0, false);
     setAction("Initializing model...");
     renderInfo();
 
-    const result = await globalThis.PocketTTSKernel.loadModel(modelBytes, (evt) => {
+    // Go API: loadModel(modelBytes, tokenizerBytes, progressCallback)
+    const result = await globalThis.PocketTTSKernel.loadModel(modelBytes, tokenizerBytes, (evt) => {
       const stage = evt?.stage || "load";
       const pct = Math.round(Math.max(0, Math.min(100, Number(evt?.percent || 0))));
       showProgress(`Initializing model (${stage})... ${pct}%`, pct, false);
@@ -366,17 +392,12 @@ async function autoLoadModel() {
   }
 }
 
-async function handleSynthesize() {
-  if (synthBtn.disabled) {
-    return;
-  }
+function rAF() {
+  return new Promise((resolve) => requestAnimationFrame(resolve));
+}
 
+async function runSynthesis(text) {
   try {
-    state.isSynthesizing = true;
-    setSynthesizeEnabled();
-    showProgress("Synthesizing...", 0, false);
-    setAction("Synthesis started...");
-
     const options = { temperature: modelConfig.temperature };
     const voiceSafetensors = await downloadSelectedVoiceIfNeeded();
     if (voiceSafetensors) {
@@ -385,12 +406,12 @@ async function handleSynthesize() {
 
     const t0 = performance.now();
     const result = await globalThis.PocketTTSKernel.synthesize(
-      textArea.value,
+      text,
       (evt) => {
         const pct = Math.round(Math.max(0, Math.min(100, Number(evt?.percent || 0))));
         const stage = evt?.stage || "working";
         showProgress(`Synthesizing (${stage})... ${pct}%`, pct, false);
-        setAction(`Synthesis ${pct}% (${stage})`);
+        setAction(`Synthesizing — ${stage} ${pct}%`);
       },
       options,
     );
@@ -402,7 +423,7 @@ async function handleSynthesize() {
 
     const wavBytes = decodeBase64ToBytes(result.wav_base64 || "");
     setAudioBlob(wavBytes);
-    showProgress(`Synthesis complete in ${elapsedMs} ms`, 100, true);
+    showProgress(`Done in ${elapsedMs} ms`, 100, true);
     setAction(`Synthesis complete in ${elapsedMs} ms.`);
     setTimeout(hideProgress, 3000);
   } catch (err) {
@@ -413,6 +434,23 @@ async function handleSynthesize() {
     renderInfo();
     setSynthesizeEnabled();
   }
+}
+
+function handleSynthesize() {
+  if (synthBtn.disabled || state.isSynthesizing) {
+    return;
+  }
+
+  state.isSynthesizing = true;
+  setSynthesizeEnabled();
+  showProgress("Synthesizing...", 0, false);
+  setAction("Synthesizing...");
+
+  // Capture text now; user may freely edit while synthesis runs.
+  const text = textArea.value;
+
+  // Yield to the browser so the UI repaints before the heavy WASM call.
+  rAF().then(() => runSynthesis(text));
 }
 
 async function loadVoiceManifestAndPrefetch() {
@@ -437,8 +475,9 @@ async function initApp() {
   renderInfo();
   setSynthesizeEnabled();
 
-  // Start model download immediately so network transfer overlaps wasm startup.
+  // Start model + tokenizer downloads immediately so transfers overlap wasm startup.
   void ensureModelBytesFetched();
+  void ensureTokenizerBytesFetched();
 
   // Voice manifest/voice download can also run in parallel with kernel boot.
   const voicesPromise = loadVoiceManifestAndPrefetch();
@@ -456,7 +495,7 @@ async function initApp() {
   setSynthesizeEnabled();
 }
 
-synthBtn.addEventListener("click", handleSynthesize);
+synthBtn.addEventListener("click", () => handleSynthesize());
 voiceSelect.addEventListener("change", () => {
   renderInfo();
   setSynthesizeEnabled();

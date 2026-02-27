@@ -15,12 +15,11 @@ import (
 	nativemodel "github.com/example/go-pocket-tts/internal/native"
 	"github.com/example/go-pocket-tts/internal/safetensors"
 	"github.com/example/go-pocket-tts/internal/text"
+	"github.com/example/go-pocket-tts/internal/tokenizer"
 	"github.com/example/go-pocket-tts/internal/tts"
 )
 
-const (
-	maxTokensPerChunk = 50
-)
+const maxTokensPerChunk = 50
 
 type progressReporter struct {
 	cb js.Value
@@ -61,21 +60,9 @@ type synthesizeOptions struct {
 	VoiceSafetensors []byte
 }
 
-type preprocessTokenizer struct {
-	prep *text.Preprocessor
-}
-
-func (t preprocessTokenizer) Encode(input string) ([]int64, error) {
-	tokens := t.prep.Preprocess(input)
-	out := make([]int64, len(tokens))
-	for i, tok := range tokens {
-		out[i] = int64(tok)
-	}
-	return out, nil
-}
-
 type nativeEngine struct {
-	runtime tts.Runtime
+	runtime   tts.Runtime
+	tokenizer tokenizer.Tokenizer
 }
 
 var (
@@ -117,12 +104,19 @@ func tokenizeText(_ js.Value, args []js.Value) any {
 		return errResult("missing text argument")
 	}
 
+	engineMu.RLock()
+	tok := engine.tokenizer
+	engineMu.RUnlock()
+
+	if tok == nil {
+		return errResult("tokenizer not ready; call loadModel first")
+	}
+
 	normalized, err := text.Normalize(args[0].String())
 	if err != nil {
 		return errResult(err.Error())
 	}
 
-	tok := preprocessTokenizer{prep: text.NewPreprocessor()}
 	chunks, err := text.PrepareChunks(normalized, tok, maxTokensPerChunk)
 	if err != nil {
 		return errResult(err.Error())
@@ -142,6 +136,11 @@ func tokenizeText(_ js.Value, args []js.Value) any {
 	})
 }
 
+// loadModelAsync is the JS-facing wrapper. It expects:
+//
+//	args[0] – Uint8Array: safetensors model bytes
+//	args[1] – Uint8Array: SentencePiece tokenizer model bytes
+//	args[2] – Function (optional): progress callback
 func loadModelAsync(_ js.Value, args []js.Value) any {
 	promiseCtor := js.Global().Get("Promise")
 	var handler js.Func
@@ -150,8 +149,8 @@ func loadModelAsync(_ js.Value, args []js.Value) any {
 		resolve := pArgs[0]
 		reject := pArgs[1]
 
-		if len(args) < 1 {
-			reject.Invoke("missing model safetensors bytes argument")
+		if len(args) < 2 {
+			reject.Invoke("loadModel requires model bytes and tokenizer bytes arguments")
 			return nil
 		}
 
@@ -161,13 +160,19 @@ func loadModelAsync(_ js.Value, args []js.Value) any {
 			return nil
 		}
 
+		tokBytes, ok := copyJSBytes(args[1])
+		if !ok || len(tokBytes) == 0 {
+			reject.Invoke("tokenizer model bytes must be a non-empty Uint8Array/ArrayBuffer")
+			return nil
+		}
+
 		var progress progressReporter
-		if len(args) > 1 && args[1].Type() == js.TypeFunction {
-			progress.cb = args[1]
+		if len(args) > 2 && args[2].Type() == js.TypeFunction {
+			progress.cb = args[2]
 		}
 
 		go func() {
-			res, err := loadModel(modelBytes, &progress)
+			res, err := loadModel(modelBytes, tokBytes, &progress)
 			if err != nil {
 				reject.Invoke(err.Error())
 				return
@@ -181,14 +186,20 @@ func loadModelAsync(_ js.Value, args []js.Value) any {
 	return promiseCtor.New(handler)
 }
 
-func loadModel(modelSafetensors []byte, progress *progressReporter) (map[string]any, error) {
-	progress.Emit("load", 5, 100, "opening safetensors checkpoint")
+func loadModel(modelSafetensors, tokenizerBytes []byte, progress *progressReporter) (map[string]any, error) {
+	progress.Emit("tokenizer", 5, 100, "loading sentencepiece tokenizer")
+	tok, err := tokenizer.NewSentencePieceTokenizerFromBytes(tokenizerBytes)
+	if err != nil {
+		return nil, fmt.Errorf("load sentencepiece tokenizer: %w", err)
+	}
+
+	progress.Emit("load", 20, 100, "opening safetensors checkpoint")
 	store, err := safetensors.OpenStoreFromBytes(modelSafetensors, safetensors.StoreOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("open model safetensors: %w", err)
 	}
 
-	progress.Emit("load", 35, 100, "building native model")
+	progress.Emit("load", 50, 100, "building native model")
 	model, err := nativemodel.LoadModelFromStore(store, nativemodel.DefaultConfig())
 	if err != nil {
 		store.Close()
@@ -196,7 +207,7 @@ func loadModel(modelSafetensors []byte, progress *progressReporter) (map[string]
 	}
 	runtime := tts.NewNativeSafetensorsRuntime(model)
 
-	newEngine := &nativeEngine{runtime: runtime}
+	newEngine := &nativeEngine{runtime: runtime, tokenizer: tok}
 	engineMu.Lock()
 	oldEngine := engine
 	engine = newEngine
@@ -298,11 +309,11 @@ func synthesizeAsync(_ js.Value, args []js.Value) any {
 func synthesize(input string, progress *progressReporter, opts synthesizeOptions) (map[string]any, error) {
 	engineMu.RLock()
 	currentEngine := engine
+	engineMu.RUnlock()
+
 	if currentEngine == nil || currentEngine.runtime == nil {
-		engineMu.RUnlock()
 		return nil, fmt.Errorf("model is not loaded; call loadModel first")
 	}
-	defer engineMu.RUnlock()
 
 	progress.Emit("prepare", 0, 100, "normalizing and chunking input")
 	normalized, err := text.Normalize(input)
@@ -310,8 +321,7 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 		return nil, err
 	}
 
-	tok := preprocessTokenizer{prep: text.NewPreprocessor()}
-	chunks, err := text.PrepareChunks(normalized, tok, maxTokensPerChunk)
+	chunks, err := text.PrepareChunks(normalized, currentEngine.tokenizer, maxTokensPerChunk)
 	if err != nil {
 		return nil, err
 	}
