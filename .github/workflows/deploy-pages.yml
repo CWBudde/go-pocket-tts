@@ -57,6 +57,7 @@ jobs:
         run: |
           mkdir -p web/dist/models
           cp models/tts_b6369a24.safetensors web/dist/models/
+          cp models/tokenizer.model web/dist/models/
 
       - name: Bundle voice embeddings into web app
         run: |
