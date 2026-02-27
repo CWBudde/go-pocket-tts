@@ -55,7 +55,7 @@ linters:
 
       # assembly stubs have empty bodies
       - linters: [revive]
-        path: .*_amd64\.go
+        path: .*_(amd64|arm64)\.go
         text: empty-block
 
       # test files are more relaxed

@@ -26,6 +26,7 @@ func TestDetectNumHeads(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			vb := vbWithInProjWeight(t, tt.dModel)
+
 			got := detectNumHeads(vb, tt.fallback)
 			if got != tt.want {
 				t.Fatalf("detectNumHeads(dModel=%d, fallback=%d) = %d; want %d",

@@ -29,6 +29,10 @@ check-tidy:
 test:
     go test -v ./...
 
+# Cross-compile and run tensor tests on ARM64 via QEMU
+test-arm64:
+    GOARCH=arm64 go test -exec "qemu-aarch64-static" -v ./internal/runtime/tensor/
+
 # Run tests with race detector
 test-race:
     go test -race ./...

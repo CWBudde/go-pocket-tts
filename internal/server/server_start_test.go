@@ -56,6 +56,7 @@ func TestStart_CLIBackend_LifecycleHealthAndShutdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("server never became ready: %v", err)
 	}
+
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {

@@ -18,8 +18,8 @@ func TestFloat16ToFloat32(t *testing.T) {
 		{name: "half", h: 0x3800, want: 0.5},
 		{name: "two", h: 0x4000, want: 2.0},
 		{name: "max normal", h: 0x7bff, want: 65504.0},
-		{name: "smallest positive normal", h: 0x0400, want: float32(math.Ldexp(1, -14))},          // 2^-14
-		{name: "smallest positive subnormal", h: 0x0001, want: float32(math.Ldexp(1, -14-10))},    // 2^-24
+		{name: "smallest positive normal", h: 0x0400, want: float32(math.Ldexp(1, -14))},       // 2^-14
+		{name: "smallest positive subnormal", h: 0x0001, want: float32(math.Ldexp(1, -14-10))}, // 2^-24
 		{name: "positive infinity", h: 0x7c00, want: float32(math.Inf(1))},
 		{name: "negative infinity", h: 0xfc00, want: float32(math.Inf(-1))},
 		{name: "NaN", h: 0x7e00, want: float32(math.NaN())},
@@ -33,8 +33,10 @@ func TestFloat16ToFloat32(t *testing.T) {
 				if !math.IsNaN(float64(got)) {
 					t.Fatalf("float16ToFloat32(0x%04x) = %v; want NaN", tt.h, got)
 				}
+
 				return
 			}
+
 			if got != tt.want {
 				t.Fatalf("float16ToFloat32(0x%04x) = %v; want %v", tt.h, got, tt.want)
 			}
