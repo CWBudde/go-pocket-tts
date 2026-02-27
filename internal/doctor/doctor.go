@@ -30,6 +30,13 @@ type Config struct {
 	SkipPython bool
 	// VoiceFiles is the list of voice file paths to verify on disk.
 	VoiceFiles []string
+
+	// NativeModelPath, if non-empty, is checked for existence (native-safetensors backend).
+	NativeModelPath string
+	// TokenizerModelPath, if non-empty, is checked for existence.
+	TokenizerModelPath string
+	// ValidateSafetensors, if set, is called to validate the model file contents.
+	ValidateSafetensors func(path string) error
 }
 
 // Result collects the outcome of all checks.
@@ -89,6 +96,35 @@ func Run(cfg Config, w io.Writer) Result {
 			_, _ = fmt.Fprintf(w, "%s voice file %s: not found\n", FailMark, path)
 		} else {
 			_, _ = fmt.Fprintf(w, "%s voice file: %s\n", PassMark, path)
+		}
+	}
+
+	// ---- native safetensors model -----------------------------------------
+	if cfg.NativeModelPath != "" {
+		if _, err := os.Stat(cfg.NativeModelPath); err != nil {
+			res.fail(fmt.Sprintf("safetensors model %q: not found", cfg.NativeModelPath))
+			_, _ = fmt.Fprintf(w, "%s safetensors model: not found (%s)\n", FailMark, cfg.NativeModelPath)
+		} else {
+			_, _ = fmt.Fprintf(w, "%s safetensors model: %s\n", PassMark, cfg.NativeModelPath)
+			// Optionally validate model contents.
+			if cfg.ValidateSafetensors != nil {
+				if err := cfg.ValidateSafetensors(cfg.NativeModelPath); err != nil {
+					res.fail(fmt.Sprintf("safetensors model validation: %v", err))
+					_, _ = fmt.Fprintf(w, "%s safetensors model validation: %v\n", FailMark, err)
+				} else {
+					_, _ = fmt.Fprintf(w, "%s safetensors model validation: ok\n", PassMark)
+				}
+			}
+		}
+	}
+
+	// ---- tokenizer model --------------------------------------------------
+	if cfg.TokenizerModelPath != "" {
+		if _, err := os.Stat(cfg.TokenizerModelPath); err != nil {
+			res.fail(fmt.Sprintf("tokenizer model %q: not found", cfg.TokenizerModelPath))
+			_, _ = fmt.Fprintf(w, "%s tokenizer model: not found (%s)\n", FailMark, cfg.TokenizerModelPath)
+		} else {
+			_, _ = fmt.Fprintf(w, "%s tokenizer model: %s\n", PassMark, cfg.TokenizerModelPath)
 		}
 	}
 

@@ -1,7 +1,11 @@
 package safetensors
 
 import (
+	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 )
 
 // Tensor holds a single tensor loaded from a safetensors file.
@@ -60,6 +64,55 @@ func LoadVoiceEmbeddingFromBytes(data []byte) ([]float32, []int64, error) {
 		return nil, nil, err
 	}
 	return normalizeVoiceEmbeddingShape(tensor)
+}
+
+// requiredModelKeys is a subset of tensor keys that must be present in a valid
+// PocketTTS safetensors model file.
+var requiredModelKeys = []string{
+	"text_emb.weight",
+	"flow_transformer.layers.0.self_attn.q_proj.weight",
+	"lsd_decode.net.0.weight",
+	"mimi_decode.model.decoder.model.0.conv.conv.weight",
+}
+
+// ValidateModelKeys reads only the header of a safetensors file and verifies
+// that it contains the expected tensor keys for a PocketTTS model. This is a
+// lightweight check that does not load any tensor data.
+func ValidateModelKeys(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", path, err)
+	}
+	defer f.Close()
+
+	var headerLen uint64
+	if err := binary.Read(f, binary.LittleEndian, &headerLen); err != nil {
+		return fmt.Errorf("read header length: %w", err)
+	}
+	if headerLen > 100*1024*1024 { // sanity: header should not exceed 100 MB
+		return fmt.Errorf("header length %d exceeds 100 MB limit", headerLen)
+	}
+
+	headerBuf := make([]byte, headerLen)
+	if _, err := io.ReadFull(f, headerBuf); err != nil {
+		return fmt.Errorf("read header: %w", err)
+	}
+
+	var header map[string]json.RawMessage
+	if err := json.Unmarshal(headerBuf, &header); err != nil {
+		return fmt.Errorf("parse header: %w", err)
+	}
+
+	var missing []string
+	for _, key := range requiredModelKeys {
+		if _, ok := header[key]; !ok {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("missing required tensors: %v", missing)
+	}
+	return nil
 }
 
 func normalizeVoiceEmbeddingShape(tensor *Tensor) ([]float32, []int64, error) {

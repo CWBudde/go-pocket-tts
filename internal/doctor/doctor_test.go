@@ -172,6 +172,102 @@ func TestRun_SkipRuntimeChecks(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// native model checks
+// ---------------------------------------------------------------------------
+
+func TestRun_NativeModelPresent(t *testing.T) {
+	// Use a file we know exists (the test file itself).
+	cfg := doctor.Config{
+		SkipPocketTTS:  true,
+		SkipPython:     true,
+		NativeModelPath: "doctor_test.go",
+	}
+
+	var out strings.Builder
+	result := doctor.Run(cfg, &out)
+	if result.Failed() {
+		t.Errorf("expected pass; failures: %v", result.Failures())
+	}
+	if !strings.Contains(out.String(), "safetensors model: doctor_test.go") {
+		t.Errorf("output should mention safetensors model; got:\n%s", out.String())
+	}
+}
+
+func TestRun_NativeModelMissing(t *testing.T) {
+	cfg := doctor.Config{
+		SkipPocketTTS:  true,
+		SkipPython:     true,
+		NativeModelPath: "/nonexistent/model.safetensors",
+	}
+
+	var out strings.Builder
+	result := doctor.Run(cfg, &out)
+	if !result.Failed() {
+		t.Fatal("expected failure for missing safetensors model")
+	}
+	if !hasFailureContaining(result.Failures(), "safetensors") {
+		t.Errorf("expected failure mentioning safetensors, got: %v", result.Failures())
+	}
+}
+
+func TestRun_TokenizerModelMissing(t *testing.T) {
+	cfg := doctor.Config{
+		SkipPocketTTS:      true,
+		SkipPython:         true,
+		TokenizerModelPath: "/nonexistent/tokenizer.model",
+	}
+
+	var out strings.Builder
+	result := doctor.Run(cfg, &out)
+	if !result.Failed() {
+		t.Fatal("expected failure for missing tokenizer model")
+	}
+	if !hasFailureContaining(result.Failures(), "tokenizer") {
+		t.Errorf("expected failure mentioning tokenizer, got: %v", result.Failures())
+	}
+}
+
+func TestRun_ValidateSafetensorsCallback(t *testing.T) {
+	cfg := doctor.Config{
+		SkipPocketTTS:  true,
+		SkipPython:     true,
+		NativeModelPath: "doctor_test.go", // exists
+		ValidateSafetensors: func(_ string) error {
+			return sentinelErr("bad keys")
+		},
+	}
+
+	var out strings.Builder
+	result := doctor.Run(cfg, &out)
+	if !result.Failed() {
+		t.Fatal("expected failure from validation callback")
+	}
+	if !hasFailureContaining(result.Failures(), "validation") {
+		t.Errorf("expected failure mentioning validation, got: %v", result.Failures())
+	}
+}
+
+func TestRun_ValidateSafetensorsPassesOnSuccess(t *testing.T) {
+	cfg := doctor.Config{
+		SkipPocketTTS:  true,
+		SkipPython:     true,
+		NativeModelPath: "doctor_test.go",
+		ValidateSafetensors: func(_ string) error {
+			return nil
+		},
+	}
+
+	var out strings.Builder
+	result := doctor.Run(cfg, &out)
+	if result.Failed() {
+		t.Errorf("expected pass; failures: %v", result.Failures())
+	}
+	if !strings.Contains(out.String(), "validation: ok") {
+		t.Errorf("output should contain 'validation: ok'; got:\n%s", out.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 

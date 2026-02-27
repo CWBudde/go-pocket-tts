@@ -15,9 +15,10 @@ Go CLI (and a small HTTP server skeleton) for working with [PocketTTS](https://g
 - Tooling binary: `pockettts-tools` (`model export`).
 - HTTP server endpoints: `GET /health`, `GET /voices`, `POST /tts`.
 
-## Get Started (No Python)
+## Get Started
 
-This path gets you from zero to a first `hello.wav` using the native backend only.
+This path gets you from zero to a first `hello.wav` using the native safetensors backend (default).
+No Python, no ONNX Runtime required.
 
 1. Build the runtime CLI:
 
@@ -33,25 +34,19 @@ go build -o pockettts ./cmd/pockettts
   --out-dir models
 ```
 
-3. (Optional but recommended) point `pockettts` to ONNX Runtime explicitly:
+3. Run local checks:
 
 ```bash
-export POCKETTTS_ORT_LIB=/usr/local/lib/libonnxruntime.so
+./pockettts doctor
 ```
 
-4. Run local checks in native mode:
+4. Generate your first WAV:
 
 ```bash
-./pockettts doctor --backend native
+./pockettts synth --text "Hello world" --out hello.wav
 ```
 
-5. Generate your first WAV:
-
-```bash
-./pockettts synth --backend native --text "Hello world" --out hello.wav
-```
-
-6. Confirm the file exists:
+5. Confirm the file exists:
 
 ```bash
 ls -lh hello.wav
@@ -62,8 +57,18 @@ ls -lh hello.wav
 ### Runtime (no Python required)
 
 - Go `1.25+`
-- ONNX Runtime shared library for native backend
-  - see [docs/INSTALL.md](docs/INSTALL.md)
+- **native-safetensors** (default): no external dependencies
+- **native-onnx**: ONNX Runtime shared library — see [docs/INSTALL.md](docs/INSTALL.md)
+
+### Backend comparison
+
+|                | native-safetensors (default)                  | native-onnx                                    |
+| -------------- | --------------------------------------------- | ---------------------------------------------- |
+| Required files | `tts_b6369a24.safetensors`, `tokenizer.model` | ONNX models + `manifest.json`                  |
+| External deps  | None                                          | ONNX Runtime shared library                    |
+| Setup          | `pockettts model download`                    | `pockettts model download` + `model export`    |
+| Verify         | `pockettts model verify`                      | `pockettts model verify --backend native-onnx` |
+| Performance    | Optimized Go (AVX2/FMA)                       | ONNX Runtime                                   |
 
 ### Tooling (Python required)
 

@@ -41,6 +41,11 @@ type Synthesizer interface {
 	Synthesize(ctx context.Context, text, voice string) ([]byte, error)
 }
 
+// StreamingSynthesizer produces audio incrementally via a channel of PCM chunks.
+type StreamingSynthesizer interface {
+	SynthesizeStream(ctx context.Context, text, voice string, out chan<- tts.PCMChunk) error
+}
+
 // VoiceLister returns the list of available voices.
 type VoiceLister interface {
 	ListVoices() []tts.Voice
@@ -55,6 +60,7 @@ type options struct {
 	workers        int
 	requestTimeout time.Duration
 	logger         *slog.Logger
+	streamer       StreamingSynthesizer
 }
 
 func defaultOptions() options {
@@ -89,17 +95,24 @@ func WithLogger(l *slog.Logger) Option {
 	return func(o *options) { o.logger = l }
 }
 
+// WithStreamer sets the streaming synthesizer for /tts/stream.
+// If nil, the streaming endpoint returns 501 Not Implemented.
+func WithStreamer(s StreamingSynthesizer) Option {
+	return func(o *options) { o.streamer = s }
+}
+
 // ---------------------------------------------------------------------------
 // handler
 // ---------------------------------------------------------------------------
 
 // handler holds the dependencies needed to serve HTTP requests.
 type handler struct {
-	synth  Synthesizer
-	voices VoiceLister
-	opts   options
-	sem    chan struct{} // semaphore for worker pool
-	log    *slog.Logger
+	synth    Synthesizer
+	streamer StreamingSynthesizer // nil when streaming is not available
+	voices   VoiceLister
+	opts     options
+	sem      chan struct{} // semaphore for worker pool
+	log      *slog.Logger
 }
 
 // NewHandler returns an http.Handler that serves /health, /voices, and POST /tts.
@@ -110,10 +123,11 @@ func NewHandler(synth Synthesizer, voices VoiceLister, optFns ...Option) http.Ha
 	}
 
 	h := &handler{
-		synth:  synth,
-		voices: voices,
-		opts:   opts,
-		log:    opts.logger,
+		synth:    synth,
+		streamer: opts.streamer,
+		voices:   voices,
+		opts:     opts,
+		log:      opts.logger,
 	}
 	if opts.workers > 0 {
 		h.sem = make(chan struct{}, opts.workers)
@@ -123,6 +137,7 @@ func NewHandler(synth Synthesizer, voices VoiceLister, optFns ...Option) http.Ha
 	mux.HandleFunc("/health", h.handleHealth)
 	mux.HandleFunc("/voices", h.handleVoices)
 	mux.HandleFunc("/tts", h.handleTTS)
+	mux.HandleFunc("/tts/stream", h.handleTTSStream)
 	return mux
 }
 
@@ -183,15 +198,10 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Acquire a worker slot — honour context cancellation while waiting.
-	// In native backend mode, worker throttling can be disabled (sem == nil).
+	if !h.acquireWorker(r.Context(), w) {
+		return
+	}
 	if h.sem != nil {
-		select {
-		case h.sem <- struct{}{}:
-			// slot acquired
-		case <-r.Context().Done():
-			writeError(w, http.StatusServiceUnavailable, "request cancelled while waiting for worker")
-			return
-		}
 		defer func() { <-h.sem }()
 	}
 
@@ -236,6 +246,123 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(wav)
 }
 
+func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if h.streamer == nil {
+		writeError(w, http.StatusNotImplemented, "streaming not available for this backend")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+
+	if r.Body == nil {
+		writeError(w, http.StatusBadRequest, "request body is required")
+		return
+	}
+
+	var req ttsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+	if req.Text == "" {
+		writeError(w, http.StatusBadRequest, "text field is required")
+		return
+	}
+	if len(req.Text) > h.opts.maxTextBytes {
+		writeError(w, http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("text exceeds maximum size of %d bytes", h.opts.maxTextBytes))
+		return
+	}
+
+	if !h.acquireWorker(r.Context(), w) {
+		return
+	}
+	if h.sem != nil {
+		defer func() { <-h.sem }()
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), h.opts.requestTimeout)
+	defer cancel()
+
+	w.Header().Set("Content-Type", "audio/wav")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.WriteHeader(http.StatusOK)
+
+	if _, err := audio.WriteWAVHeaderStreaming(w); err != nil {
+		h.log.ErrorContext(r.Context(), "failed to write WAV header", slog.String("error", err.Error()))
+		return
+	}
+	flusher.Flush()
+
+	chunkCh := make(chan tts.PCMChunk, 2)
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- h.streamer.SynthesizeStream(ctx, req.Text, req.Voice, chunkCh)
+	}()
+
+	start := time.Now()
+	var totalSamples int
+	for chunk := range chunkCh {
+		totalSamples += len(chunk.Samples)
+		if _, err := audio.WritePCM16Samples(w, chunk.Samples); err != nil {
+			h.log.ErrorContext(r.Context(), "failed to write PCM chunk", slog.String("error", err.Error()))
+			cancel()
+			break
+		}
+		flusher.Flush()
+	}
+
+	if err := <-errCh; err != nil {
+		h.log.ErrorContext(r.Context(), "streaming synthesis failed",
+			slog.String("voice", req.Voice),
+			slog.Int("text_len", len(req.Text)),
+			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+			slog.String("error", err.Error()),
+		)
+		return
+	}
+
+	h.log.InfoContext(r.Context(), "streaming synthesis complete",
+		slog.String("voice", req.Voice),
+		slog.Int("text_len", len(req.Text)),
+		slog.Int64("duration_ms", time.Since(start).Milliseconds()),
+		slog.Int("total_samples", totalSamples),
+	)
+}
+
+// acquireWorker tries to acquire a worker slot from the semaphore.
+// Returns true on success. On failure (context cancelled) it writes an HTTP
+// error and returns false. When sem is nil (no throttling) it returns true
+// immediately.
+func (h *handler) acquireWorker(ctx context.Context, w http.ResponseWriter) bool {
+	if h.sem == nil {
+		return true
+	}
+	select {
+	case h.sem <- struct{}{}:
+		return true
+	default:
+		h.log.Info("request queued for worker slot")
+		select {
+		case h.sem <- struct{}{}:
+			return true
+		case <-ctx.Done():
+			writeError(w, http.StatusServiceUnavailable, "request cancelled while waiting for worker")
+			return false
+		}
+	}
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -277,7 +404,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return err
 	}
 
-	synth, voiceLister, workers, err := s.runtimeDeps(backend)
+	synth, voiceLister, workers, streamer, err := s.runtimeDeps(backend)
 	if err != nil {
 		return err
 	}
@@ -286,6 +413,9 @@ func (s *Server) Start(ctx context.Context) error {
 		WithWorkers(workers),
 		WithMaxTextBytes(s.cfg.Server.MaxTextBytes),
 		WithRequestTimeout(time.Duration(s.cfg.Server.RequestTimeout) * time.Second),
+	}
+	if streamer != nil {
+		handlerOpts = append(handlerOpts, WithStreamer(streamer))
 	}
 
 	h := NewHandler(synth, voiceLister, handlerOpts...)
@@ -330,7 +460,7 @@ func ProbeHTTP(addr string) error {
 	return nil
 }
 
-func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, error) {
+func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, StreamingSynthesizer, error) {
 	voices := loadVoiceLister()
 
 	switch backend {
@@ -342,20 +472,24 @@ func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, err
 			next.TTS.Backend = backend
 			svc, err = tts.NewService(next)
 			if err != nil {
-				return nil, nil, 0, fmt.Errorf("initialize native service: %w", err)
+				return nil, nil, 0, nil, fmt.Errorf("initialize native service: %w", err)
 			}
 		}
-		// Native mode does not use subprocess worker throttling.
-		return &nativeSynthesizer{svc: svc}, voices, 0, nil
+		workers := s.cfg.Server.Workers
+		if workers <= 0 {
+			workers = 2
+		}
+		ns := &nativeSynthesizer{svc: svc}
+		return ns, voices, workers, ns, nil
 	case config.BackendCLI:
 		workers := chooseWorkerLimit(s.cfg, backend)
 		return &cliSynthesizer{
 			executablePath: s.cfg.TTS.CLIPath,
 			configPath:     s.cfg.TTS.CLIConfigPath,
 			quiet:          s.cfg.TTS.Quiet,
-		}, voices, workers, nil
+		}, voices, workers, nil, nil
 	default:
-		return nil, nil, 0, fmt.Errorf("unsupported backend %q", backend)
+		return nil, nil, 0, nil, fmt.Errorf("unsupported backend %q", backend)
 	}
 }
 
@@ -390,12 +524,16 @@ type nativeSynthesizer struct {
 	svc *tts.Service
 }
 
-func (n *nativeSynthesizer) Synthesize(_ context.Context, text, voice string) ([]byte, error) {
-	samples, err := n.svc.Synthesize(text, voice)
+func (n *nativeSynthesizer) Synthesize(ctx context.Context, text, voice string) ([]byte, error) {
+	samples, err := n.svc.SynthesizeCtx(ctx, text, voice)
 	if err != nil {
 		return nil, err
 	}
 	return audio.EncodeWAV(samples)
+}
+
+func (n *nativeSynthesizer) SynthesizeStream(ctx context.Context, text, voice string, out chan<- tts.PCMChunk) error {
+	return n.svc.SynthesizeStream(ctx, text, voice, out)
 }
 
 type cliSynthesizer struct {

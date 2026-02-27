@@ -27,8 +27,8 @@ func newFlagBinder(defaults Config) *fakeBinder {
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Paths.ModelPath != "models/model.onnx" {
-		t.Errorf("ModelPath = %q; want %q", cfg.Paths.ModelPath, "models/model.onnx")
+	if cfg.Paths.ModelPath != "models/tts_b6369a24.safetensors" {
+		t.Errorf("ModelPath = %q; want %q", cfg.Paths.ModelPath, "models/tts_b6369a24.safetensors")
 	}
 	if cfg.Paths.VoicePath != "models/voice.bin" {
 		t.Errorf("VoicePath = %q; want %q", cfg.Paths.VoicePath, "models/voice.bin")
@@ -125,7 +125,7 @@ func TestRegisterFlags(t *testing.T) {
 		flag string
 		want string
 	}{
-		{"paths-model-path", "models/model.onnx"},
+		{"paths-model-path", "models/tts_b6369a24.safetensors"},
 		{"paths-voice-path", "models/voice.bin"},
 		{"server-listen-addr", ":8080"},
 		{"backend", "native-safetensors"},

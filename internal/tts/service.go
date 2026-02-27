@@ -97,7 +97,7 @@ func (s *Service) generateConfig(framesAfterEOS int) RuntimeGenerateConfig {
 	}
 }
 
-// Synthesize converts text to audio samples via ONNX inference.
+// Synthesize converts text to audio samples.
 // Text is preprocessed and split into ≤50-token chunks per the reference
 // implementation. Each chunk is generated independently and the resulting
 // PCM audio is concatenated.
@@ -106,24 +106,31 @@ func (s *Service) generateConfig(framesAfterEOS int) RuntimeGenerateConfig {
 // a voice embedding. The embedding is loaded and prepended to the text
 // conditioning for each chunk, enabling voice cloning.
 func (s *Service) Synthesize(input string, voicePath string) ([]float32, error) {
+	return s.SynthesizeCtx(context.Background(), input, voicePath)
+}
+
+// SynthesizeCtx is like Synthesize but accepts a context for cancellation and
+// deadline propagation from the HTTP handler or CLI.
+func (s *Service) SynthesizeCtx(ctx context.Context, input string, voicePath string) ([]float32, error) {
 	chunks, err := text.PrepareChunks(input, s.tokenizer, maxTokensPerChunk)
 	if err != nil {
 		return nil, fmt.Errorf("no tokens produced from input: %w", err)
 	}
 
-	// Load voice embedding if a path was provided.
 	voiceEmb, err := loadVoiceEmbedding(voicePath)
 	if err != nil {
 		return nil, err
 	}
 
-	ctx := context.Background()
-	var allAudio []float32
 	if s.runtime == nil {
 		return nil, fmt.Errorf("tts runtime unavailable")
 	}
 
+	var allAudio []float32
 	for i, chunk := range chunks {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		cfg := s.generateConfig(chunk.FramesAfterEOS())
 		cfg.VoiceEmbedding = voiceEmb
 
@@ -135,6 +142,49 @@ func (s *Service) Synthesize(input string, voicePath string) ([]float32, error) 
 	}
 
 	return allAudio, nil
+}
+
+// SynthesizeStream produces audio incrementally, sending one PCMChunk per
+// text chunk to out.  The channel is closed before the method returns.
+// The caller should range over out in a separate goroutine.
+func (s *Service) SynthesizeStream(ctx context.Context, input string, voicePath string, out chan<- PCMChunk) error {
+	defer close(out)
+
+	chunks, err := text.PrepareChunks(input, s.tokenizer, maxTokensPerChunk)
+	if err != nil {
+		return fmt.Errorf("no tokens produced from input: %w", err)
+	}
+
+	voiceEmb, err := loadVoiceEmbedding(voicePath)
+	if err != nil {
+		return err
+	}
+
+	if s.runtime == nil {
+		return fmt.Errorf("tts runtime unavailable")
+	}
+
+	for i, chunk := range chunks {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		cfg := s.generateConfig(chunk.FramesAfterEOS())
+		cfg.VoiceEmbedding = voiceEmb
+
+		pcm, err := s.runtime.GenerateAudio(ctx, chunk.TokenIDs, cfg)
+		if err != nil {
+			return fmt.Errorf("chunk %d: %w", i, err)
+		}
+
+		select {
+		case out <- PCMChunk{Samples: pcm, ChunkIndex: i, Final: i == len(chunks)-1}:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
 }
 
 func loadVoiceEmbedding(voicePath string) (*VoiceEmbedding, error) {
@@ -159,23 +209,15 @@ func (s *Service) Close() {
 }
 
 func resolveNativeModelPath(cfg config.Config) (string, error) {
-	candidates := []string{}
-	if p := strings.TrimSpace(cfg.Paths.ModelPath); strings.HasSuffix(strings.ToLower(p), ".safetensors") {
-		candidates = append(candidates, p)
+	p := strings.TrimSpace(cfg.Paths.ModelPath)
+	if p == "" {
+		return "", fmt.Errorf("safetensors model path is empty; set --paths-model-path")
 	}
-	candidates = append(candidates, "models/tts_b6369a24.safetensors")
-
-	for _, path := range candidates {
-		if path == "" {
-			continue
-		}
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		}
+	if !strings.HasSuffix(strings.ToLower(p), ".safetensors") {
+		return "", fmt.Errorf("model path %q does not end in .safetensors; set --paths-model-path to a .safetensors checkpoint", p)
 	}
-
-	return "", fmt.Errorf(
-		"safetensors model not found; set --paths-model-path to a .safetensors checkpoint (tried: %v)",
-		candidates,
-	)
+	if _, err := os.Stat(p); err != nil {
+		return "", fmt.Errorf("safetensors model not found at %q; run 'pockettts model download' or set --paths-model-path", p)
+	}
+	return p, nil
 }
