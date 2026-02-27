@@ -167,6 +167,33 @@
       .progress-bar-fill.done {
         background: #35cf70;
       }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .btn-spinner {
+        display: none;
+        width: 13px;
+        height: 13px;
+        border: 2px solid rgba(0, 24, 38, 0.35);
+        border-top-color: var(--accent-ink);
+        border-radius: 50%;
+        animation: spin 0.65s linear infinite;
+        flex-shrink: 0;
+      }
+
+      button.synthesizing {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+      }
+
+      button.synthesizing .btn-spinner {
+        display: block;
+      }
     </style>
   </head>
   <body>
@@ -187,7 +214,10 @@
 
           <span class="spacer"></span>
 
-          <button id="synthesize" class="primary" type="button" disabled>Synthesize</button>
+          <button id="synthesize" class="primary" type="button" disabled>
+            <span class="btn-spinner" aria-hidden="true"></span>
+            <span id="btn-label">Synthesize</span>
+          </button>
         </div>
 
         <div id="progress-wrap" class="progress-wrap">

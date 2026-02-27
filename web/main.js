@@ -18,6 +18,7 @@ const state = {
   modelBytesPromise: null,
   tokenizerBytesPromise: null,
   isSynthesizing: false,
+  textDirty: false,
   activeAudioURL: "",
   voiceManifest: null,
   voiceBytes: new Map(),
@@ -130,14 +131,21 @@ function hideProgress() {
   progressWrap.classList.remove("visible");
 }
 
+const btnLabel = document.getElementById("btn-label");
+
 function canSynthesize() {
-  return state.kernelReady && state.modelLoaded && selectedVoiceState() === "ready" && !state.isSynthesizing;
+  const baseReady = state.kernelReady && state.modelLoaded && selectedVoiceState() === "ready";
+  // Allow clicking again if the user edited the text while a synthesis is running.
+  return baseReady && (!state.isSynthesizing || state.textDirty);
 }
 
 function setSynthesizeEnabled() {
   const enabled = canSynthesize();
+  const showSpinner = state.isSynthesizing && !state.textDirty;
   synthBtn.disabled = !enabled;
-  synthBtn.classList.toggle("ready", enabled);
+  synthBtn.classList.toggle("ready", enabled && !showSpinner);
+  synthBtn.classList.toggle("synthesizing", showSpinner);
+  btnLabel.textContent = showSpinner ? "Synthesizing…" : "Synthesize";
 }
 
 async function fetchBytesWithProgress(url, onProgress) {
@@ -442,6 +450,7 @@ function handleSynthesize() {
   }
 
   state.isSynthesizing = true;
+  state.textDirty = false;
   setSynthesizeEnabled();
   showProgress("Synthesizing...", 0, false);
   setAction("Synthesizing...");
@@ -496,6 +505,12 @@ async function initApp() {
 }
 
 synthBtn.addEventListener("click", () => handleSynthesize());
+textArea.addEventListener("input", () => {
+  if (state.isSynthesizing && !state.textDirty) {
+    state.textDirty = true;
+    setSynthesizeEnabled();
+  }
+});
 voiceSelect.addEventListener("change", () => {
   renderInfo();
   setSynthesizeEnabled();
