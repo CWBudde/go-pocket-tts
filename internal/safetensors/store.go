@@ -242,7 +242,6 @@ func (s *Store) Close() {
 	s.names = nil
 }
 
-//nolint:gosec // Header length is bounds-checked against available data and platform int range.
 func decodeHeader(data []byte) (int, map[string]json.RawMessage, error) {
 	if len(data) < 8 {
 		return 0, nil, fmt.Errorf("safetensors: file too short (%d bytes)", len(data))
