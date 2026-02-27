@@ -68,7 +68,7 @@ func TestNativeSafetensorsRuntimeGenerateAudio_Guards(t *testing.T) {
 	})
 }
 
-func TestNativeSafetensorsRuntimeClose_NoPanic(t *testing.T) {
+func TestNativeSafetensorsRuntimeClose_NoPanic(_ *testing.T) {
 	var nilRuntime *nativeSafetensorsRuntime
 	nilRuntime.Close()
 

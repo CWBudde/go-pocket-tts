@@ -29,12 +29,15 @@ func TestMLPErrors(t *testing.T) {
 	x := mustTensorT(t, []float32{1, 2}, []int64{1, 2})
 	wGood := mustTensorT(t, []float32{1, 0, 0, 1}, []int64{2, 2})
 
-	if _, err := MLP(nil, wGood, nil, wGood, nil); err == nil || !strings.Contains(err.Error(), "first linear") {
+	_, err := MLP(nil, wGood, nil, wGood, nil)
+	if err == nil || !strings.Contains(err.Error(), "first linear") {
 		t.Fatalf("MLP(nil x) err = %v, want first linear error", err)
 	}
 
 	wBadSecond := mustTensorT(t, []float32{1, 2, 3}, []int64{1, 3})
-	if _, err := MLP(x, wGood, nil, wBadSecond, nil); err == nil || !strings.Contains(err.Error(), "second linear") {
+
+	_, err = MLP(x, wGood, nil, wBadSecond, nil)
+	if err == nil || !strings.Contains(err.Error(), "second linear") {
 		t.Fatalf("MLP(bad second linear) err = %v, want second linear error", err)
 	}
 }
