@@ -382,28 +382,28 @@ func (t *flowTransformer) forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 	return x, nil
 }
 
-func (t *flowTransformer) prefill(x *tensor.Tensor, state *flowTransformerState) (*tensor.Tensor, error) {
+func (t *flowTransformer) prefill(x *tensor.Tensor, state *flowTransformerState) error {
 	if t == nil {
-		return nil, errors.New("native: flow transformer is nil")
+		return errors.New("native: flow transformer is nil")
 	}
 
 	if state == nil {
-		return nil, errors.New("native: flow transformer state is nil")
+		return errors.New("native: flow transformer state is nil")
 	}
 
 	if len(state.layers) != len(t.layers) {
-		return nil, fmt.Errorf("native: flow transformer state layer count %d does not match transformer layers %d", len(state.layers), len(t.layers))
+		return fmt.Errorf("native: flow transformer state layer count %d does not match transformer layers %d", len(state.layers), len(t.layers))
 	}
 
 	var err error
 	for i, layer := range t.layers {
 		x, err = layer.forwardWithState(x, t.ropeCos, t.ropeSin, &state.layers[i], false)
 		if err != nil {
-			return nil, fmt.Errorf("native: transformer prefill layer %d: %w", i, err)
+			return fmt.Errorf("native: transformer prefill layer %d: %w", i, err)
 		}
 	}
 
-	return x, nil
+	return nil
 }
 
 func (t *flowTransformer) step(x *tensor.Tensor, state *flowTransformerState) (*tensor.Tensor, error) {

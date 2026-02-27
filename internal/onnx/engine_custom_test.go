@@ -51,12 +51,12 @@ func TestNewEngineWithRunners_CopiesInputMap(t *testing.T) {
 
 func TestEngineRunnerAndClose(t *testing.T) {
 	spy := &closeSpyRunner{name: "spy"}
-	real := &Runner{name: "real"}
+	realRunner := &Runner{name: "real"}
 
 	e := &Engine{
 		runners: map[string]GraphRunner{
 			"spy":  spy,
-			"real": real,
+			"real": realRunner,
 		},
 	}
 

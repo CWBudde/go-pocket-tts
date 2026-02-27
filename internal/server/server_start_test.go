@@ -64,7 +64,9 @@ func TestStart_CLIBackend_LifecycleHealthAndShutdown(t *testing.T) {
 	}
 
 	var body map[string]string
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+
+	err = json.NewDecoder(resp.Body).Decode(&body)
+	if err != nil {
 		t.Fatalf("decode /health: %v", err)
 	}
 

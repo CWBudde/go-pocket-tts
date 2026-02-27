@@ -171,17 +171,17 @@ func TestFlowTransformerStateGuards(t *testing.T) {
 
 	x := mustTensorN(t, []float32{1, 2, 3, 4}, []int64{1, 1, 4})
 
-	_, err = nilTransformer.prefill(x, state)
+	err = nilTransformer.prefill(x, state)
 	if err == nil || !strings.Contains(err.Error(), "flow transformer is nil") {
 		t.Fatalf("expected nil transformer error, got: %v", err)
 	}
 
-	_, err = tfm.prefill(x, nil)
+	err = tfm.prefill(x, nil)
 	if err == nil || !strings.Contains(err.Error(), "state is nil") {
 		t.Fatalf("expected nil state error, got: %v", err)
 	}
 
-	_, err = tfm.prefill(x, &flowTransformerState{})
+	err = tfm.prefill(x, &flowTransformerState{})
 	if err == nil || !strings.Contains(err.Error(), "state layer count") {
 		t.Fatalf("expected layer count mismatch error, got: %v", err)
 	}

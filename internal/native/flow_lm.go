@@ -164,7 +164,7 @@ func (f *FlowLM) PromptText(state *FlowLMState, textEmbeddings *tensor.Tensor) e
 		return nil
 	}
 
-	_, err := f.transformer.prefill(textEmbeddings, state.transformer)
+	err := f.transformer.prefill(textEmbeddings, state.transformer)
 	if err != nil {
 		return err
 	}

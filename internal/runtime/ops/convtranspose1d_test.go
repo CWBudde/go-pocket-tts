@@ -85,7 +85,8 @@ func TestConvTranspose1DPrePacked(t *testing.T) {
 	}, []int64{2, 2, 2})
 	bias := mustTensorT(t, []float32{0.5, -0.5}, []int64{2})
 
-	if _, err := ConvTranspose1DPrePacked(input, kernel, bias, nil, 1, 0, 0, 1, 2); err == nil || !strings.Contains(err.Error(), "requires groups=1") {
+	_, err := ConvTranspose1DPrePacked(input, kernel, bias, nil, 1, 0, 0, 1, 2)
+	if err == nil || !strings.Contains(err.Error(), "requires groups=1") {
 		t.Fatalf("ConvTranspose1DPrePacked(groups=2) err = %v, want groups error", err)
 	}
 
@@ -103,7 +104,8 @@ func TestConvTranspose1DPrePacked(t *testing.T) {
 		t.Fatalf("ConvTranspose1DPrePacked(nil packed) = %v, want %v", gotNilPacked.Data(), want.Data())
 	}
 
-	if _, err := ConvTranspose1DPrePacked(input, kernel, bias, make([]float32, 3), 1, 0, 0, 1, 1); err == nil || !strings.Contains(err.Error(), "length mismatch") {
+	_, err = ConvTranspose1DPrePacked(input, kernel, bias, make([]float32, 3), 1, 0, 0, 1, 1)
+	if err == nil || !strings.Contains(err.Error(), "length mismatch") {
 		t.Fatalf("ConvTranspose1DPrePacked(length mismatch) err = %v, want mismatch error", err)
 	}
 

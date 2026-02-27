@@ -49,23 +49,29 @@ func TestAttentionCausal(t *testing.T) {
 }
 
 func TestCausalMaskErrors(t *testing.T) {
-	if _, err := CausalMask(nil, 0); err == nil || !strings.Contains(err.Error(), "is nil") {
+	_, err := CausalMask(nil, 0)
+	if err == nil || !strings.Contains(err.Error(), "is nil") {
 		t.Fatalf("CausalMask(nil) err = %v, want nil input error", err)
 	}
 
 	sRank1 := mustTensorT(t, []float32{1, 2, 3}, []int64{3})
-	if _, err := CausalMask(sRank1, 0); err == nil || !strings.Contains(err.Error(), "rank >= 2") {
+	_, err = CausalMask(sRank1, 0)
+
+	if err == nil || !strings.Contains(err.Error(), "rank >= 2") {
 		t.Fatalf("CausalMask(rank1) err = %v, want rank error", err)
 	}
 
 	sZeroQ := mustTensorT(t, []float32{}, []int64{1, 0, 2})
-	if _, err := CausalMask(sZeroQ, 0); err == nil || !strings.Contains(err.Error(), "positive query/key") {
+	_, err = CausalMask(sZeroQ, 0)
+
+	if err == nil || !strings.Contains(err.Error(), "positive query/key") {
 		t.Fatalf("CausalMask(zero q) err = %v, want positive dims error", err)
 	}
 }
 
 func TestAttentionErrors(t *testing.T) {
-	if _, err := Attention(nil, nil, nil, false, 0); err == nil || !strings.Contains(err.Error(), "non-nil") {
+	_, err := Attention(nil, nil, nil, false, 0)
+	if err == nil || !strings.Contains(err.Error(), "non-nil") {
 		t.Fatalf("Attention(nil) err = %v, want nil input error", err)
 	}
 
@@ -73,7 +79,9 @@ func TestAttentionErrors(t *testing.T) {
 	kRank1 := mustTensorT(t, []float32{1, 2}, []int64{2})
 
 	vRank1 := mustTensorT(t, []float32{1, 2}, []int64{2})
-	if _, err := Attention(qRank1, kRank1, vRank1, false, 0); err == nil || !strings.Contains(err.Error(), "rank >= 2") {
+
+	_, err = Attention(qRank1, kRank1, vRank1, false, 0)
+	if err == nil || !strings.Contains(err.Error(), "rank >= 2") {
 		t.Fatalf("Attention(rank1) err = %v, want rank error", err)
 	}
 
@@ -81,14 +89,18 @@ func TestAttentionErrors(t *testing.T) {
 	kBadD := mustTensorT(t, make([]float32, 8), []int64{1, 2, 4})
 
 	v := mustTensorT(t, make([]float32, 4), []int64{1, 2, 2})
-	if _, err := Attention(q, kBadD, v, false, 0); err == nil || !strings.Contains(err.Error(), "depth mismatch") {
+
+	_, err = Attention(q, kBadD, v, false, 0)
+	if err == nil || !strings.Contains(err.Error(), "depth mismatch") {
 		t.Fatalf("Attention(depth mismatch) err = %v, want depth mismatch error", err)
 	}
 
 	k := mustTensorT(t, make([]float32, 6), []int64{1, 2, 3})
 
 	vBadSeq := mustTensorT(t, make([]float32, 3), []int64{1, 1, 3})
-	if _, err := Attention(q, k, vBadSeq, false, 0); err == nil || !strings.Contains(err.Error(), "sequence mismatch") {
+
+	_, err = Attention(q, k, vBadSeq, false, 0)
+	if err == nil || !strings.Contains(err.Error(), "sequence mismatch") {
 		t.Fatalf("Attention(sequence mismatch) err = %v, want sequence mismatch error", err)
 	}
 }
