@@ -45,13 +45,15 @@ func VerifyONNX(opts VerifyOptions) error {
 
 	for _, session := range sm.Sessions() {
 		for _, input := range session.Inputs {
-			if _, err := onnx.NewZeroTensor(input.DType, input.Shape); err != nil {
+			_, err = onnx.NewZeroTensor(input.DType, input.Shape)
+			if err != nil {
 				return fmt.Errorf("session %q input %q invalid: %w", session.Name, input.Name, err)
 			}
 		}
 	}
 
-	if err := runNativeVerify(sm.Sessions(), opts); err != nil {
+	err = runNativeVerify(sm.Sessions(), opts)
+	if err != nil {
 		return err
 	}
 

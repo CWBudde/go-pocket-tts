@@ -38,7 +38,9 @@ func TestExistingMatches(t *testing.T) {
 	tmp := t.TempDir()
 
 	p := filepath.Join(tmp, "x.bin")
-	if err := os.WriteFile(p, []byte("hello"), 0o644); err != nil {
+
+	err := os.WriteFile(p, []byte("hello"), 0o644)
+	if err != nil {
 		t.Fatalf("write file: %v", err)
 	}
 

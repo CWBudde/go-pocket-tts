@@ -63,7 +63,8 @@ func resolveScriptPath(rel string) (string, error) {
 		filepath.Join(cwd, "..", "..", rel),
 	}
 	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
+		_, err := os.Stat(p)
+		if err == nil {
 			return filepath.Clean(p), nil
 		}
 	}

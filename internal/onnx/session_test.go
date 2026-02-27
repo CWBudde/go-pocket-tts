@@ -41,7 +41,9 @@ func TestNewSessionManagerLoadsManifest(t *testing.T) {
 }`
 
 	manifestPath := filepath.Join(tmp, "manifest.json")
-	if err := os.WriteFile(manifestPath, []byte(manifest), 0o644); err != nil {
+
+	err := os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 
@@ -84,7 +86,8 @@ func TestNewSessionManagerRejectsMissingFile(t *testing.T) {
 		t.Fatalf("write manifest: %v", err)
 	}
 
-	if _, err := NewSessionManager(manifestPath); err == nil {
+	_, err = NewSessionManager(manifestPath)
+	if err == nil {
 		t.Fatal("expected error for missing onnx file")
 	}
 }
@@ -97,11 +100,13 @@ func TestLoadSessionsOnceKeepsFirstManifest(t *testing.T) {
 	firstFile := filepath.Join(tmp, "a.onnx")
 	secondFile := filepath.Join(tmp, "b.onnx")
 
-	if err := os.WriteFile(firstFile, []byte("a"), 0o644); err != nil {
+	err := os.WriteFile(firstFile, []byte("a"), 0o644)
+	if err != nil {
 		t.Fatalf("write first file: %v", err)
 	}
 
-	if err := os.WriteFile(secondFile, []byte("b"), 0o644); err != nil {
+	err = os.WriteFile(secondFile, []byte("b"), 0o644)
+	if err != nil {
 		t.Fatalf("write second file: %v", err)
 	}
 

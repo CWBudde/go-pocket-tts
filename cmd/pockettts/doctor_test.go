@@ -141,17 +141,22 @@ func TestCollectVoiceFiles_PathResolvedRelativeToManifest(t *testing.T) {
 	tmp := t.TempDir()
 
 	voiceDir := filepath.Join(tmp, "voices")
-	if err := os.MkdirAll(voiceDir, 0o755); err != nil {
+	err := os.MkdirAll(voiceDir, 0o755)
+
+	if err != nil {
 		t.Fatalf("MkdirAll voiceDir: %v", err)
 	}
 
 	// Voice file lives next to the manifest, not at the project root.
-	if err := os.WriteFile(filepath.Join(voiceDir, "mimi.safetensors"), []byte("dummy"), 0o644); err != nil {
+	err = os.WriteFile(filepath.Join(voiceDir, "mimi.safetensors"), []byte("dummy"), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile voice: %v", err)
 	}
 
 	manifest := `{"voices":[{"id":"mimi","path":"mimi.safetensors","license":"CC-BY-4.0"}]}`
-	if err := os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+	err = os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644)
+
+	if err != nil {
 		t.Fatalf("WriteFile manifest: %v", err)
 	}
 

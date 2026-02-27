@@ -36,6 +36,7 @@ func NewVoiceManager(manifestPath string) (*VoiceManager, error) {
 	}
 
 	var manifest voiceManifest
+
 	err = json.Unmarshal(data, &manifest)
 	if err != nil {
 		return nil, fmt.Errorf("decode voice manifest: %w", err)

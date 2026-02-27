@@ -121,7 +121,9 @@ func TestExistingMatches_ChecksumMismatch(t *testing.T) {
 	tmp := t.TempDir()
 
 	p := filepath.Join(tmp, "f.bin")
-	if err := os.WriteFile(p, []byte("data"), 0o644); err != nil {
+
+	err := os.WriteFile(p, []byte("data"), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -140,7 +142,9 @@ func TestExistingMatches_ChecksumMatch(t *testing.T) {
 	p := filepath.Join(tmp, "f.bin")
 
 	content := []byte("hello world")
-	if err := os.WriteFile(p, content, 0o644); err != nil {
+
+	err := os.WriteFile(p, content, 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -166,7 +170,8 @@ func TestFileSHA256_KnownContent(t *testing.T) {
 	p := filepath.Join(tmp, "f.bin")
 
 	content := []byte("test content")
-	if err := os.WriteFile(p, content, 0o644); err != nil {
+	err := os.WriteFile(p, content, 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -194,7 +199,8 @@ func TestFileSHA256_EmptyFile(t *testing.T) {
 	tmp := t.TempDir()
 
 	p := filepath.Join(tmp, "empty.bin")
-	if err := os.WriteFile(p, []byte{}, 0o644); err != nil {
+	err := os.WriteFile(p, []byte{}, 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -534,7 +540,8 @@ func TestDownload_SkipExistingFile(t *testing.T) {
 	}
 
 	lockPath := filepath.Join(outDir, "download-manifest.lock.json")
-	if err := writeLockManifest(lockPath, lock); err != nil {
+	err := writeLockManifest(lockPath, lock)
+	if err != nil {
 		t.Fatalf("writeLockManifest: %v", err)
 	}
 
