@@ -47,7 +47,7 @@ func TestTextConditioner_EmptyTokens(t *testing.T) {
 		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
 			// Should not be called.
 			t.Error("Run should not be called for empty tokens")
-			return nil, nil
+			return map[string]*Tensor{}, nil
 		},
 	}
 	e := engineWithFakeRunners(map[string]runnerIface{"text_conditioner": fake})

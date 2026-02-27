@@ -46,7 +46,11 @@ func (s *stubStreamingSynthesizer) SynthesizeStream(ctx context.Context, _, _ st
 }
 
 func postStreamJSON(h http.Handler, body any) *httptest.ResponseRecorder {
-	b, _ := json.Marshal(body)
+	b, err := json.Marshal(body)
+	if err != nil {
+		panic(err)
+	}
+
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/tts/stream", bytes.NewReader(b))
 	h.ServeHTTP(rec, req)

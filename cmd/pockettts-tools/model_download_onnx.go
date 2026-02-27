@@ -22,7 +22,7 @@ func newModelDownloadONNXCmd() *cobra.Command {
 		Long: "Download a prebuilt ONNX bundle (zip/tar.gz), verify checksum, extract into models/onnx,\n" +
 			"and validate manifest + required graph files.\n\n" +
 			"By default this resolves bundle metadata from bundles/onnx-bundles.lock.json.",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			err := model.DownloadONNXBundle(model.DownloadONNXBundleOptions{
 				BundleID:  bundleID,
 				Variant:   variant,

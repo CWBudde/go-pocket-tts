@@ -10,7 +10,7 @@ import (
 func resetSessionOnceForTest() {
 	sessionMgrOnce = sync.Once{}
 	sessionMgr = nil
-	sessionMgrErr = nil
+	errSessionMgr = nil
 }
 
 func TestNewSessionManagerLoadsManifest(t *testing.T) {

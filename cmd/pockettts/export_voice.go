@@ -61,7 +61,7 @@ func newExportVoiceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "export-voice",
 		Short: "Export a voice embedding (.safetensors) from a WAV/PCM prompt",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := requireConfig()
 			if err != nil {
 				return err

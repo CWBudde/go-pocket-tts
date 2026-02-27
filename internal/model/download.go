@@ -23,12 +23,12 @@ type DownloadOptions struct {
 	Stderr  io.Writer
 }
 
-type ErrAccessDenied struct {
+type AccessDeniedError struct {
 	Repo string
 	Msg  string
 }
 
-func (e *ErrAccessDenied) Error() string {
+func (e *AccessDeniedError) Error() string {
 	if e.Msg != "" {
 		return e.Msg
 	}
@@ -198,7 +198,7 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return "", &ErrAccessDenied{
+		return "", &AccessDeniedError{
 			Repo: repo,
 			Msg:  fmt.Sprintf("access denied for %s; provide HF_TOKEN or --hf-token", repo),
 		}
@@ -289,7 +289,7 @@ func resolveChecksumFromMetadata(client *http.Client, repo string, f ModelFile, 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return "", &ErrAccessDenied{
+		return "", &AccessDeniedError{
 			Repo: repo,
 			Msg:  fmt.Sprintf("access denied for %s; provide HF_TOKEN or --hf-token", repo),
 		}
@@ -373,7 +373,7 @@ func writeLockManifest(path string, lock lockManifest) error {
 		return fmt.Errorf("encode lock manifest: %w", err)
 	}
 
-	if err := os.WriteFile(path, b, 0o644); err != nil {
+	if err := os.WriteFile(path, b, 0o600); err != nil {
 		return fmt.Errorf("write lock manifest: %w", err)
 	}
 

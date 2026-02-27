@@ -19,7 +19,7 @@ func newModelDownloadCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "download",
 		Short: "Download PocketTTS model files from Hugging Face",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			if hfToken == "" {
 				hfToken = os.Getenv("HF_TOKEN")
 			}

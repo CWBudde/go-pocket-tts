@@ -198,11 +198,12 @@ func TestLoad_FlagOverride(t *testing.T) {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	RegisterFlags(fs, defaults)
 
-	if err := fs.Parse([]string{
+	err := fs.Parse([]string{
 		"--backend=cli",
 		"--workers=8",
 		"--log-level=debug",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("Parse() error = %v", err)
 	}
 
@@ -261,7 +262,9 @@ server:
 tts:
   backend: cli
 `
-	if err := os.WriteFile(cfgFile, []byte(content), 0o644); err != nil {
+
+	err := os.WriteFile(cfgFile, []byte(content), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -272,12 +275,13 @@ tts:
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	RegisterFlags(fs, defaults)
 
-	if err := fs.Parse([]string{
+	err = fs.Parse([]string{
 		"--log-level=error",
 		"--workers=16",
 		"--server-listen-addr=:7777",
 		"--backend=cli",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 
@@ -312,7 +316,9 @@ func TestLoad_ConfigFileExists_NoError(t *testing.T) {
 	dir := t.TempDir()
 
 	cfgFile := filepath.Join(dir, "pockettts.yaml")
-	if err := os.WriteFile(cfgFile, []byte("log_level: warn\n"), 0o644); err != nil {
+
+	err := os.WriteFile(cfgFile, []byte("log_level: warn\n"), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -333,11 +339,12 @@ func TestLoad_InvalidConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	cfgFile := filepath.Join(dir, "bad.yaml")
 	// Write invalid YAML
-	if err := os.WriteFile(cfgFile, []byte(":\t:bad yaml:::"), 0o644); err != nil {
+	err := os.WriteFile(cfgFile, []byte(":\t:bad yaml:::"), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	_, err := Load(LoadOptions{
+	_, err = Load(LoadOptions{
 		ConfigFile: cfgFile,
 		Defaults:   DefaultConfig(),
 	})
@@ -385,7 +392,8 @@ func TestLoad_FlagOverride_TokenizerModel(t *testing.T) {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	RegisterFlags(fs, defaults)
 
-	if err := fs.Parse([]string{"--paths-tokenizer-model=/custom/tokenizer.model"}); err != nil {
+	err := fs.Parse([]string{"--paths-tokenizer-model=/custom/tokenizer.model"})
+	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 

@@ -10,36 +10,38 @@ import (
 	"strings"
 )
 
+const defaultPythonBin = "python3"
+
 func detectPocketTTSPython() string {
 	pocketBin, err := exec.LookPath("pocket-tts")
 	if err != nil {
-		return "python3"
+		return defaultPythonBin
 	}
 
 	fh, err := os.Open(pocketBin)
 	if err != nil {
-		return "python3"
+		return defaultPythonBin
 	}
 
 	defer func() { _ = fh.Close() }()
 
 	s := bufio.NewScanner(fh)
 	if !s.Scan() {
-		return "python3"
+		return defaultPythonBin
 	}
 
 	line := strings.TrimSpace(s.Text())
 	if !strings.HasPrefix(line, "#!") {
-		return "python3"
+		return defaultPythonBin
 	}
 
 	interpreter := strings.TrimSpace(strings.TrimPrefix(line, "#!"))
 	if interpreter == "" {
-		return "python3"
+		return defaultPythonBin
 	}
 
 	if _, err := os.Stat(interpreter); err != nil {
-		return "python3"
+		return defaultPythonBin
 	}
 
 	return interpreter

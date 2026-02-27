@@ -238,5 +238,9 @@ func FormatJSON(runs []RunResult, stats Stats, w io.Writer) {
 
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(jr)
+
+	err := enc.Encode(jr)
+	if err != nil {
+		return
+	}
 }

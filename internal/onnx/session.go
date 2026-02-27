@@ -34,7 +34,7 @@ type SessionManager struct {
 var (
 	sessionMgrOnce sync.Once
 	sessionMgr     *SessionManager
-	sessionMgrErr  error
+	errSessionMgr  error
 )
 
 type onnxManifest struct {
@@ -121,11 +121,11 @@ func NewSessionManager(manifestPath string) (*SessionManager, error) {
 // Reloading is intentionally not supported in MVP; restart the process to reload.
 func LoadSessionsOnce(manifestPath string) (*SessionManager, error) {
 	sessionMgrOnce.Do(func() {
-		sessionMgr, sessionMgrErr = NewSessionManager(manifestPath)
+		sessionMgr, errSessionMgr = NewSessionManager(manifestPath)
 	})
 
-	if sessionMgrErr != nil {
-		return nil, sessionMgrErr
+	if errSessionMgr != nil {
+		return nil, errSessionMgr
 	}
 
 	return sessionMgr, nil

@@ -79,7 +79,12 @@ func getScratch(n int) []float32 {
 	}
 
 	if v := scratchPools[cls].Get(); v != nil {
-		buf := *v.(*[]float32)
+		bufPtr, ok := v.(*[]float32)
+		if !ok || bufPtr == nil {
+			return make([]float32, n)
+		}
+
+		buf := *bufPtr
 		// The backing array may be larger than n; re-slice and zero.
 		buf = buf[:n]
 		for i := range buf {

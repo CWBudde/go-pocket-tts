@@ -20,7 +20,7 @@ func newModelVerifyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "verify",
 		Short: "Run smoke inference / validation for the configured backend",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := requireConfig()
 			if err != nil {
 				return err

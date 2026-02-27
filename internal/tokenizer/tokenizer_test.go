@@ -18,7 +18,9 @@ func modelPath(t *testing.T) string {
 
 	for {
 		candidate := filepath.Join(dir, "models", "tokenizer.model")
-		if _, err := os.Stat(candidate); err == nil {
+
+		_, err = os.Stat(candidate)
+		if err == nil {
 			return candidate
 		}
 

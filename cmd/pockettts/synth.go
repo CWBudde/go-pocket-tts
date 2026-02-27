@@ -359,7 +359,7 @@ func writeSynthOutput(outPath string, wavData []byte, stdout io.Writer) error {
 		return err
 	}
 
-	return os.WriteFile(outPath, wavData, 0o644)
+	return os.WriteFile(outPath, wavData, 0o600)
 }
 
 func readSynthText(text string, stdin io.Reader) (string, error) {
@@ -394,6 +394,8 @@ func resolveSynthBackend(flagBackend, cfgBackend string) (string, error) {
 // returning the raw voice string for the CLI), an unresolved ID here means no
 // voice file — we return an empty string so Synthesize skips voice conditioning.
 func resolveVoiceForNative(voice string) (string, error) {
+	manifestPath := filepath.Join("voices", "manifest.json")
+
 	if strings.TrimSpace(voice) == "" {
 		return "", nil
 	}
@@ -404,20 +406,26 @@ func resolveVoiceForNative(voice string) (string, error) {
 		return voice, nil
 	}
 
+	if _, statErr := os.Stat(manifestPath); os.IsNotExist(statErr) {
+		// Manifest missing — skip voice conditioning.
+		return "", nil
+	} else if statErr != nil {
+		return "", fmt.Errorf("stat voice manifest: %w", statErr)
+	}
+
 	// Resolve voice ID via the manifest.
-	vm, err := tts.NewVoiceManager(filepath.Join("voices", "manifest.json"))
+	vm, err := tts.NewVoiceManager(manifestPath)
 	if err != nil {
-		// Manifest missing or unreadable — skip voice conditioning.
+		return "", fmt.Errorf("load voice manifest: %w", err)
+	}
+
+	if !manifestContainsVoice(vm, voice) {
+		// Not in manifest — skip voice conditioning rather than error.
 		return "", nil
 	}
 
 	path, err := vm.ResolvePath(voice)
 	if err != nil {
-		if strings.Contains(err.Error(), "unknown voice id") {
-			// Not in manifest — skip voice conditioning rather than error.
-			return "", nil
-		}
-
 		return "", fmt.Errorf("resolve --voice %q: %w", voice, err)
 	}
 
@@ -425,27 +433,45 @@ func resolveVoiceForNative(voice string) (string, error) {
 }
 
 func resolveVoiceOrPath(voice string) (string, error) {
+	manifestPath := filepath.Join("voices", "manifest.json")
+
 	if strings.TrimSpace(voice) == "" {
 		return "", nil
 	}
 
-	vm, err := tts.NewVoiceManager(filepath.Join("voices", "manifest.json"))
-	if err != nil {
+	if _, statErr := os.Stat(manifestPath); os.IsNotExist(statErr) {
 		// Manifest is optional for integration and built-in voices; fall back.
+		return voice, nil
+	} else if statErr != nil {
+		return "", fmt.Errorf("stat voice manifest: %w", statErr)
+	}
+
+	vm, err := tts.NewVoiceManager(manifestPath)
+	if err != nil {
+		return "", fmt.Errorf("load voice manifest: %w", err)
+	}
+
+	if !manifestContainsVoice(vm, voice) {
+		// If voice is not declared in manifest, treat it as a raw CLI voice value.
 		return voice, nil
 	}
 
 	path, err := vm.ResolvePath(voice)
 	if err != nil {
-		// If voice is not declared in manifest, treat it as a raw CLI voice value.
-		if strings.Contains(err.Error(), "unknown voice id") {
-			return voice, nil
-		}
-
 		return "", fmt.Errorf("resolve --voice %q: %w", voice, err)
 	}
 
 	return path, nil
+}
+
+func manifestContainsVoice(vm *tts.VoiceManager, voice string) bool {
+	for _, declared := range vm.ListVoices() {
+		if declared.ID == voice {
+			return true
+		}
+	}
+
+	return false
 }
 
 func buildPassthroughArgs(items []string) ([]string, error) {

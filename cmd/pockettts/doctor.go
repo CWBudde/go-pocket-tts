@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -20,7 +21,7 @@ func newDoctorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Run local runtime and model checks",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			cfg, err := requireConfig()
 			if err != nil {
 				return err
@@ -44,11 +45,9 @@ func newDoctorCmd() *cobra.Command {
 					return probePocketTTSVersion(exe)
 				},
 				SkipPocketTTS: nativeMode,
-				PythonVersion: func() (string, error) {
-					return probePythonVersion()
-				},
-				SkipPython: nativeMode,
-				VoiceFiles: collectVoiceFiles(),
+				PythonVersion: probePythonVersion,
+				SkipPython:    nativeMode,
+				VoiceFiles:    collectVoiceFiles(),
 			}
 			if backend == config.BackendNative {
 				dcfg.NativeModelPath = cfg.Paths.ModelPath
@@ -70,12 +69,13 @@ func newDoctorCmd() *cobra.Command {
 				)
 			} else if _, statErr := os.Stat(onnxManifest); os.IsNotExist(statErr) {
 				_, _ = fmt.Fprintf(os.Stdout, "%s model verify: skipped (no manifest at %s)\n", doctor.PassMark, onnxManifest)
-			} else if err := model.VerifyONNX(model.VerifyOptions{
-				ManifestPath: onnxManifest,
-				ORTLibrary:   cfg.Runtime.ORTLibraryPath,
-				Stdout:       os.Stdout,
-				Stderr:       os.Stderr,
-			}); err != nil {
+			} else err := model.VerifyONNX(model.VerifyOptions{
+	ManifestPath:	onnxManifest,
+	ORTLibrary:	cfg.Runtime.ORTLibraryPath,
+	Stdout:		os.Stdout,
+	Stderr:		os.Stderr,
+})
+if  err != nil {
 				result.AddFailure(fmt.Sprintf("model verify: %v", err))
 				_, _ = fmt.Fprintf(os.Stdout, "%s model verify: %v\n", doctor.FailMark, err)
 			} else {
@@ -101,7 +101,7 @@ func newDoctorCmd() *cobra.Command {
 
 // probePocketTTSVersion runs `pocket-tts --version` and returns its output.
 func probePocketTTSVersion(exe string) (string, error) {
-	out, err := exec.Command(exe, "--version").Output() 
+	out, err := exec.CommandContext(context.Background(), exe, "--version").Output()
 	if err != nil {
 		return "", fmt.Errorf("%s --version failed: %w", exe, err)
 	}
@@ -112,7 +112,7 @@ func probePocketTTSVersion(exe string) (string, error) {
 // probePythonVersion tries python3 then python and returns the version string.
 func probePythonVersion() (string, error) {
 	for _, bin := range []string{"python3", "python"} {
-		out, err := exec.Command(bin, "--version").Output() 
+		out, err := exec.CommandContext(context.Background(), bin, "--version").Output()
 		if err != nil {
 			continue
 		}
