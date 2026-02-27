@@ -342,9 +342,17 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 
 	allAudio := make([]float32, 0, audio.ExpectedSampleRate)
 	totalTokens := 0
+	nChunks := len(chunks)
 	for i, chunk := range chunks {
-		pct := 20 + int((float64(i)/float64(len(chunks)))*70)
-		progress.Emit("synthesize", pct, 100, fmt.Sprintf("chunk %d/%d", i+1, len(chunks)))
+		chunkStart := 20 + int((float64(i)/float64(nChunks))*70)
+		chunkWidth := int(70.0 / float64(nChunks))
+
+		progress.Emit("synthesize", chunkStart, 100, fmt.Sprintf("chunk %d/%d · step 0", i+1, nChunks))
+
+		maxSteps := opts.MaxSteps
+		if maxSteps <= 0 {
+			maxSteps = 256
+		}
 
 		cfg := tts.RuntimeGenerateConfig{
 			Temperature:    opts.Temperature,
@@ -353,6 +361,15 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 			LSDDecodeSteps: opts.LSDDecodeSteps,
 			FramesAfterEOS: chunk.FramesAfterEOS(),
 			VoiceEmbedding: voiceEmb,
+			StepCallback: func(step, _ int) {
+				stepPct := 0
+				if maxSteps > 0 {
+					stepPct = int((float64(step) / float64(maxSteps)) * float64(chunkWidth))
+				}
+				pct := chunkStart + stepPct
+				detail := fmt.Sprintf("chunk %d/%d · step %d", i+1, nChunks, step)
+				progress.Emit("synthesize", pct, 100, detail)
+			},
 		}
 
 		pcm, genErr := currentEngine.runtime.GenerateAudio(context.Background(), chunk.TokenIDs, cfg)
