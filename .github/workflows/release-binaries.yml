@@ -1,0 +1,108 @@
+name: Release Binaries
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.goos }}-${{ matrix.goarch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            runner: ubuntu-latest
+            archive_ext: tar.gz
+          - goos: linux
+            goarch: arm64
+            runner: ubuntu-latest
+            archive_ext: tar.gz
+          - goos: darwin
+            goarch: amd64
+            runner: macos-latest
+            archive_ext: tar.gz
+          - goos: darwin
+            goarch: arm64
+            runner: macos-latest
+            archive_ext: tar.gz
+          - goos: windows
+            goarch: amd64
+            runner: windows-latest
+            archive_ext: zip
+          - goos: windows
+            goarch: arm64
+            runner: windows-latest
+            archive_ext: zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 1.25.x
+
+      - name: Build binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+
+          ext=""
+          if [[ "${{ matrix.goos }}" == "windows" ]]; then
+            ext=".exe"
+          fi
+
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 go build -trimpath -o "dist/pockettts${ext}" ./cmd/pockettts
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 go build -trimpath -o "dist/pockettts-tools${ext}" ./cmd/pockettts-tools
+
+      - name: Package binaries
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          archive_base="go-pocket-tts_${tag}_${{ matrix.goos }}_${{ matrix.goarch }}"
+          mkdir -p release
+
+          if [[ "${{ matrix.archive_ext }}" == "zip" ]]; then
+            (cd dist && zip -q "../release/${archive_base}.zip" ./*)
+            echo "asset=release/${archive_base}.zip" >> "$GITHUB_OUTPUT"
+          else
+            tar -C dist -czf "release/${archive_base}.tar.gz" .
+            echo "asset=release/${archive_base}.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ steps.package.outputs.asset }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish Release Assets
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download built archives
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Attach archives to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true
