@@ -71,6 +71,7 @@ func TestAttentionErrors(t *testing.T) {
 
 	qRank1 := mustTensorT(t, []float32{1, 2}, []int64{2})
 	kRank1 := mustTensorT(t, []float32{1, 2}, []int64{2})
+
 	vRank1 := mustTensorT(t, []float32{1, 2}, []int64{2})
 	if _, err := Attention(qRank1, kRank1, vRank1, false, 0); err == nil || !strings.Contains(err.Error(), "rank >= 2") {
 		t.Fatalf("Attention(rank1) err = %v, want rank error", err)
@@ -78,12 +79,14 @@ func TestAttentionErrors(t *testing.T) {
 
 	q := mustTensorT(t, make([]float32, 6), []int64{1, 2, 3})
 	kBadD := mustTensorT(t, make([]float32, 8), []int64{1, 2, 4})
+
 	v := mustTensorT(t, make([]float32, 4), []int64{1, 2, 2})
 	if _, err := Attention(q, kBadD, v, false, 0); err == nil || !strings.Contains(err.Error(), "depth mismatch") {
 		t.Fatalf("Attention(depth mismatch) err = %v, want depth mismatch error", err)
 	}
 
 	k := mustTensorT(t, make([]float32, 6), []int64{1, 2, 3})
+
 	vBadSeq := mustTensorT(t, make([]float32, 3), []int64{1, 1, 3})
 	if _, err := Attention(q, k, vBadSeq, false, 0); err == nil || !strings.Contains(err.Error(), "sequence mismatch") {
 		t.Fatalf("Attention(sequence mismatch) err = %v, want sequence mismatch error", err)

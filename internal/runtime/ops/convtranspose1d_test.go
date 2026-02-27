@@ -58,6 +58,7 @@ func TestRepackConvTransposeKernel(t *testing.T) {
 	}, []int64{2, 3, 2})
 
 	got := RepackConvTransposeKernel(kernel)
+
 	want := []float32{
 		1, 7, // kx0, oc0, ic0..1
 		3, 9, // kx0, oc1, ic0..1
@@ -97,6 +98,7 @@ func TestConvTranspose1DPrePacked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConvTranspose1DPrePacked(nil packed): %v", err)
 	}
+
 	if !equalApprox(gotNilPacked.Data(), want.Data(), 1e-5) {
 		t.Fatalf("ConvTranspose1DPrePacked(nil packed) = %v, want %v", gotNilPacked.Data(), want.Data())
 	}
@@ -106,10 +108,12 @@ func TestConvTranspose1DPrePacked(t *testing.T) {
 	}
 
 	packed := RepackConvTransposeKernel(kernel)
+
 	gotPacked, err := ConvTranspose1DPrePacked(input, kernel, bias, packed, 1, 0, 0, 1, 1)
 	if err != nil {
 		t.Fatalf("ConvTranspose1DPrePacked(packed): %v", err)
 	}
+
 	if !equalApprox(gotPacked.Data(), want.Data(), 1e-5) {
 		t.Fatalf("ConvTranspose1DPrePacked(packed) = %v, want %v", gotPacked.Data(), want.Data())
 	}

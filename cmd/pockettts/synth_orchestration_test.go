@@ -17,6 +17,7 @@ import (
 
 func TestRunSynthCommand_CLIFromStdinToStdout(t *testing.T) {
 	orig := runChunkSynthesis
+
 	t.Cleanup(func() { runChunkSynthesis = orig })
 
 	var gotTexts []string
@@ -85,6 +86,7 @@ func TestRunSynthCommand_InvalidBackend(t *testing.T) {
 
 func TestRunSynthCommand_MapsExecErrNotFound(t *testing.T) {
 	orig := runChunkSynthesis
+
 	t.Cleanup(func() { runChunkSynthesis = orig })
 
 	runChunkSynthesis = func(_ context.Context, _ synthCLIOptions) ([]byte, error) {
@@ -195,6 +197,7 @@ func TestResolveVoiceForNative(t *testing.T) {
 
 	t.Run("path-like voice returns as-is", func(t *testing.T) {
 		in := filepath.Join("voices", "alice.safetensors")
+
 		got, err := resolveVoiceForNative(in)
 		if err != nil {
 			t.Fatalf("resolveVoiceForNative returned error: %v", err)
@@ -228,6 +231,7 @@ func TestResolveVoiceForNative(t *testing.T) {
 		t.Cleanup(func() { mustChdir(t, origWD) })
 
 		voiceDir := filepath.Join(tmp, "voices")
+
 		err := os.MkdirAll(voiceDir, 0o755)
 		if err != nil {
 			t.Fatalf("mkdir voices dir: %v", err)
@@ -239,6 +243,7 @@ func TestResolveVoiceForNative(t *testing.T) {
 		}
 
 		manifest := `{"voices":[{"id":"alice","path":"alice.bin","license":"MIT"}]}`
+
 		err = os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644)
 		if err != nil {
 			t.Fatalf("write manifest: %v", err)
