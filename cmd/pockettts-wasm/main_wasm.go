@@ -274,6 +274,13 @@ func parseSynthOptions(args []js.Value) synthesizeOptions {
 	return opts
 }
 
+// browserYield schedules a setTimeout(0) via time.Sleep, handing the main
+// browser thread back to the event loop so pending UI repaints can happen
+// before the Go goroutine resumes.
+func browserYield() {
+	time.Sleep(time.Millisecond)
+}
+
 func synthesizeAsync(_ js.Value, args []js.Value) any {
 	promiseCtor := js.Global().Get("Promise")
 	var handler js.Func
@@ -293,6 +300,7 @@ func synthesizeAsync(_ js.Value, args []js.Value) any {
 		opts := parseSynthOptions(args)
 
 		go func() {
+			browserYield() // let the browser repaint the spinner before any work
 			res, err := synthesize(textArg, &progress, opts)
 			if err != nil {
 				reject.Invoke(err.Error())
@@ -317,6 +325,7 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 	}
 
 	progress.Emit("prepare", 0, 100, "normalizing and chunking input")
+	browserYield()
 	normalized, err := text.Normalize(input)
 	if err != nil {
 		return nil, err
@@ -333,6 +342,7 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 
 	var voiceEmb *tts.VoiceEmbedding
 	if len(opts.VoiceSafetensors) > 0 {
+		browserYield()
 		vData, vShape, vErr := safetensors.LoadVoiceEmbeddingFromBytes(opts.VoiceSafetensors)
 		if vErr != nil {
 			return nil, fmt.Errorf("load voice embedding: %w", vErr)
@@ -349,6 +359,7 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 		chunkWidth := int(70.0 / float64(nChunks))
 
 		progress.Emit("synthesize", chunkStart, 100, fmt.Sprintf("chunk %d/%d · step 0", i+1, nChunks))
+		browserYield() // repaint before TextEmbeddings + PromptFlow block the thread
 
 		maxSteps := opts.MaxSteps
 		if maxSteps <= 0 {
@@ -370,10 +381,7 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 				pct := chunkStart + stepPct
 				detail := fmt.Sprintf("chunk %d/%d · step %d", i+1, nChunks, step)
 				progress.Emit("synthesize", pct, 100, detail)
-				// Yield the browser thread so the event loop can repaint.
-				// In WASM, time.Sleep schedules a setTimeout which hands
-				// control back to the browser before this goroutine resumes.
-				time.Sleep(time.Millisecond)
+				browserYield()
 			},
 		}
 
