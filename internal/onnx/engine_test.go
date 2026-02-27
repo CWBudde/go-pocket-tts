@@ -18,7 +18,8 @@ func writeTestManifest(t *testing.T, dir string) string {
 		t.Fatalf("read identity model: %v", err)
 	}
 
-	if err := os.WriteFile(onnxFile, data, 0o644); err != nil {
+	err = os.WriteFile(onnxFile, data, 0o644)
+	if err != nil {
 		t.Fatalf("write identity model: %v", err)
 	}
 
@@ -34,7 +35,9 @@ func writeTestManifest(t *testing.T, dir string) string {
 }`
 
 	mPath := filepath.Join(dir, "manifest.json")
-	if err := os.WriteFile(mPath, []byte(manifest), 0o644); err != nil {
+
+	err = os.WriteFile(mPath, []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
 

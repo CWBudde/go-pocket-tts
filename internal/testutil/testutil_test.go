@@ -14,7 +14,9 @@ func TestSilenceWAVPath_FileExists(t *testing.T) {
 	root := filepath.Join("..", "..")
 
 	p := filepath.Join(root, testutil.SilenceWAVPath())
-	if _, err := os.Stat(p); err != nil {
+
+	_, err := os.Stat(p)
+	if err != nil {
 		t.Fatalf("silence fixture not found at %q: %v", p, err)
 	}
 }
@@ -44,7 +46,8 @@ func TestRequireVoiceFile_SkipsWhenManifestAbsent(t *testing.T) {
 
 	t.Cleanup(func() { os.Chdir(orig) }) //nolint:errcheck
 
-	if err := os.Chdir(t.TempDir()); err != nil {
+	err = os.Chdir(t.TempDir())
+	if err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
 

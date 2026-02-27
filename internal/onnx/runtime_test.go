@@ -21,7 +21,9 @@ func TestDetectRuntimePrefersPOCKETTTSORTLIB(t *testing.T) {
 	tmp := t.TempDir()
 
 	lib := filepath.Join(tmp, "libonnxruntime.so")
-	if err := os.WriteFile(lib, []byte("fake"), 0o644); err != nil {
+
+	err := os.WriteFile(lib, []byte("fake"), 0o644)
+	if err != nil {
 		t.Fatalf("write fake lib: %v", err)
 	}
 
@@ -45,7 +47,8 @@ func TestBootstrapRunsOnce(t *testing.T) {
 	lib1 := filepath.Join(tmp, "lib1.so")
 	lib2 := filepath.Join(tmp, "lib2.so")
 
-	if err := os.WriteFile(lib1, []byte("one"), 0o644); err != nil {
+	err := os.WriteFile(lib1, []byte("one"), 0o644)
+	if err != nil {
 		t.Fatalf("write lib1: %v", err)
 	}
 

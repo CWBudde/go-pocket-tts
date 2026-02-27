@@ -102,8 +102,10 @@ func TestRunBench_SynthesisFailure(t *testing.T) {
 	tmp := t.TempDir()
 
 	script := filepath.Join(tmp, "pocket-tts")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
-		t.Fatalf("WriteFile: %v", err)
+
+	writeErr := os.WriteFile(script, []byte("#!/bin/sh\nexit 1\n"), 0o755)
+	if writeErr != nil {
+		t.Fatalf("WriteFile: %v", writeErr)
 	}
 
 	_, err := runBench(context.Background(), benchOptions{

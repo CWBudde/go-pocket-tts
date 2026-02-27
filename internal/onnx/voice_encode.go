@@ -204,7 +204,8 @@ func (e *Engine) speakerProjectionWeight() ([]float32, error) {
 
 func (e *Engine) resolveModelWeightsPath() (string, error) {
 	if p := strings.TrimSpace(e.modelWeightsPath); p != "" {
-		if _, err := os.Stat(p); err != nil {
+		_, err := os.Stat(p)
+		if err != nil {
 			return "", fmt.Errorf("model safetensors path %q is not readable: %w", p, err)
 		}
 
@@ -212,7 +213,8 @@ func (e *Engine) resolveModelWeightsPath() (string, error) {
 	}
 
 	if p := strings.TrimSpace(os.Getenv("POCKETTTS_MODEL_SAFETENSORS")); p != "" {
-		if _, err := os.Stat(p); err == nil {
+		_, err := os.Stat(p)
+		if err == nil {
 			return p, nil
 		}
 	}
@@ -228,7 +230,9 @@ func (e *Engine) resolveModelWeightsPath() (string, error) {
 
 	for _, c := range candidates {
 		clean := filepath.Clean(c)
-		if _, err := os.Stat(clean); err == nil {
+
+		_, err := os.Stat(clean)
+		if err == nil {
 			return clean, nil
 		}
 	}

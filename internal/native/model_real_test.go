@@ -19,7 +19,8 @@ func requireCheckpoint(t *testing.T) string {
 		filepath.Join("..", "..", "models", "tts_b6369a24.safetensors"),
 	}
 	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
+		_, err := os.Stat(path)
+		if err == nil {
 			return path
 		}
 	}

@@ -18,7 +18,9 @@ func TestRunnerRoundTrip(t *testing.T) {
 	}
 
 	identityModel := filepath.Join("..", "model", "testdata", "identity_float32.onnx")
-	if _, err := os.Stat(identityModel); err != nil {
+
+	_, err := os.Stat(identityModel)
+	if err != nil {
 		t.Skipf("identity model not found: %v", err)
 	}
 
@@ -80,7 +82,9 @@ func TestRunnerCloseIsIdempotent(t *testing.T) {
 	}
 
 	identityModel := filepath.Join("..", "model", "testdata", "identity_float32.onnx")
-	if _, err := os.Stat(identityModel); err != nil {
+
+	_, err := os.Stat(identityModel)
+	if err != nil {
 		t.Skipf("identity model not found: %v", err)
 	}
 

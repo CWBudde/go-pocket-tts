@@ -197,7 +197,8 @@ func requireONNXManifest(t *testing.T) string {
 		filepath.Join("..", "..", "models", "onnx", "manifest.json"),
 	}
 	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
+		_, err := os.Stat(p)
+		if err == nil {
 			return p
 		}
 	}
@@ -212,7 +213,8 @@ func requireONNXRuntime(t *testing.T) {
 
 	for _, env := range []string{"ORT_LIBRARY_PATH", "POCKETTTS_ORT_LIB"} {
 		if p := os.Getenv(env); p != "" {
-			if _, err := os.Stat(p); err == nil {
+			_, err := os.Stat(p)
+			if err == nil {
 				return
 			}
 
@@ -226,7 +228,8 @@ func requireONNXRuntime(t *testing.T) {
 		"/usr/lib/x86_64-linux-gnu/libonnxruntime.so",
 	}
 	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
+		_, err := os.Stat(p)
+		if err == nil {
 			return
 		}
 	}

@@ -19,8 +19,10 @@ func TestProbePocketTTSVersion_RealExecutable(t *testing.T) {
 	tmp := t.TempDir()
 
 	script := filepath.Join(tmp, "fake-tts")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho 'fake-tts 1.2.3'\n"), 0o755); err != nil {
-		t.Fatalf("WriteFile: %v", err)
+
+	writeErr := os.WriteFile(script, []byte("#!/bin/sh\necho 'fake-tts 1.2.3'\n"), 0o755)
+	if writeErr != nil {
+		t.Fatalf("WriteFile: %v", writeErr)
 	}
 
 	got, err := probePocketTTSVersion(script)
@@ -59,7 +61,8 @@ func TestCollectVoiceFiles_NoManifest(t *testing.T) {
 		}
 	})
 
-	if err := os.Chdir(t.TempDir()); err != nil {
+	err = os.Chdir(t.TempDir())
+	if err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
 
@@ -85,22 +88,29 @@ func TestCollectVoiceFiles_WithManifest(t *testing.T) {
 		}
 	})
 
-	if err := os.Chdir(tmp); err != nil {
+	err = os.Chdir(tmp)
+	if err != nil {
 		t.Fatalf("Chdir: %v", err)
 	}
 
 	voiceDir := filepath.Join(tmp, "voices")
-	if err := os.MkdirAll(voiceDir, 0o755); err != nil {
+
+	err = os.MkdirAll(voiceDir, 0o755)
+	if err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	// Voice file is stored as "test.bin" relative to the manifest directory.
 	voiceFile := filepath.Join(voiceDir, "test.bin")
-	if err := os.WriteFile(voiceFile, []byte("dummy"), 0o644); err != nil {
+
+	err = os.WriteFile(voiceFile, []byte("dummy"), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile voice: %v", err)
 	}
 
 	manifest := `{"voices":[{"id":"test","path":"test.bin","license":"MIT"}]}`
-	if err := os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+
+	err = os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 

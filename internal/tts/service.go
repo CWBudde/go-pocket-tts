@@ -127,7 +127,8 @@ func (s *Service) SynthesizeCtx(ctx context.Context, input string, voicePath str
 	var allAudio []float32
 
 	for i, chunk := range chunks {
-		if err := ctx.Err(); err != nil {
+		err := ctx.Err()
+		if err != nil {
 			return nil, err
 		}
 
@@ -166,7 +167,8 @@ func (s *Service) SynthesizeStream(ctx context.Context, input string, voicePath 
 	}
 
 	for i, chunk := range chunks {
-		if err := ctx.Err(); err != nil {
+		err := ctx.Err()
+		if err != nil {
 			return err
 		}
 
@@ -233,7 +235,8 @@ func resolveNativeModelPath(cfg config.Config) (string, error) {
 		return "", fmt.Errorf("model path %q does not end in .safetensors; set --paths-model-path to a .safetensors checkpoint", p)
 	}
 
-	if _, err := os.Stat(p); err != nil {
+	_, err := os.Stat(p)
+	if err != nil {
 		return "", fmt.Errorf("safetensors model not found at %q; run 'pockettts model download' or set --paths-model-path", p)
 	}
 

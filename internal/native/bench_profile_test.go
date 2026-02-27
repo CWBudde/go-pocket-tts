@@ -18,7 +18,8 @@ func requireCheckpointForBench(b *testing.B) string {
 		filepath.Join("..", "..", "models", "tts_b6369a24.safetensors"),
 	}
 	for _, path := range candidates {
-		if _, err := os.Stat(path); err == nil {
+		_, err := os.Stat(path)
+		if err == nil {
 			return path
 		}
 	}
@@ -71,7 +72,8 @@ func BenchmarkSynthesisFullPipeline(b *testing.B) {
 			b.Fatalf("new flow state: %v", err)
 		}
 
-		if err := m.PromptFlow(state, textEmb); err != nil {
+		err = m.PromptFlow(state, textEmb)
+		if err != nil {
 			b.Fatalf("prompt flow: %v", err)
 		}
 
@@ -138,7 +140,8 @@ func BenchmarkFlowStep(b *testing.B) {
 		b.Fatalf("new flow state: %v", err)
 	}
 
-	if err := m.PromptFlow(state, textEmb); err != nil {
+	err = m.PromptFlow(state, textEmb)
+	if err != nil {
 		b.Fatalf("prompt flow: %v", err)
 	}
 
