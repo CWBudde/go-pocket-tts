@@ -116,13 +116,18 @@ func DownloadManifest(opts DownloadOptions, manifest Manifest) error {
 		}
 
 		localPath := filepath.Join(opts.OutDir, filepath.FromSlash(saveName))
-		if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+
+		err := os.MkdirAll(filepath.Dir(localPath), 0o755)
+		if err != nil {
 			return fmt.Errorf("create local subdir: %w", err)
 		}
 
-		if ok, err := existingMatches(localPath, expected); err != nil {
+		ok, err := existingMatches(localPath, expected)
+		if err != nil {
 			return err
-		} else if ok {
+		}
+
+		if ok {
 			_, _ = fmt.Fprintf(opts.Stdout, "skip %s (checksum match)\n", f.Filename)
 			lock.Files[f.Filename] = lockRecord{Revision: f.Revision, SHA256: expected}
 
@@ -260,12 +265,14 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 		}
 	}
 
-	if err := fh.Close(); err != nil {
+	err = fh.Close()
+	if err != nil {
 		_ = os.Remove(tmp)
 		return "", fmt.Errorf("close temp file: %w", err)
 	}
 
-	if err := os.Rename(tmp, outPath); err != nil {
+	err = os.Rename(tmp, outPath)
+	if err != nil {
 		_ = os.Remove(tmp)
 		return "", fmt.Errorf("move temp file into place: %w", err)
 	}
@@ -342,7 +349,9 @@ func fileSHA256(path string) (string, error) {
 	defer func() { _ = f.Close() }()
 
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+
+	_, err = io.Copy(h, f)
+	if err != nil {
 		return "", fmt.Errorf("read file for checksum: %w", err)
 	}
 
@@ -356,7 +365,9 @@ func readLockManifest(path string) lockManifest {
 	}
 
 	var out lockManifest
-	if err := json.Unmarshal(b, &out); err != nil {
+
+	err = json.Unmarshal(b, &out)
+	if err != nil {
 		return lockManifest{}
 	}
 
@@ -373,7 +384,8 @@ func writeLockManifest(path string, lock lockManifest) error {
 		return fmt.Errorf("encode lock manifest: %w", err)
 	}
 
-	if err := os.WriteFile(path, b, 0o600); err != nil {
+	err = os.WriteFile(path, b, 0o600)
+	if err != nil {
 		return fmt.Errorf("write lock manifest: %w", err)
 	}
 

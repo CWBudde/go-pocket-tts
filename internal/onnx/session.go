@@ -59,7 +59,9 @@ func NewSessionManager(manifestPath string) (*SessionManager, error) {
 	}
 
 	var manifest onnxManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
+
+	err = json.Unmarshal(data, &manifest)
+	if err != nil {
 		return nil, fmt.Errorf("decode ONNX manifest: %w", err)
 	}
 
@@ -92,7 +94,9 @@ func NewSessionManager(manifestPath string) (*SessionManager, error) {
 		}
 
 		sessionPath = filepath.Clean(sessionPath)
-		if _, err := os.Stat(sessionPath); err != nil {
+
+		_, err = os.Stat(sessionPath)
+		if err != nil {
 			return nil, fmt.Errorf("session file for %q: %w", g.Name, err)
 		}
 

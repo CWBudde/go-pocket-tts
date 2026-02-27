@@ -54,25 +54,31 @@ func newModelVerifyCmd() *cobra.Command {
 
 func verifyNativeSafetensors(cfg config.Config) error {
 	modelPath := cfg.Paths.ModelPath
-	if _, err := fmt.Fprintf(os.Stdout, "verifying safetensors model: %s\n", modelPath); err != nil {
+
+	_, err := fmt.Fprintf(os.Stdout, "verifying safetensors model: %s\n", modelPath)
+	if err != nil {
 		return fmt.Errorf("write status: %w", err)
 	}
 
 	// 1. Check file exists.
-	if _, err := os.Stat(modelPath); err != nil {
+	_, err = os.Stat(modelPath)
+	if err != nil {
 		return fmt.Errorf("model file not found: %w", err)
 	}
 
-	if _, err := fmt.Fprintf(os.Stdout, "  ✓ file exists\n"); err != nil {
+	_, err = fmt.Fprintf(os.Stdout, "  ✓ file exists\n")
+	if err != nil {
 		return fmt.Errorf("write status: %w", err)
 	}
 
 	// 2. Validate header keys.
-	if err := safetensors.ValidateModelKeys(modelPath); err != nil {
+	err = safetensors.ValidateModelKeys(modelPath)
+	if err != nil {
 		return fmt.Errorf("key validation failed: %w", err)
 	}
 
-	if _, err := fmt.Fprintf(os.Stdout, "  ✓ tensor keys valid\n"); err != nil {
+	_, err = fmt.Fprintf(os.Stdout, "  ✓ tensor keys valid\n")
+	if err != nil {
 		return fmt.Errorf("write status: %w", err)
 	}
 
@@ -84,20 +90,25 @@ func verifyNativeSafetensors(cfg config.Config) error {
 
 	m.Close()
 
-	if _, err := fmt.Fprintf(os.Stdout, "  ✓ model loads successfully\n"); err != nil {
+	_, err = fmt.Fprintf(os.Stdout, "  ✓ model loads successfully\n")
+	if err != nil {
 		return fmt.Errorf("write status: %w", err)
 	}
 
 	// 4. Check tokenizer.
 	tokPath := cfg.Paths.TokenizerModel
-	if _, err := os.Stat(tokPath); err != nil {
+
+	_, err = os.Stat(tokPath)
+	if err != nil {
 		slog.Warn("tokenizer model not found", "path", tokPath)
 
-		if _, err := fmt.Fprintf(os.Stdout, "  ⚠ tokenizer model not found: %s\n", tokPath); err != nil {
+		_, err = fmt.Fprintf(os.Stdout, "  ⚠ tokenizer model not found: %s\n", tokPath)
+		if err != nil {
 			return fmt.Errorf("write status: %w", err)
 		}
 	} else {
-		if _, err := fmt.Fprintf(os.Stdout, "  ✓ tokenizer model: %s\n", tokPath); err != nil {
+		_, err = fmt.Fprintf(os.Stdout, "  ✓ tokenizer model: %s\n", tokPath)
+		if err != nil {
 			return fmt.Errorf("write status: %w", err)
 		}
 	}

@@ -93,13 +93,13 @@ func geluErfTensor(x *tensor.Tensor) *tensor.Tensor {
 	return out
 }
 
-func eluTensor(x *tensor.Tensor, alpha float32) *tensor.Tensor {
+func eluTensor(x *tensor.Tensor) *tensor.Tensor {
 	out := x.Clone()
 
 	d := out.RawData()
 	for i, v := range d {
 		if v <= 0 {
-			d[i] = alpha * (float32(math.Exp(float64(v))) - 1)
+			d[i] = float32(math.Exp(float64(v))) - 1
 		}
 	}
 

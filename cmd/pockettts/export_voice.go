@@ -80,7 +80,8 @@ func newExportVoiceCmd() *cobra.Command {
 				return errors.New("--out is required")
 			}
 
-			if _, err := os.Stat(audioPath); err != nil {
+			_, err = os.Stat(audioPath)
+			if err != nil {
 				return fmt.Errorf("read --input %q: %w", audioPath, err)
 			}
 
@@ -110,7 +111,9 @@ func newExportVoiceCmd() *cobra.Command {
 			}
 
 			shape := []int64{1, int64(len(embedding) / onnx.VoiceEmbeddingDim), onnx.VoiceEmbeddingDim}
-			if err := writeVoiceSafetensors(outPath, embedding, shape); err != nil {
+
+			err = writeVoiceSafetensors(outPath, embedding, shape)
+			if err != nil {
 				return fmt.Errorf("write voice safetensors: %w", err)
 			}
 

@@ -24,7 +24,8 @@ func newHealthCmd() *cobra.Command {
 				addr = cfg.Server.ListenAddr
 			}
 
-			if err := server.ProbeHTTP(addr); err != nil {
+			err = server.ProbeHTTP(addr)
+			if err != nil {
 				return err
 			}
 

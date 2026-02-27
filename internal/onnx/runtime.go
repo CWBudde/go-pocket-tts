@@ -36,7 +36,8 @@ func Bootstrap(cfg config.RuntimeConfig) (RuntimeInfo, error) {
 		}
 
 		// Keep this process-local marker for future ORT bindings.
-		if err := os.Setenv("POCKETTTS_ORT_LIB", info.LibraryPath); err != nil {
+		err = os.Setenv("POCKETTTS_ORT_LIB", info.LibraryPath)
+		if err != nil {
 			errBootstrap = fmt.Errorf("set POCKETTTS_ORT_LIB: %w", err)
 			return
 		}
@@ -85,7 +86,8 @@ func DetectRuntime(cfg config.RuntimeConfig) (RuntimeInfo, error) {
 			"C:/onnxruntime/lib/onnxruntime.dll",
 		}
 		for _, c := range candidates {
-			if _, err := os.Stat(c); err == nil {
+			_, err := os.Stat(c)
+			if err == nil {
 				path = c
 				break
 			}
@@ -96,7 +98,8 @@ func DetectRuntime(cfg config.RuntimeConfig) (RuntimeInfo, error) {
 		return RuntimeInfo{LibraryPath: "not found", Version: "unknown"}, errors.New("unable to detect ONNX Runtime library path")
 	}
 
-	if _, err := os.Stat(path); err != nil {
+	_, err := os.Stat(path)
+	if err != nil {
 		return RuntimeInfo{LibraryPath: path, Version: "unknown"}, fmt.Errorf("onnx runtime library path check failed: %w", err)
 	}
 

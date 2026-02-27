@@ -548,11 +548,13 @@ func TestValidateModelKeys_FileNotFound(t *testing.T) {
 
 func TestValidateModelKeys_InvalidFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "bad.safetensors")
-	if err := os.WriteFile(path, []byte("not a safetensors file"), 0o644); err != nil {
+
+	err := os.WriteFile(path, []byte("not a safetensors file"), 0o644)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	err := ValidateModelKeys(path)
+	err = ValidateModelKeys(path)
 	if err == nil {
 		t.Fatal("expected error for invalid file")
 	}

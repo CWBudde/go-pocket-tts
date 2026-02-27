@@ -134,7 +134,7 @@ func PrepareChunks(input string, tok Tokenizer, maxTokens int) ([]ChunkMetadata,
 		}
 
 		// Count tokens that would result if we add this sentence to pending.
-		pendingTokens := 0
+		var pendingTokens int
 
 		if len(pending) > 0 {
 			joined := PrepareText(strings.Join(append(pending, sent), " "))

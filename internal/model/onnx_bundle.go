@@ -90,7 +90,8 @@ func DownloadONNXBundle(opts DownloadONNXBundleOptions) error {
 		return fmt.Errorf("invalid sha256 checksum %q", checksum)
 	}
 
-	if err := os.MkdirAll(opts.OutDir, 0o755); err != nil {
+	err := os.MkdirAll(opts.OutDir, 0o755)
+	if err != nil {
 		return fmt.Errorf("create out dir: %w", err)
 	}
 
@@ -107,13 +108,15 @@ func DownloadONNXBundle(opts DownloadONNXBundleOptions) error {
 
 	_, _ = fmt.Fprintf(opts.Stdout, "downloaded ONNX bundle (%s) sha256=%s\n", bundleURL, actualSHA)
 
-	if err := extractBundle(tmpArchive, opts.OutDir); err != nil {
+	err = extractBundle(tmpArchive, opts.OutDir)
+	if err != nil {
 		return err
 	}
 
 	_, _ = fmt.Fprintf(opts.Stdout, "extracted bundle into %s\n", opts.OutDir)
 
-	if err := verifyONNXManifestDir(opts.OutDir); err != nil {
+	err = verifyONNXManifestDir(opts.OutDir)
+	if err != nil {
 		return err
 	}
 
@@ -129,7 +132,9 @@ func resolveBundleFromLock(lockFile, bundleID, variant string) (ONNXBundle, erro
 	}
 
 	var lock ONNXBundleLock
-	if err := json.Unmarshal(data, &lock); err != nil {
+
+	err = json.Unmarshal(data, &lock)
+	if err != nil {
 		return ONNXBundle{}, fmt.Errorf("decode ONNX bundle lock file %q: %w", lockFile, err)
 	}
 
@@ -209,7 +214,9 @@ func fetchBundleArchive(client *http.Client, bundleURL string) (string, string, 
 	defer func() { _ = reader.Close() }()
 
 	h := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(tmpFile, h), reader); err != nil {
+
+	_, err = io.Copy(io.MultiWriter(tmpFile, h), reader)
+	if err != nil {
 		_ = tmpFile.Close()
 		_ = os.Remove(tmpPath)
 

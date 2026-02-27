@@ -28,7 +28,7 @@ func TestFlowLMStep_MissingGraph(t *testing.T) {
 func TestFlowLMStep_PropagatesRunnerError(t *testing.T) {
 	fake := &fakeRunner{
 		name: "flow_lm_main",
-		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
 			return nil, errors.New("ort failure")
 		},
 	}
@@ -57,7 +57,7 @@ func TestFlowLMStep_ReturnsOutputs(t *testing.T) {
 
 	fake := &fakeRunner{
 		name: "flow_lm_main",
-		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
+		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
 			// Verify expected input keys.
 			if _, ok := inputs["sequence"]; !ok {
 				t.Error("expected 'sequence' input key")
@@ -442,7 +442,7 @@ func TestFlowLMPrefill_UnpacksKVState(t *testing.T) {
 
 	fakePrefill := &fakeRunner{
 		name: "flow_lm_prefill",
-		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
 			out := make(map[string]*Tensor)
 			for i := range numLayers {
 				kv, _ := NewTensor(make([]float32, 2*1*int(T)*2*4), []int64{2, 1, T, 2, 4})
@@ -505,7 +505,7 @@ func TestFlowLMStepStateful_UpdatesStateInPlace(t *testing.T) {
 
 	fakeStep := &fakeRunner{
 		name: "flow_lm_step",
-		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
 			out := map[string]*Tensor{}
 
 			for i := range numLayers {

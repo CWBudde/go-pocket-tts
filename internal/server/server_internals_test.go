@@ -138,11 +138,14 @@ func TestRuntimeDeps_NativeSafetensors(t *testing.T) {
 	cfg.Paths.ModelPath = filepath.Join("..", "..", "models", "tts_b6369a24.safetensors")
 
 	cfg.Paths.TokenizerModel = filepath.Join("..", "..", "models", "tokenizer.model")
-	if _, err := os.Stat(cfg.Paths.ModelPath); err != nil {
+
+	_, err := os.Stat(cfg.Paths.ModelPath)
+	if err != nil {
 		t.Skipf("native safetensors model not available: %v", err)
 	}
 
-	if _, err := os.Stat(cfg.Paths.TokenizerModel); err != nil {
+	_, err = os.Stat(cfg.Paths.TokenizerModel)
+	if err != nil {
 		t.Skipf("tokenizer model not available: %v", err)
 	}
 

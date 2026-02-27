@@ -32,7 +32,8 @@ func RequirePocketTTS(tb testing.TB) {
 		exe = "pocket-tts"
 	}
 
-	if _, err := exec.LookPath(exe); err != nil {
+	_, err := exec.LookPath(exe)
+	if err != nil {
 		tb.Skipf("pocket-tts binary not available (%q not in PATH); set POCKETTTS_TTS_CLI_PATH to override", exe)
 	}
 }
@@ -45,7 +46,8 @@ func RequireONNXRuntime(tb testing.TB) {
 
 	for _, env := range []string{"ORT_LIBRARY_PATH", "POCKETTTS_ORT_LIB"} {
 		if p := os.Getenv(env); p != "" {
-			if _, err := os.Stat(p); err == nil {
+			_, err := os.Stat(p)
+			if err == nil {
 				return // found
 			}
 
@@ -59,7 +61,8 @@ func RequireONNXRuntime(tb testing.TB) {
 		"/usr/lib/x86_64-linux-gnu/libonnxruntime.so",
 	}
 	for _, p := range candidates {
-		if _, err := os.Stat(p); err == nil {
+		_, err := os.Stat(p)
+		if err == nil {
 			return // found
 		}
 	}
@@ -79,7 +82,8 @@ func RequireVoiceFile(tb testing.TB, id string) {
 		tb.Skipf("voice manifest not available at %q: %v", manifestPath, err)
 	}
 
-	if _, err := vm.ResolvePath(id); err != nil {
+	_, err = vm.ResolvePath(id)
+	if err != nil {
 		tb.Skipf("voice %q not available: %v", id, err)
 	}
 }
