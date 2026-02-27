@@ -47,3 +47,21 @@ func BenchmarkDotProduct(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkDotProductGeneric(b *testing.B) {
+	for _, n := range []int{8, 64, 512, 4096} {
+		a := make([]float32, n)
+		v := make([]float32, n)
+
+		for i := range a {
+			a[i] = float32(i) * 0.01
+			v[i] = float32(n-i) * 0.01
+		}
+
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			for range b.N {
+				dotF32Generic(a, v)
+			}
+		})
+	}
+}
