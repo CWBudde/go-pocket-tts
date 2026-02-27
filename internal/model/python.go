@@ -40,6 +40,7 @@ func detectPocketTTSPython() string {
 		return defaultPythonBin
 	}
 
+	// #nosec G703 -- Interpreter path is read from local shebang and only checked for local existence.
 	_, err = os.Stat(interpreter)
 	if err != nil {
 		return defaultPythonBin

@@ -363,6 +363,7 @@ func extractTarGz(bundlePath, outDir string) error {
 				return fmt.Errorf("create parent dir for %s: %w", targetPath, err)
 			}
 
+			// #nosec G703 -- targetPath is constrained by safeExtractPath to remain within outDir.
 			dst, err := os.Create(targetPath)
 			if err != nil {
 				return fmt.Errorf("create extracted file %s: %w", targetPath, err)
