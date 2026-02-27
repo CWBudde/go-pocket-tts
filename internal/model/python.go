@@ -40,7 +40,8 @@ func detectPocketTTSPython() string {
 		return defaultPythonBin
 	}
 
-	if _, err := os.Stat(interpreter); err != nil {
+	_, err = os.Stat(interpreter)
+	if err != nil {
 		return defaultPythonBin
 	}
 

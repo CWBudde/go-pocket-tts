@@ -102,7 +102,8 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 		return nil, fmt.Errorf("generate: init flow state: %w", err)
 	}
 
-	if err := r.model.PromptFlow(flowState, textEmb); err != nil {
+	err = r.model.PromptFlow(flowState, textEmb)
+	if err != nil {
 		return nil, fmt.Errorf("generate: prompt flow state: %w", err)
 	}
 
@@ -119,7 +120,8 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 	stageStart = time.Now()
 
 	for step := range maxSteps {
-		if err := ctx.Err(); err != nil {
+		err := ctx.Err()
+		if err != nil {
 			return nil, err
 		}
 

@@ -137,7 +137,8 @@ func SaveParitySnapshots(path string, snapshots []ParitySnapshot) error {
 		return fmt.Errorf("marshal parity snapshots: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	err = os.WriteFile(path, data, 0o600)
+	if err != nil {
 		return fmt.Errorf("write parity snapshots: %w", err)
 	}
 
@@ -151,7 +152,9 @@ func LoadParitySnapshots(path string) ([]ParitySnapshot, error) {
 	}
 
 	var snapshots []ParitySnapshot
-	if err := json.Unmarshal(data, &snapshots); err != nil {
+
+	err = json.Unmarshal(data, &snapshots)
+	if err != nil {
 		return nil, fmt.Errorf("decode parity snapshots: %w", err)
 	}
 

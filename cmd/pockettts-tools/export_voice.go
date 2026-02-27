@@ -40,7 +40,8 @@ func newExportVoiceCmd() *cobra.Command {
 				exe = "pocket-tts"
 			}
 
-			if _, err := exec.LookPath(exe); err != nil {
+			_, err = exec.LookPath(exe)
+			if err != nil {
 				return fmt.Errorf(
 					"export-voice requires the pocket-tts CLI (Python tooling) on PATH or --tts-cli-path: %w",
 					err,

@@ -246,7 +246,9 @@ func synthesizeViaCLI(ctx context.Context, opts synthCLIOptions) ([]byte, error)
 	var out bytes.Buffer
 
 	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
+
+	err = cmd.Run()
+	if err != nil {
 		return nil, err
 	}
 
@@ -311,7 +313,8 @@ func synthesizeNative(ctx context.Context, cfg config.Config, chunks []string, v
 	merged := make([]float32, 0, 24000)
 
 	for i, chunkText := range chunks {
-		if err := ctx.Err(); err != nil {
+		err := ctx.Err()
+		if err != nil {
 			return nil, err
 		}
 
@@ -444,7 +447,8 @@ func resolveVoiceForNative(voice string) (string, error) {
 		return voice, nil
 	}
 
-	if _, statErr := os.Stat(manifestPath); os.IsNotExist(statErr) {
+	_, statErr := os.Stat(manifestPath)
+	if os.IsNotExist(statErr) {
 		// Manifest missing — skip voice conditioning.
 		return "", nil
 	} else if statErr != nil {
@@ -477,7 +481,8 @@ func resolveVoiceOrPath(voice string) (string, error) {
 		return "", nil
 	}
 
-	if _, statErr := os.Stat(manifestPath); os.IsNotExist(statErr) {
+	_, statErr := os.Stat(manifestPath)
+	if os.IsNotExist(statErr) {
 		// Manifest is optional for integration and built-in voices; fall back.
 		return voice, nil
 	} else if statErr != nil {

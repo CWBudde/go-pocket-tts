@@ -42,9 +42,12 @@ func loadConv1D(vb *VarBuilder, withBias bool) (*conv1dLayer, error) {
 	var b *tensor.Tensor
 
 	if withBias {
-		if t, ok, err := vb.TensorMaybe("bias"); err != nil {
+		t, ok, err := vb.TensorMaybe("bias")
+		if err != nil {
 			return nil, err
-		} else if ok {
+		}
+
+		if ok {
 			b = t
 		}
 	}
@@ -95,9 +98,12 @@ func loadConvTr1D(vb *VarBuilder, stride, groups int64, withBias bool) (*convTr1
 	var b *tensor.Tensor
 
 	if withBias {
-		if t, ok, err := vb.TensorMaybe("bias"); err != nil {
+		t, ok, err := vb.TensorMaybe("bias")
+		if err != nil {
 			return nil, err
-		} else if ok {
+		}
+
+		if ok {
 			b = t
 		}
 	}

@@ -36,7 +36,8 @@ func NewVoiceManager(manifestPath string) (*VoiceManager, error) {
 	}
 
 	var manifest voiceManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
+	err = json.Unmarshal(data, &manifest)
+	if err != nil {
 		return nil, fmt.Errorf("decode voice manifest: %w", err)
 	}
 
@@ -83,7 +84,8 @@ func (m *VoiceManager) ResolvePath(id string) (string, error) {
 
 	resolved = filepath.Clean(resolved)
 
-	if _, err := os.Stat(resolved); err != nil {
+	_, err := os.Stat(resolved)
+	if err != nil {
 		return "", fmt.Errorf("voice file for %q: %w", id, err)
 	}
 

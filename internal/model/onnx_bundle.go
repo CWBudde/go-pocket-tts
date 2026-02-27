@@ -223,7 +223,8 @@ func fetchBundleArchive(client *http.Client, bundleURL string) (string, string, 
 		return "", "", fmt.Errorf("write temp bundle file: %w", err)
 	}
 
-	if err := tmpFile.Close(); err != nil {
+	err = tmpFile.Close()
+	if err != nil {
 		_ = os.Remove(tmpPath)
 		return "", "", fmt.Errorf("close temp bundle file: %w", err)
 	}
@@ -277,7 +278,8 @@ func extractZip(bundlePath, outDir string) error {
 			continue
 		}
 
-		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		err = os.MkdirAll(filepath.Dir(targetPath), 0o755)
+		if err != nil {
 			return fmt.Errorf("create parent dir for %s: %w", targetPath, err)
 		}
 
@@ -344,7 +346,8 @@ func extractTarGz(bundlePath, outDir string) error {
 				return fmt.Errorf("create dir %s: %w", targetPath, err)
 			}
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+			err = os.MkdirAll(filepath.Dir(targetPath), 0o755)
+			if err != nil {
 				return fmt.Errorf("create parent dir for %s: %w", targetPath, err)
 			}
 
@@ -397,7 +400,9 @@ func verifyONNXManifestDir(outDir string) error {
 	}
 
 	var m onnxManifestLite
-	if err := json.Unmarshal(data, &m); err != nil {
+
+	err = json.Unmarshal(data, &m)
+	if err != nil {
 		return fmt.Errorf("decode ONNX manifest: %w", err)
 	}
 
@@ -422,7 +427,9 @@ func verifyONNXManifestDir(outDir string) error {
 		}
 
 		graphPath := filepath.Join(outDir, g.Filename)
-		if _, err := os.Stat(graphPath); err != nil {
+
+		_, err = os.Stat(graphPath)
+		if err != nil {
 			return fmt.Errorf("manifest graph file %q: %w", g.Filename, err)
 		}
 

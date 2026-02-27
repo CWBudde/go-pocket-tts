@@ -113,7 +113,8 @@ func verifyNativeSafetensors(cfg config.Config) error {
 		}
 	}
 
-	if _, err := fmt.Fprintln(os.Stdout, "native-safetensors model verification passed"); err != nil {
+	_, err = fmt.Fprintln(os.Stdout, "native-safetensors model verification passed")
+	if err != nil {
 		return fmt.Errorf("write status: %w", err)
 	}
 
