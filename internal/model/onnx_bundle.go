@@ -195,6 +195,7 @@ func fetchBundleArchive(client *http.Client, bundleURL string) (string, string, 
 		if resp.StatusCode < 200 || resp.StatusCode > 299 {
 			_ = resp.Body.Close()
 			_ = tmpFile.Close()
+			// #nosec G703 -- tmpPath is from os.CreateTemp in this function and removed only for local cleanup.
 			_ = os.Remove(tmpPath)
 
 			return "", "", fmt.Errorf("bundle download failed: %s", resp.Status)
@@ -207,6 +208,7 @@ func fetchBundleArchive(client *http.Client, bundleURL string) (string, string, 
 		fh, err := os.Open(local)
 		if err != nil {
 			_ = tmpFile.Close()
+			// #nosec G703 -- tmpPath is from os.CreateTemp in this function and removed only for local cleanup.
 			_ = os.Remove(tmpPath)
 
 			return "", "", fmt.Errorf("open local bundle %q: %w", local, err)
@@ -222,6 +224,7 @@ func fetchBundleArchive(client *http.Client, bundleURL string) (string, string, 
 	_, err = io.Copy(io.MultiWriter(tmpFile, h), reader)
 	if err != nil {
 		_ = tmpFile.Close()
+		// #nosec G703 -- tmpPath is from os.CreateTemp in this function and removed only for local cleanup.
 		_ = os.Remove(tmpPath)
 
 		return "", "", fmt.Errorf("write temp bundle file: %w", err)
@@ -229,6 +232,7 @@ func fetchBundleArchive(client *http.Client, bundleURL string) (string, string, 
 
 	err = tmpFile.Close()
 	if err != nil {
+		// #nosec G703 -- tmpPath is from os.CreateTemp in this function and removed only for local cleanup.
 		_ = os.Remove(tmpPath)
 		return "", "", fmt.Errorf("close temp bundle file: %w", err)
 	}
