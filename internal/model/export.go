@@ -47,7 +47,8 @@ func ExportONNX(opts ExportOptions) error {
 		pythonBin = detectPocketTTSPython()
 	}
 
-	if err := validateExportTooling(pythonBin); err != nil {
+	err := validateExportTooling(pythonBin)
+	if err != nil {
 		return err
 	}
 
@@ -69,7 +70,9 @@ func ExportONNX(opts ExportOptions) error {
 	cmd.Stdout = opts.Stdout
 
 	cmd.Stderr = opts.Stderr
-	if err := cmd.Run(); err != nil {
+
+	err = cmd.Run()
+	if err != nil {
 		return fmt.Errorf("run ONNX export helper: %w", err)
 	}
 
@@ -77,7 +80,8 @@ func ExportONNX(opts ExportOptions) error {
 }
 
 func validateExportTooling(pythonBin string) error {
-	if _, err := exec.LookPath(pythonBin); err != nil {
+	_, err := exec.LookPath(pythonBin)
+	if err != nil {
 		return fmt.Errorf("python interpreter %q not found: %w", pythonBin, err)
 	}
 
@@ -86,7 +90,7 @@ func validateExportTooling(pythonBin string) error {
 
 	check.Stderr = os.Stderr
 
-	err := check.Run()
+	err = check.Run()
 	if err != nil {
 		return fmt.Errorf("python tooling dependencies missing for export (need pocket_tts, torch, onnx): %w", err)
 	}

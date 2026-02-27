@@ -198,7 +198,8 @@ func TestKernelTolerance(t *testing.T) {
 		}
 	}
 
-	if _, err := KernelTolerance("missing-kernel"); err == nil || !strings.Contains(err.Error(), "no tolerance configured") {
+	_, err := KernelTolerance("missing-kernel")
+	if err == nil || !strings.Contains(err.Error(), "no tolerance configured") {
 		t.Fatalf("KernelTolerance(missing-kernel) err = %v, want missing tolerance error", err)
 	}
 }

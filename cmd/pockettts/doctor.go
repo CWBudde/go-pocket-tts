@@ -155,7 +155,8 @@ func collectVoiceFiles() []string {
 			continue
 		}
 		// Make the path absolute so the doctor stat check is CWD-independent.
-		if abs, err := filepath.Abs(resolved); err == nil {
+		abs, err := filepath.Abs(resolved)
+		if err == nil {
 			resolved = abs
 		}
 

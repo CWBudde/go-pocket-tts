@@ -89,7 +89,8 @@ func WriteFile(path string, tensors []Tensor) error {
 		return err
 	}
 
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	err = os.WriteFile(path, data, 0o600)
+	if err != nil {
 		return fmt.Errorf("safetensors: write %s: %w", path, err)
 	}
 

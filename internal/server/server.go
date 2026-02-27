@@ -184,7 +184,9 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req ttsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return
 	}

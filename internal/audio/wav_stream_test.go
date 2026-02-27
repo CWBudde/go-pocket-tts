@@ -129,6 +129,7 @@ func TestWritePCM16Samples_Clamping(t *testing.T) {
 	samples := []float32{2.0, -3.0}
 
 	var buf bytes.Buffer
+
 	_, err := WritePCM16Samples(&buf, samples)
 	if err != nil {
 		t.Fatal(err)

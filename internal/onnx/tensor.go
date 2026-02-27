@@ -26,7 +26,8 @@ func NewTensor[T ~int64 | ~float32](data []T, shape []int64) (*Tensor, error) {
 		return nil, err
 	}
 
-	if err := validateShapeAgainstData(shape, len(data)); err != nil {
+	err = validateShapeAgainstData(shape, len(data))
+	if err != nil {
 		return nil, err
 	}
 

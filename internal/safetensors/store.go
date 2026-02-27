@@ -96,7 +96,8 @@ func OpenStoreFromBytes(data []byte, opts StoreOptions) (*Store, error) {
 			return nil, fmt.Errorf("safetensors: decode header entry %q: %w", original, err)
 		}
 
-		if err := validateHeaderEntry(original, entry); err != nil {
+		err = validateHeaderEntry(original, entry)
+		if err != nil {
 			return nil, err
 		}
 

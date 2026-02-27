@@ -14,7 +14,8 @@ func TestWriteFile_RoundTripSingleTensor(t *testing.T) {
 		Data:  []float32{1.5, -0.25, 3.25, 4.0, -1.0, 0.5, 2.5, 9.0},
 	}
 
-	if err := WriteFile(path, []Tensor{want}); err != nil {
+	err := WriteFile(path, []Tensor{want})
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -64,22 +65,26 @@ func TestEncodeTensors_MultipleRoundTrip(t *testing.T) {
 }
 
 func TestEncodeTensors_ValidationErrors(t *testing.T) {
-	if _, err := EncodeTensors(nil); err == nil {
+	_, err := EncodeTensors(nil)
+	if err == nil {
 		t.Fatal("EncodeTensors(nil) should fail")
 	}
 
-	if _, err := EncodeTensors([]Tensor{{Name: "", Shape: []int64{1}, Data: []float32{1}}}); err == nil {
+	_, err = EncodeTensors([]Tensor{{Name: "", Shape: []int64{1}, Data: []float32{1}}})
+	if err == nil {
 		t.Fatal("empty tensor name should fail")
 	}
 
-	if _, err := EncodeTensors([]Tensor{
+	_, err = EncodeTensors([]Tensor{
 		{Name: "x", Shape: []int64{1}, Data: []float32{1}},
 		{Name: "x", Shape: []int64{1}, Data: []float32{2}},
-	}); err == nil {
+	})
+	if err == nil {
 		t.Fatal("duplicate tensor names should fail")
 	}
 
-	if _, err := EncodeTensors([]Tensor{{Name: "x", Shape: []int64{1, 2}, Data: []float32{1}}}); err == nil {
+	_, err = EncodeTensors([]Tensor{{Name: "x", Shape: []int64{1, 2}, Data: []float32{1}}})
+	if err == nil {
 		t.Fatal("shape/data mismatch should fail")
 	}
 }

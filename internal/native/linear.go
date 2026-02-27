@@ -24,9 +24,12 @@ func loadLinear(vb *VarBuilder, name string, withBias bool) (*Linear, error) {
 	var b *tensor.Tensor
 
 	if withBias {
-		if t, ok, err := vb.TensorMaybe(name + ".bias"); err != nil {
+		t, ok, err := vb.TensorMaybe(name + ".bias")
+		if err != nil {
 			return nil, err
-		} else if ok {
+		}
+
+		if ok {
 			if len(t.Shape()) != 1 || t.Shape()[0] != w.Shape()[0] {
 				return nil, fmt.Errorf("native: linear %q bias shape %v incompatible with weight %v", name, t.Shape(), w.Shape())
 			}

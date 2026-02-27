@@ -30,7 +30,7 @@ type conv1dLayer struct {
 	groups   int64
 }
 
-func loadConv1D(vb *VarBuilder, stride, dilation, groups int64, withBias bool) (*conv1dLayer, error) {
+func loadConv1D(vb *VarBuilder, withBias bool) (*conv1dLayer, error) {
 	w, err := vb.Tensor("weight")
 	if err != nil {
 		return nil, err
@@ -49,7 +49,7 @@ func loadConv1D(vb *VarBuilder, stride, dilation, groups int64, withBias bool) (
 		}
 	}
 
-	return &conv1dLayer{weight: w, bias: b, stride: stride, dilation: dilation, groups: groups}, nil
+	return &conv1dLayer{weight: w, bias: b, stride: 1, dilation: 1, groups: 1}, nil
 }
 
 func (c *conv1dLayer) forwardStreamingOnce(x *tensor.Tensor) (*tensor.Tensor, error) {
@@ -145,12 +145,12 @@ type seanetResBlock struct {
 }
 
 func loadSEANetResBlock(vb *VarBuilder) (*seanetResBlock, error) {
-	conv1, err := loadConv1D(vb.Path("block", "1", "conv"), 1, 1, 1, true)
+	conv1, err := loadConv1D(vb.Path("block", "1", "conv"), true)
 	if err != nil {
 		return nil, err
 	}
 
-	conv2, err := loadConv1D(vb.Path("block", "3", "conv"), 1, 1, 1, true)
+	conv2, err := loadConv1D(vb.Path("block", "3", "conv"), true)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +159,7 @@ func loadSEANetResBlock(vb *VarBuilder) (*seanetResBlock, error) {
 }
 
 func (rb *seanetResBlock) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
-	h := eluTensor(x, 1.0)
+	h := eluTensor(x)
 	var err error
 
 	h, err = rb.conv1.forwardStreamingOnce(h)
@@ -167,7 +167,7 @@ func (rb *seanetResBlock) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 		return nil, err
 	}
 
-	h = eluTensor(h, 1.0)
+	h = eluTensor(h)
 
 	h, err = rb.conv2.forwardStreamingOnce(h)
 	if err != nil {
@@ -423,7 +423,7 @@ func LoadMimiModel(vb *VarBuilder, cfg MimiConfig) (*MimiModel, error) {
 
 	mimi := vb.Path("mimi")
 
-	quant, err := loadConv1D(mimi.Path("quantizer", "output_proj"), 1, 1, 1, false)
+	quant, err := loadConv1D(mimi.Path("quantizer", "output_proj"), false)
 	if err != nil {
 		return nil, err
 	}
@@ -438,7 +438,7 @@ func LoadMimiModel(vb *VarBuilder, cfg MimiConfig) (*MimiModel, error) {
 		return nil, err
 	}
 
-	initConv, err := loadConv1D(mimi.Path("decoder", "model", "0", "conv"), 1, 1, 1, true)
+	initConv, err := loadConv1D(mimi.Path("decoder", "model", "0", "conv"), true)
 	if err != nil {
 		return nil, err
 	}
@@ -473,7 +473,7 @@ func LoadMimiModel(vb *VarBuilder, cfg MimiConfig) (*MimiModel, error) {
 		return nil, err
 	}
 
-	finalConv, err := loadConv1D(mimi.Path("decoder", "model", "11", "conv"), 1, 1, 1, true)
+	finalConv, err := loadConv1D(mimi.Path("decoder", "model", "11", "conv"), true)
 	if err != nil {
 		return nil, err
 	}
@@ -528,7 +528,7 @@ func (m *MimiModel) DecodeFromLatent(latent *tensor.Tensor) (*tensor.Tensor, err
 		return nil, err
 	}
 
-	x = eluTensor(x, 1.0)
+	x = eluTensor(x)
 
 	x, err = m.up1.forwardStreamingOnce(x)
 	if err != nil {
@@ -540,7 +540,7 @@ func (m *MimiModel) DecodeFromLatent(latent *tensor.Tensor) (*tensor.Tensor, err
 		return nil, err
 	}
 
-	x = eluTensor(x, 1.0)
+	x = eluTensor(x)
 
 	x, err = m.up2.forwardStreamingOnce(x)
 	if err != nil {
@@ -552,7 +552,7 @@ func (m *MimiModel) DecodeFromLatent(latent *tensor.Tensor) (*tensor.Tensor, err
 		return nil, err
 	}
 
-	x = eluTensor(x, 1.0)
+	x = eluTensor(x)
 
 	x, err = m.up3.forwardStreamingOnce(x)
 	if err != nil {
@@ -564,7 +564,7 @@ func (m *MimiModel) DecodeFromLatent(latent *tensor.Tensor) (*tensor.Tensor, err
 		return nil, err
 	}
 
-	x = eluTensor(x, 1.0)
+	x = eluTensor(x)
 
 	x, err = m.finalConv.forwardStreamingOnce(x)
 	if err != nil {

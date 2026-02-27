@@ -44,7 +44,7 @@ func fakeStatefulEngine(t *testing.T, eosAfterSteps int) *Engine {
 	}
 	step := &fakeRunner{
 		name: "flow_lm_step",
-		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
 			stepCount++
 			newOff := T + int64(stepCount)
 			out := map[string]*Tensor{}

@@ -261,7 +261,8 @@ func (l *flowTransformerLayer) forwardWithState(
 		return nil, err
 	}
 
-	if err := state.appendKV(k, v); err != nil {
+	err = state.appendKV(k, v)
+	if err != nil {
 		return nil, err
 	}
 

@@ -172,7 +172,9 @@ func TestStore_CorruptionAndUnsupportedDTypeErrors(t *testing.T) {
 	}{
 		"x": {dtype: "I64", shape: []int64{1}, data: make([]byte, 8)},
 	})
-	if _, err := OpenStoreFromBytes(unsupported, StoreOptions{}); err == nil {
+
+	_, err := OpenStoreFromBytes(unsupported, StoreOptions{})
+	if err == nil {
 		t.Fatal("OpenStoreFromBytes should fail for unsupported dtype")
 	}
 
@@ -182,7 +184,8 @@ func TestStore_CorruptionAndUnsupportedDTypeErrors(t *testing.T) {
 	binary.LittleEndian.PutUint64(data[:8], uint64(len(header)))
 	copy(data[8:], []byte(header))
 
-	if _, err := OpenStoreFromBytes(data, StoreOptions{}); err == nil {
+	_, err = OpenStoreFromBytes(data, StoreOptions{})
+	if err == nil {
 		t.Fatal("OpenStoreFromBytes should fail for invalid offsets")
 	}
 }

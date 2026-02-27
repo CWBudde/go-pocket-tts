@@ -86,7 +86,8 @@ func newBenchCmd() *cobra.Command {
 
 			meanRTF := totalRTF / float64(len(results))
 
-			if err := bench.CheckRTFThreshold(meanRTF, rtfThreshold); err != nil {
+			err = bench.CheckRTFThreshold(meanRTF, rtfThreshold)
+			if err != nil {
 				return err
 			}
 
