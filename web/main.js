@@ -418,8 +418,9 @@ async function runSynthesis(text) {
       (evt) => {
         const pct = Math.round(Math.max(0, Math.min(100, Number(evt?.percent || 0))));
         const stage = evt?.stage || "working";
-        showProgress(`Synthesizing (${stage})... ${pct}%`, pct, false);
-        setAction(`Synthesizing — ${stage} ${pct}%`);
+        const detail = evt?.detail || stage;
+        showProgress(`Synthesizing... ${pct}%`, pct, false);
+        setAction(`Synthesizing — ${detail} (${pct}%)`);
       },
       options,
     );

@@ -159,6 +159,10 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 
 		sequenceFrame = frame
 
+		if cfg.StepCallback != nil {
+			cfg.StepCallback(step+1, maxSteps)
+		}
+
 		if step > 0 && step%10 == 0 {
 			slog.Debug("native-safetensors generation progress", "step", step, "frames", len(latentFrames))
 		}

@@ -19,6 +19,9 @@ type RuntimeGenerateConfig struct {
 	LSDDecodeSteps int
 	FramesAfterEOS int
 	VoiceEmbedding *VoiceEmbedding
+	// StepCallback is called after each AR step with the 1-based step index
+	// and the configured maxSteps ceiling. It may be nil.
+	StepCallback func(step, maxSteps int)
 }
 
 // PCMChunk is a chunk of PCM audio produced during streaming synthesis.
