@@ -255,44 +255,13 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	if h.streamer == nil {
-		writeError(w, http.StatusNotImplemented, "streaming not available for this backend")
-		return
-	}
-
-	flusher, ok := w.(http.Flusher)
+	flusher, ok := h.prepareStreamingResponse(w, r)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "streaming not supported")
 		return
 	}
 
-	if r.Body == nil {
-		writeError(w, http.StatusBadRequest, "request body is required")
-		return
-	}
-
-	var req ttsRequest
-
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-		return
-	}
-
-	if req.Text == "" {
-		writeError(w, http.StatusBadRequest, "text field is required")
-		return
-	}
-
-	if len(req.Text) > h.opts.maxTextBytes {
-		writeError(w, http.StatusRequestEntityTooLarge,
-			fmt.Sprintf("text exceeds maximum size of %d bytes", h.opts.maxTextBytes))
-
+	req, ok := h.decodeStreamRequest(w, r)
+	if !ok {
 		return
 	}
 
@@ -307,41 +276,8 @@ func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), h.opts.requestTimeout)
 	defer cancel()
 
-	w.Header().Set("Content-Type", "audio/wav")
-	w.Header().Set("Transfer-Encoding", "chunked")
-	w.WriteHeader(http.StatusOK)
-
-	if _, err := audio.WriteWAVHeaderStreaming(w); err != nil {
-		h.log.ErrorContext(r.Context(), "failed to write WAV header", slog.String("error", err.Error()))
-		return
-	}
-
-	flusher.Flush()
-
-	chunkCh := make(chan tts.PCMChunk, 2)
-
-	errCh := make(chan error, 1)
-
-	go func() {
-		errCh <- h.streamer.SynthesizeStream(ctx, req.Text, req.Voice, chunkCh)
-	}()
-
 	start := time.Now()
-
-	var totalSamples int
-	for chunk := range chunkCh {
-		totalSamples += len(chunk.Samples)
-		if _, err := audio.WritePCM16Samples(w, chunk.Samples); err != nil {
-			h.log.ErrorContext(r.Context(), "failed to write PCM chunk", slog.String("error", err.Error()))
-			cancel()
-
-			break
-		}
-
-		flusher.Flush()
-	}
-
-	err = <-errCh
+	totalSamples, err := h.streamChunks(ctx, cancel, w, flusher, req)
 	if err != nil {
 		h.log.ErrorContext(r.Context(), "streaming synthesis failed",
 			slog.String("voice", req.Voice),
@@ -359,6 +295,94 @@ func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
 		slog.Int64("duration_ms", time.Since(start).Milliseconds()),
 		slog.Int("total_samples", totalSamples),
 	)
+}
+
+func (h *handler) prepareStreamingResponse(w http.ResponseWriter, r *http.Request) (http.Flusher, bool) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return nil, false
+	}
+
+	if h.streamer == nil {
+		writeError(w, http.StatusNotImplemented, "streaming not available for this backend")
+		return nil, false
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming not supported")
+		return nil, false
+	}
+
+	if r.Body == nil {
+		writeError(w, http.StatusBadRequest, "request body is required")
+		return nil, false
+	}
+
+	return flusher, true
+}
+
+func (h *handler) decodeStreamRequest(w http.ResponseWriter, r *http.Request) (ttsRequest, bool) {
+	var req ttsRequest
+
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return ttsRequest{}, false
+	}
+
+	if req.Text == "" {
+		writeError(w, http.StatusBadRequest, "text field is required")
+		return ttsRequest{}, false
+	}
+
+	if len(req.Text) > h.opts.maxTextBytes {
+		writeError(w, http.StatusRequestEntityTooLarge,
+			fmt.Sprintf("text exceeds maximum size of %d bytes", h.opts.maxTextBytes))
+		return ttsRequest{}, false
+	}
+
+	return req, true
+}
+
+func (h *handler) streamChunks(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	w http.ResponseWriter,
+	flusher http.Flusher,
+	req ttsRequest,
+) (int, error) {
+	w.Header().Set("Content-Type", "audio/wav")
+	w.Header().Set("Transfer-Encoding", "chunked")
+	w.WriteHeader(http.StatusOK)
+
+	if _, err := audio.WriteWAVHeaderStreaming(w); err != nil {
+		h.log.ErrorContext(ctx, "failed to write WAV header", slog.String("error", err.Error()))
+		return 0, err
+	}
+
+	flusher.Flush()
+
+	chunkCh := make(chan tts.PCMChunk, 2)
+	errCh := make(chan error, 1)
+
+	go func() {
+		errCh <- h.streamer.SynthesizeStream(ctx, req.Text, req.Voice, chunkCh)
+	}()
+
+	totalSamples := 0
+	for chunk := range chunkCh {
+		totalSamples += len(chunk.Samples)
+		if _, err := audio.WritePCM16Samples(w, chunk.Samples); err != nil {
+			h.log.ErrorContext(ctx, "failed to write PCM chunk", slog.String("error", err.Error()))
+			cancel()
+			break
+		}
+
+		flusher.Flush()
+	}
+
+	return totalSamples, <-errCh
 }
 
 // acquireWorker tries to acquire a worker slot from the semaphore.
