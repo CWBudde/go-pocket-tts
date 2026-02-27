@@ -91,6 +91,7 @@ func newDoctorCmd() *cobra.Command {
 
 			if result.Failed() {
 				for _, f := range result.Failures() {
+					// #nosec G705 -- Writes plain diagnostic text to stderr for CLI output, not HTML rendering.
 					fmt.Fprintf(os.Stderr, "FAIL: %s\n", f)
 				}
 
