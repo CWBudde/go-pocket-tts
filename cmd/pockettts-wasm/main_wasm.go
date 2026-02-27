@@ -9,6 +9,7 @@ import (
 	"math"
 	"sync"
 	"syscall/js"
+	"time"
 
 	"github.com/example/go-pocket-tts/internal/audio"
 	"github.com/example/go-pocket-tts/internal/config"
@@ -369,6 +370,10 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 				pct := chunkStart + stepPct
 				detail := fmt.Sprintf("chunk %d/%d · step %d", i+1, nChunks, step)
 				progress.Emit("synthesize", pct, 100, detail)
+				// Yield the browser thread so the event loop can repaint.
+				// In WASM, time.Sleep schedules a setTimeout which hands
+				// control back to the browser before this goroutine resumes.
+				time.Sleep(time.Millisecond)
 			},
 		}
 
