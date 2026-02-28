@@ -98,6 +98,7 @@ func attentionGeneric(q, k, v *tensor.Tensor, causal bool, offset int64) (*tenso
 func attention4D(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Tensor, bool, error) {
 	qShape := q.Shape()
 	kShape := k.Shape()
+
 	vShape := v.Shape()
 	if len(qShape) != 4 || len(kShape) != 4 || len(vShape) != 4 {
 		return nil, false, nil
@@ -198,6 +199,7 @@ func attention4D(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Ten
 			qRow := qData[qOff : qOff+dI]
 
 			maxV := float32(math.Inf(-1))
+
 			maxKey := int64(qi) + offset
 			for ki := range tkI {
 				if causal && int64(ki) > maxKey {
@@ -208,6 +210,7 @@ func attention4D(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Ten
 				kOff := kBHBase + ki*dI
 				kRow := kData[kOff : kOff+dI]
 				s := tensor.DotProduct(qRow, kRow) * scale
+
 				scores[ki] = s
 				if s > maxV {
 					maxV = s
@@ -218,11 +221,13 @@ func attention4D(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Ten
 			for i := range outRow {
 				outRow[i] = 0
 			}
+
 			if math.IsInf(float64(maxV), -1) {
 				continue
 			}
 
 			var sum float64
+
 			for ki := range tkI {
 				s := scores[ki]
 				if math.IsInf(float64(s), -1) {
@@ -234,6 +239,7 @@ func attention4D(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Ten
 				scores[ki] = float32(e)
 				sum += e
 			}
+
 			if sum == 0 || math.IsNaN(sum) {
 				setErr(errors.New("ops: softmax encountered zero normalization sum"))
 				return
@@ -257,6 +263,7 @@ func attention4D(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Ten
 	} else {
 		runJobs(0, jobCount)
 	}
+
 	if firstErr != nil {
 		return nil, true, firstErr
 	}

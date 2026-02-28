@@ -3,10 +3,7 @@ package tensor
 // Axpy computes dst += alpha * src element-wise.
 // If src and dst lengths differ, the shorter length is used.
 func Axpy(dst []float32, alpha float32, src []float32) {
-	n := len(dst)
-	if len(src) < n {
-		n = len(src)
-	}
+	n := min(len(src), len(dst))
 
 	if n == 0 || alpha == 0 {
 		return

@@ -35,15 +35,22 @@ func RepackConvTransposeKernel(kernel *tensor.Tensor) []float32 {
 // ConvTranspose1DPrePacked is like ConvTranspose1D but accepts a pre-packed
 // kernelT (from RepackConvTransposeKernel). Only valid for groups=1.
 func ConvTranspose1DPrePacked(input, kernel, bias *tensor.Tensor, kernelT []float32, stride, padding, outputPadding, dilation, groups int64) (*tensor.Tensor, error) {
+	return ConvTranspose1DPrePackedRightTrim(input, kernel, bias, kernelT, stride, padding, outputPadding, dilation, groups, 0)
+}
+
+// ConvTranspose1DPrePackedRightTrim is like ConvTranspose1DPrePacked but
+// trims rightTrim samples from the output tail during convolution.
+// This avoids an extra output copy for streaming decode paths.
+func ConvTranspose1DPrePackedRightTrim(input, kernel, bias *tensor.Tensor, kernelT []float32, stride, padding, outputPadding, dilation, groups, rightTrim int64) (*tensor.Tensor, error) {
 	if groups != 1 {
 		return nil, fmt.Errorf("ops: ConvTranspose1DPrePacked requires groups=1, got %d", groups)
 	}
 
 	if kernelT == nil {
-		return ConvTranspose1D(input, kernel, bias, stride, padding, outputPadding, dilation, groups)
+		return ConvTranspose1DRightTrim(input, kernel, bias, stride, padding, outputPadding, dilation, groups, rightTrim)
 	}
 
-	p, out, biasData, err := prepareConvTranspose1D(input, kernel, bias, stride, padding, outputPadding, dilation, groups)
+	p, out, biasData, err := prepareConvTranspose1D(input, kernel, bias, stride, padding, outputPadding, dilation, groups, rightTrim)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +205,13 @@ func convTranspose1DFastDepthwise(
 // input: [batch, in_channels, length]
 // kernel: [in_channels, out_channels/groups, kernel_size]
 func ConvTranspose1D(input, kernel, bias *tensor.Tensor, stride, padding, outputPadding, dilation, groups int64) (*tensor.Tensor, error) {
-	p, out, biasData, err := prepareConvTranspose1D(input, kernel, bias, stride, padding, outputPadding, dilation, groups)
+	return ConvTranspose1DRightTrim(input, kernel, bias, stride, padding, outputPadding, dilation, groups, 0)
+}
+
+// ConvTranspose1DRightTrim is ConvTranspose1D with optional tail trimming
+// applied directly in-kernel (avoids post-op Narrow copies).
+func ConvTranspose1DRightTrim(input, kernel, bias *tensor.Tensor, stride, padding, outputPadding, dilation, groups, rightTrim int64) (*tensor.Tensor, error) {
+	p, out, biasData, err := prepareConvTranspose1D(input, kernel, bias, stride, padding, outputPadding, dilation, groups, rightTrim)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +258,7 @@ type convTranspose1DParams struct {
 
 func prepareConvTranspose1D(
 	input, kernel, bias *tensor.Tensor,
-	stride, padding, outputPadding, dilation, groups int64,
+	stride, padding, outputPadding, dilation, groups, rightTrim int64,
 ) (convTranspose1DParams, *tensor.Tensor, []float32, error) {
 	if input == nil || kernel == nil {
 		return convTranspose1DParams{}, nil, nil, errors.New("ops: convtranspose1d requires non-nil input/kernel")
@@ -294,6 +307,12 @@ func prepareConvTranspose1D(
 	}
 
 	p.outLength = (p.inLength-1)*stride - 2*padding + dilation*(p.kernelSize-1) + outputPadding + 1
+
+	if rightTrim < 0 {
+		return convTranspose1DParams{}, nil, nil, fmt.Errorf("ops: convtranspose1d rightTrim must be >= 0, got %d", rightTrim)
+	}
+
+	p.outLength -= rightTrim
 	if p.outLength <= 0 {
 		return convTranspose1DParams{}, nil, nil, fmt.Errorf("ops: convtranspose1d produced non-positive output length %d", p.outLength)
 	}

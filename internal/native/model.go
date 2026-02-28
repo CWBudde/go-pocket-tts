@@ -136,22 +136,74 @@ func (m *Model) LatentToMimi(latent *tensor.Tensor) (*tensor.Tensor, error) {
 		return nil, fmt.Errorf("native: latent shape must be [B,T,%d], got %v", m.flow.cfg.LDim, shape)
 	}
 
-	denorm, err := tensor.BroadcastMul(latent, m.flow.embStd)
-	if err != nil {
-		return nil, err
-	}
-
-	denorm, err = tensor.BroadcastAdd(denorm, m.flow.embMean)
-	if err != nil {
-		return nil, err
-	}
-	// [B, T, 32] -> [B, 32, T]
-	denorm, err = denorm.Transpose(1, 2)
+	// Fuse denormalization + layout transform in one pass:
+	// [B,T,D] -> [B,D,T], value = latent*emb_std + emb_mean.
+	denorm, err := denormLatentToBCT(latent, m.flow.embStd, m.flow.embMean, m.flow.cfg.LDim)
 	if err != nil {
 		return nil, err
 	}
 
 	return m.mimi.QuantizerProject(denorm)
+}
+
+func denormLatentToBCT(latent, embStd, embMean *tensor.Tensor, lDim int64) (*tensor.Tensor, error) {
+	if latent == nil {
+		return nil, errors.New("native: latent tensor is nil")
+	}
+
+	if embStd == nil || embMean == nil {
+		return nil, errors.New("native: flow embedding stats are not initialized")
+	}
+
+	shape := latent.Shape()
+	if len(shape) != 3 {
+		return nil, fmt.Errorf("native: latent shape must be rank-3 [B,T,D], got %v", shape)
+	}
+
+	if shape[2] != lDim {
+		return nil, fmt.Errorf("native: latent depth mismatch, got %d want %d", shape[2], lDim)
+	}
+
+	b := int(shape[0])
+	t := int(shape[1])
+
+	d := int(shape[2])
+	if b <= 0 || t <= 0 || d <= 0 {
+		return nil, fmt.Errorf("native: latent shape must be positive, got %v", shape)
+	}
+
+	std := embStd.RawData()
+
+	mean := embMean.RawData()
+	if len(std) < d || len(mean) < d {
+		return nil, fmt.Errorf("native: embedding stats shape mismatch: std=%d mean=%d latent_d=%d", len(std), len(mean), d)
+	}
+
+	out, err := tensor.Zeros([]int64{shape[0], shape[2], shape[1]})
+	if err != nil {
+		return nil, err
+	}
+
+	latentData := latent.RawData()
+	outData := out.RawData()
+	latentBStride := t * d
+	outBStride := d * t
+
+	for bi := range b {
+		latentBBase := bi * latentBStride
+		outBBase := bi * outBStride
+
+		for ti := range t {
+			latentOff := latentBBase + ti*d
+
+			for di := range d {
+				outOff := outBBase + di*t + ti
+				outData[outOff] = latentData[latentOff+di]*std[di] + mean[di]
+			}
+		}
+	}
+
+	return out, nil
 }
 
 // MimiDecode maps [B, 512, T] to [B, 1, N] PCM-like output.

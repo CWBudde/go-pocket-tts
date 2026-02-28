@@ -48,6 +48,7 @@ func TestAxpy(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := append([]float32(nil), tt.dst...)
 			Axpy(got, tt.alpha, tt.src)
+
 			if len(got) != len(tt.want) {
 				t.Fatalf("len(got)=%d want=%d", len(got), len(tt.want))
 			}
@@ -64,6 +65,7 @@ func TestAxpy(t *testing.T) {
 func BenchmarkAxpy(b *testing.B) {
 	for _, n := range []int{8, 64, 512, 4096} {
 		dst := make([]float32, n)
+
 		src := make([]float32, n)
 		for i := range n {
 			dst[i] = float32(i) * 0.1

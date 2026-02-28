@@ -121,6 +121,65 @@ func TestConvTranspose1DPrePacked(t *testing.T) {
 	}
 }
 
+func TestConvTranspose1DRightTrimMatchesNarrow(t *testing.T) {
+	input := mustTensorT(t, seqDataT(1*3*5), []int64{1, 3, 5})
+	kernel := mustTensorT(t, seqDataT(3*4*4), []int64{3, 4, 4})
+	bias := mustTensorT(t, seqDataT(4), []int64{4})
+
+	const rightTrim = int64(2)
+
+	got, err := ConvTranspose1DRightTrim(input, kernel, bias, 2, 0, 0, 1, 1, rightTrim)
+	if err != nil {
+		t.Fatalf("ConvTranspose1DRightTrim: %v", err)
+	}
+
+	full, err := ConvTranspose1D(input, kernel, bias, 2, 0, 0, 1, 1)
+	if err != nil {
+		t.Fatalf("ConvTranspose1D: %v", err)
+	}
+
+	shape := full.Shape()
+
+	want, err := full.Narrow(2, 0, shape[2]-rightTrim)
+	if err != nil {
+		t.Fatalf("Narrow: %v", err)
+	}
+
+	if !equalApprox(got.Data(), want.Data(), 1e-5) {
+		t.Fatalf("ConvTranspose1DRightTrim = %v, want %v", got.Data(), want.Data())
+	}
+}
+
+func TestConvTranspose1DPrePackedRightTrimMatchesNarrow(t *testing.T) {
+	input := mustTensorT(t, seqDataT(1*2*6), []int64{1, 2, 6})
+	kernel := mustTensorT(t, seqDataT(2*3*5), []int64{2, 3, 5})
+	bias := mustTensorT(t, seqDataT(3), []int64{3})
+	packed := RepackConvTransposeKernel(kernel)
+
+	const rightTrim = int64(3)
+
+	got, err := ConvTranspose1DPrePackedRightTrim(input, kernel, bias, packed, 2, 0, 0, 1, 1, rightTrim)
+	if err != nil {
+		t.Fatalf("ConvTranspose1DPrePackedRightTrim: %v", err)
+	}
+
+	full, err := ConvTranspose1DPrePacked(input, kernel, bias, packed, 2, 0, 0, 1, 1)
+	if err != nil {
+		t.Fatalf("ConvTranspose1DPrePacked: %v", err)
+	}
+
+	shape := full.Shape()
+
+	want, err := full.Narrow(2, 0, shape[2]-rightTrim)
+	if err != nil {
+		t.Fatalf("Narrow: %v", err)
+	}
+
+	if !equalApprox(got.Data(), want.Data(), 1e-5) {
+		t.Fatalf("ConvTranspose1DPrePackedRightTrim = %v, want %v", got.Data(), want.Data())
+	}
+}
+
 func TestConvTranspose1DGroupedPathWithBias(t *testing.T) {
 	input := mustTensorT(t, []float32{
 		1, 2, // ic0
