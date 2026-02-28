@@ -76,3 +76,11 @@ voices/*.safetensors
 # Temporary files
 tmp/
 .tmp/
+
+# Benchmark outputs (keep folder skeleton only)
+bench/results/**
+!bench/results/
+!bench/results/stageprof/
+!bench/results/wasm/
+!bench/results/stageprof/.gitkeep
+!bench/results/wasm/.gitkeep

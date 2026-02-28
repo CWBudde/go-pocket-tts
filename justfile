@@ -40,8 +40,9 @@ test-race:
 # Run dedicated js/wasm decode benchmarks (mimi_only + decode_stage).
 # Usage:
 #   just bench-wasm-decode
-#   POCKETTTS_BENCH_DECODE_FRAMES=4,8,16 just bench-wasm-decode 1x 1 /tmp/wasm-decode.txt
-bench-wasm-decode benchtime="3x" count="3" out="/tmp/wasm-decode-bench.txt":
+#   POCKETTTS_BENCH_DECODE_FRAMES=4,8,16 just bench-wasm-decode 1x 1 bench/results/wasm/wasm-decode.txt
+bench-wasm-decode benchtime="3x" count="3" out="bench/results/wasm/wasm-decode-bench.txt":
+    mkdir -p "$(dirname {{out}})"
     env -i \
         PATH="/usr/bin:/bin:$(go env GOROOT)/bin" \
         HOME="$HOME" \
@@ -59,6 +60,22 @@ bench-wasm-decode benchtime="3x" count="3" out="/tmp/wasm-decode-bench.txt":
             -benchmem \
             -benchtime={{benchtime}} \
             -count={{count}} | tee {{out}}
+
+# Run stage profiler with AVX2/FMA (asm tag).
+# Usage:
+#   just bench-stageprof-asm
+#   just bench-stageprof-asm 10 2 "Hello from PocketTTS in the browser." bench/results/stageprof/custom_asm.txt
+bench-stageprof-asm runs="5" warmup="1" text="Hello from PocketTTS in the browser." out="":
+    mkdir -p bench/results/stageprof
+    out_file="{{out}}"; if [ -z "$out_file" ]; then out_file="bench/results/stageprof/stageprof_$(date -u +%Y%m%d-%H%M%S)_asm.txt"; fi; GOCACHE="${GOCACHE:-/tmp/go-build}" go run -tags asm ./bench/stageprof --text "{{text}}" --warmup {{warmup}} --runs {{runs}} | tee "$out_file"; echo "saved: $out_file"
+
+# Run stage profiler with AVX2/FMA disabled.
+# Usage:
+#   just bench-stageprof-noavx
+#   just bench-stageprof-noavx 10 2 "Hello from PocketTTS in the browser." bench/results/stageprof/custom_noavx.txt
+bench-stageprof-noavx runs="5" warmup="1" text="Hello from PocketTTS in the browser." out="":
+    mkdir -p bench/results/stageprof
+    out_file="{{out}}"; if [ -z "$out_file" ]; then out_file="bench/results/stageprof/stageprof_$(date -u +%Y%m%d-%H%M%S)_noavx.txt"; fi; GOCACHE="${GOCACHE:-/tmp/go-build}" GODEBUG=cpu.avx2=off,cpu.fma=off go run ./bench/stageprof --text "{{text}}" --warmup {{warmup}} --runs {{runs}} | tee "$out_file"; echo "saved: $out_file"
 
 # Run tests with coverage
 test-coverage:

@@ -91,6 +91,21 @@ Or run without building a binary:
 go run ./cmd/pockettts --help
 ```
 
+## Benchmarking
+
+Stage profiling and wasm decode benchmarks are now organized under `bench/`.
+
+- Stage profiler entrypoint: `./bench/stageprof`
+- Output directory: `bench/results/` (gitignored)
+
+Recommended commands:
+
+```bash
+just bench-stageprof-asm
+just bench-stageprof-noavx
+just bench-wasm-decode
+```
+
 ## Quickstart (CLI)
 
 ### 1) Download model files
