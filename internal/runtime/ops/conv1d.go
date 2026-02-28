@@ -20,7 +20,7 @@ import (
 func conv1DFastGroups1(
 	inputData, kernelData, biasData []float32,
 	batch, inCh, length, outCh, kSize, outLen,
-	stride, padding, dilation int64,
+	stride, leftPadding, dilation int64,
 	outData []float32,
 ) {
 	patchLen := int(inCh * kSize)
@@ -52,7 +52,7 @@ func conv1DFastGroups1(
 			for kx := range kSize {
 				col := int(ic)*kSizeI + int(kx)
 				for ox := range outLen {
-					inPos := ox*stride - padding + kx*dilation
+					inPos := ox*stride - leftPadding + kx*dilation
 					if inPos >= 0 && inPos < length {
 						imcol[int(ox)*patchLen+col] = inputData[inBase+int(inPos)]
 					}
@@ -86,7 +86,21 @@ func conv1DFastGroups1(
 // input: [batch, in_channels, length]
 // kernel: [out_channels, in_channels/groups, kernel_size]
 func Conv1D(input, kernel, bias *tensor.Tensor, stride, padding, dilation, groups int64) (*tensor.Tensor, error) {
-	p, out, biasData, err := prepareConv1D(input, kernel, bias, stride, padding, dilation, groups)
+	return conv1DWithAsymmetricPadding(input, kernel, bias, stride, padding, padding, dilation, groups)
+}
+
+// Conv1DLeftPad is Conv1D with left-only zero padding and no right padding.
+// This is useful for streaming decode paths where history padding is required
+// without extending the right boundary.
+func Conv1DLeftPad(input, kernel, bias *tensor.Tensor, stride, leftPadding, dilation, groups int64) (*tensor.Tensor, error) {
+	return conv1DWithAsymmetricPadding(input, kernel, bias, stride, leftPadding, 0, dilation, groups)
+}
+
+func conv1DWithAsymmetricPadding(
+	input, kernel, bias *tensor.Tensor,
+	stride, leftPadding, rightPadding, dilation, groups int64,
+) (*tensor.Tensor, error) {
+	p, out, biasData, err := prepareConv1D(input, kernel, bias, stride, leftPadding, rightPadding, dilation, groups)
 	if err != nil {
 		return nil, err
 	}
@@ -98,14 +112,14 @@ func Conv1D(input, kernel, bias *tensor.Tensor, stride, padding, dilation, group
 	if groups == 1 {
 		conv1DFastGroups1(inputData, kernelData, biasData,
 			p.batch, p.inChannels, p.length, p.outChannels, p.kernelSize, p.outLength,
-			stride, padding, dilation, outData)
+			stride, leftPadding, dilation, outData)
 
 		return out, nil
 	}
 
 	conv1DGrouped(inputData, kernelData, biasData, outData,
 		p.batch, p.inChannels, p.length, p.outChannels, p.kernelSize, p.outLength,
-		p.kInChannels, p.inPerGroup, p.outPerGroup, stride, padding, dilation)
+		p.kInChannels, p.inPerGroup, p.outPerGroup, stride, leftPadding, dilation)
 
 	return out, nil
 }
@@ -124,7 +138,7 @@ type conv1DParams struct {
 
 func prepareConv1D(
 	input, kernel, bias *tensor.Tensor,
-	stride, padding, dilation, groups int64,
+	stride, leftPadding, rightPadding, dilation, groups int64,
 ) (conv1DParams, *tensor.Tensor, []float32, error) {
 	if input == nil || kernel == nil {
 		return conv1DParams{}, nil, nil, errors.New("ops: conv1d requires non-nil input/kernel")
@@ -168,7 +182,7 @@ func prepareConv1D(
 		}
 	}
 
-	p.outLength = (p.length+2*padding-dilation*(p.kernelSize-1)-1)/stride + 1
+	p.outLength = (p.length+leftPadding+rightPadding-dilation*(p.kernelSize-1)-1)/stride + 1
 	if p.outLength <= 0 {
 		return conv1DParams{}, nil, nil, fmt.Errorf("ops: conv1d produced non-positive output length %d", p.outLength)
 	}
@@ -188,7 +202,7 @@ func prepareConv1D(
 
 func conv1DGrouped(
 	inputData, kernelData, biasData, outData []float32,
-	batch, inChannels, length, outChannels, kernelSize, outLength, kInChannels, inPerGroup, outPerGroup, stride, padding, dilation int64,
+	batch, inChannels, length, outChannels, kernelSize, outLength, kInChannels, inPerGroup, outPerGroup, stride, leftPadding, dilation int64,
 ) {
 	for b := range batch {
 		for oc := range outChannels {
@@ -205,7 +219,7 @@ func conv1DGrouped(
 					inC := inStart + ic
 
 					for kx := range kernelSize {
-						inPos := ox*stride - padding + kx*dilation
+						inPos := ox*stride - leftPadding + kx*dilation
 						if inPos < 0 || inPos >= length {
 							continue
 						}

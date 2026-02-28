@@ -73,6 +73,50 @@ func TestConv1DGroupedPath(t *testing.T) {
 	}
 }
 
+func TestConv1DLeftPadMatchesExplicitPrepend(t *testing.T) {
+	input := mustTensorT(t, []float32{
+		1, 2, 3, 4,
+		10, 20, 30, 40,
+	}, []int64{1, 2, 4})
+	kernel := mustTensorT(t, []float32{
+		1, 1, 1, // oc0, ic0
+		1, 1, 1, // oc0, ic1
+		2, 2, 2, // oc1, ic0
+		2, 2, 2, // oc1, ic1
+	}, []int64{2, 2, 3})
+	bias := mustTensorT(t, []float32{0.25, -0.5}, []int64{2})
+
+	const leftPad = int64(2)
+	const stride = int64(2)
+	const dilation = int64(1)
+
+	got, err := Conv1DLeftPad(input, kernel, bias, stride, leftPad, dilation, 1)
+	if err != nil {
+		t.Fatalf("Conv1DLeftPad: %v", err)
+	}
+
+	shape := input.Shape()
+
+	pad, err := tensor.Zeros([]int64{shape[0], shape[1], leftPad})
+	if err != nil {
+		t.Fatalf("Zeros: %v", err)
+	}
+
+	padded, err := tensor.Concat([]*tensor.Tensor{pad, input}, 2)
+	if err != nil {
+		t.Fatalf("Concat: %v", err)
+	}
+
+	want, err := Conv1D(padded, kernel, bias, stride, 0, dilation, 1)
+	if err != nil {
+		t.Fatalf("Conv1D explicit prepend: %v", err)
+	}
+
+	if !equalApprox(got.Data(), want.Data(), 1e-5) {
+		t.Fatalf("Conv1DLeftPad = %v, want %v", got.Data(), want.Data())
+	}
+}
+
 func TestConv1DErrors(t *testing.T) {
 	validInput := mustTensorT(t, []float32{1, 2, 3, 4}, []int64{1, 1, 4})
 	validKernel := mustTensorT(t, []float32{1, 1}, []int64{1, 1, 2})

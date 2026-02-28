@@ -20,4 +20,3 @@ func axpyF32(dst []float32, alpha float32, src []float32) {
 
 //go:noescape
 func axpyF32NEON(dst, src *float32, alpha float32, n int)
-

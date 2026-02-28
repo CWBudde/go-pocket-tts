@@ -179,6 +179,7 @@ func BenchmarkAttention4DGeneric(b *testing.B) {
 
 func BenchmarkAttention4DFusedParallel(b *testing.B) {
 	prev := tensor.Workers()
+
 	tensor.SetWorkers(8)
 	defer tensor.SetWorkers(prev)
 
@@ -198,6 +199,7 @@ func BenchmarkAttention4DFusedParallel(b *testing.B) {
 
 func mustTensorB(b *testing.B, data []float32, shape []int64) *tensor.Tensor {
 	b.Helper()
+
 	t, err := tensor.New(data, shape)
 	if err != nil {
 		b.Fatalf("tensor.New(%v, %v): %v", data, shape, err)

@@ -59,23 +59,9 @@ func (c *conv1dLayer) forwardStreamingOnce(x *tensor.Tensor) (*tensor.Tensor, er
 	k := c.weight.Shape()[2]
 	effKernel := (k-1)*c.dilation + 1
 
-	prevLen := max(effKernel-c.stride, 0)
+	leftPad := max(effKernel-c.stride, 0)
 
-	if prevLen > 0 {
-		shape := x.Shape()
-
-		pad, err := tensor.Zeros([]int64{shape[0], shape[1], prevLen})
-		if err != nil {
-			return nil, err
-		}
-
-		x, err = tensor.Concat([]*tensor.Tensor{pad, x}, 2)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return ops.Conv1D(x, c.weight, c.bias, c.stride, 0, c.dilation, c.groups)
+	return ops.Conv1DLeftPad(x, c.weight, c.bias, c.stride, leftPad, c.dilation, c.groups)
 }
 
 type convTr1dLayer struct {
@@ -117,32 +103,14 @@ func loadConvTr1D(vb *VarBuilder, stride, groups int64, withBias bool) (*convTr1
 }
 
 func (c *convTr1dLayer) forwardStreamingOnce(x *tensor.Tensor) (*tensor.Tensor, error) {
-	var y *tensor.Tensor
-
-	var err error
-	if c.kernelT != nil {
-		y, err = ops.ConvTranspose1DPrePacked(x, c.weight, c.bias, c.kernelT, c.stride, 0, 0, 1, c.groups)
-	} else {
-		y, err = ops.ConvTranspose1D(x, c.weight, c.bias, c.stride, 0, 0, 1, c.groups)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
 	k := c.weight.Shape()[2]
 
 	pt := k - c.stride
-	if pt <= 0 {
-		return y, nil
+	if c.kernelT != nil {
+		return ops.ConvTranspose1DPrePackedRightTrim(x, c.weight, c.bias, c.kernelT, c.stride, 0, 0, 1, c.groups, pt)
 	}
 
-	shape := y.Shape()
-	if len(shape) != 3 || shape[2] <= pt {
-		return nil, fmt.Errorf("native: convtranspose output too short for partial trim: %v pt=%d", shape, pt)
-	}
-
-	return y.Narrow(2, 0, shape[2]-pt)
+	return ops.ConvTranspose1DRightTrim(x, c.weight, c.bias, c.stride, 0, 0, 1, c.groups, pt)
 }
 
 type seanetResBlock struct {
