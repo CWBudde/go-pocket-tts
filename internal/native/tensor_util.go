@@ -106,6 +106,17 @@ func eluTensor(x *tensor.Tensor) *tensor.Tensor {
 	return out
 }
 
+func eluTensorInPlace(x *tensor.Tensor) *tensor.Tensor {
+	d := x.RawData()
+	for i, v := range d {
+		if v <= 0 {
+			d[i] = float32(math.Exp(float64(v))) - 1
+		}
+	}
+
+	return x
+}
+
 func lastToken(x *tensor.Tensor) (*tensor.Tensor, error) {
 	shape := x.Shape()
 	if len(shape) != 3 || shape[1] < 1 {
@@ -169,6 +180,24 @@ func modulate(x, shift, scale *tensor.Tensor) (*tensor.Tensor, error) {
 	}
 
 	return out, nil
+}
+
+func addSameShapeInPlace(dst, src *tensor.Tensor) (*tensor.Tensor, error) {
+	if dst == nil || src == nil {
+		return nil, errors.New("native: add requires non-nil tensors")
+	}
+
+	if !equalShape(dst.Shape(), src.Shape()) {
+		return nil, fmt.Errorf("native: add shape mismatch %v vs %v", dst.Shape(), src.Shape())
+	}
+
+	dd := dst.RawData()
+	sd := src.RawData()
+	for i := range dd {
+		dd[i] += sd[i]
+	}
+
+	return dst, nil
 }
 
 func replaceNaNWithVector(x, vec *tensor.Tensor) (*tensor.Tensor, error) {

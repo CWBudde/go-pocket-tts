@@ -133,7 +133,8 @@ func loadSEANetResBlock(vb *VarBuilder) (*seanetResBlock, error) {
 }
 
 func (rb *seanetResBlock) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
-	h := eluTensor(x)
+	h := x.Clone()
+	h = eluTensorInPlace(h)
 	var err error
 
 	h, err = rb.conv1.forwardStreamingOnce(h)
@@ -141,14 +142,14 @@ func (rb *seanetResBlock) Forward(x *tensor.Tensor) (*tensor.Tensor, error) {
 		return nil, err
 	}
 
-	h = eluTensor(h)
+	h = eluTensorInPlace(h)
 
 	h, err = rb.conv2.forwardStreamingOnce(h)
 	if err != nil {
 		return nil, err
 	}
 
-	return addSameShape(x, h)
+	return addSameShapeInPlace(x, h)
 }
 
 type mimiTransformerLayer struct {
@@ -502,7 +503,7 @@ func (m *MimiModel) DecodeFromLatent(latent *tensor.Tensor) (*tensor.Tensor, err
 		return nil, err
 	}
 
-	x = eluTensor(x)
+	x = eluTensorInPlace(x)
 
 	x, err = m.up1.forwardStreamingOnce(x)
 	if err != nil {
@@ -514,7 +515,7 @@ func (m *MimiModel) DecodeFromLatent(latent *tensor.Tensor) (*tensor.Tensor, err
 		return nil, err
 	}
 
-	x = eluTensor(x)
+	x = eluTensorInPlace(x)
 
 	x, err = m.up2.forwardStreamingOnce(x)
 	if err != nil {
@@ -526,7 +527,7 @@ func (m *MimiModel) DecodeFromLatent(latent *tensor.Tensor) (*tensor.Tensor, err
 		return nil, err
 	}
 
-	x = eluTensor(x)
+	x = eluTensorInPlace(x)
 
 	x, err = m.up3.forwardStreamingOnce(x)
 	if err != nil {
@@ -538,7 +539,7 @@ func (m *MimiModel) DecodeFromLatent(latent *tensor.Tensor) (*tensor.Tensor, err
 		return nil, err
 	}
 
-	x = eluTensor(x)
+	x = eluTensorInPlace(x)
 
 	x, err = m.finalConv.forwardStreamingOnce(x)
 	if err != nil {

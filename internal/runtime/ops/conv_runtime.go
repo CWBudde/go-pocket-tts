@@ -80,12 +80,10 @@ func getScratch(n int) []float32 {
 	}
 
 	if v := scratchPools[cls].Get(); v != nil {
-		bufPtr, ok := v.(*[]float32)
-		if !ok || bufPtr == nil {
+		buf, ok := v.([]float32)
+		if !ok {
 			return make([]float32, n)
 		}
-
-		buf := *bufPtr
 		// The backing array may be larger than n; re-slice and zero.
 		buf = buf[:n]
 		for i := range buf {
@@ -112,7 +110,7 @@ func putScratch(buf []float32) {
 	}
 	// Restore full backing-array capacity so the next getScratch can re-slice.
 	buf = buf[:c]
-	scratchPools[cls].Put(&buf)
+	scratchPools[cls].Put(buf)
 }
 
 // scratchClass returns the pool index for a buffer of n elements.
