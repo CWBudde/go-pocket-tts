@@ -37,6 +37,29 @@ test-arm64:
 test-race:
     go test -race ./...
 
+# Run dedicated js/wasm decode benchmarks (mimi_only + decode_stage).
+# Usage:
+#   just bench-wasm-decode
+#   POCKETTTS_BENCH_DECODE_FRAMES=4,8,16 just bench-wasm-decode 1x 1 /tmp/wasm-decode.txt
+bench-wasm-decode benchtime="3x" count="3" out="/tmp/wasm-decode-bench.txt":
+    env -i \
+        PATH="/usr/bin:/bin:$(go env GOROOT)/bin" \
+        HOME="$HOME" \
+        TMPDIR="${TMPDIR:-/tmp}" \
+        GOPATH="$(go env GOPATH)" \
+        GOMODCACHE="$(go env GOMODCACHE)" \
+        GOCACHE="${GOCACHE:-/tmp/go-build}" \
+        GOOS=js \
+        GOARCH=wasm \
+        go test \
+            -exec "$(go env GOROOT)/lib/wasm/go_js_wasm_exec" \
+            ./internal/native \
+            -run '^$$' \
+            -bench '^BenchmarkWASMDecode$$' \
+            -benchmem \
+            -benchtime={{benchtime}} \
+            -count={{count}} | tee {{out}}
+
 # Run tests with coverage
 test-coverage:
     go test -v -coverprofile=coverage.out ./...
