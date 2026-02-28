@@ -38,6 +38,11 @@ func getWorkers() int {
 	return n
 }
 
+// Workers returns the currently configured tensor-kernel worker count.
+func Workers() int {
+	return getWorkers()
+}
+
 func parallelFor(n, maxWorkers int, fn func(lo, hi int)) {
 	if n <= 0 {
 		return
