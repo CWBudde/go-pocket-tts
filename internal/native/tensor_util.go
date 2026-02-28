@@ -93,6 +93,16 @@ func geluErfTensor(x *tensor.Tensor) *tensor.Tensor {
 	return out
 }
 
+func geluErfTensorInPlace(x *tensor.Tensor) *tensor.Tensor {
+	d := x.RawData()
+	for i, v := range d {
+		fv := float64(v)
+		d[i] = float32(0.5 * fv * (1 + math.Erf(fv/math.Sqrt2)))
+	}
+
+	return x
+}
+
 func eluTensor(x *tensor.Tensor) *tensor.Tensor {
 	out := x.Clone()
 
@@ -198,6 +208,35 @@ func addSameShapeInPlace(dst, src *tensor.Tensor) (*tensor.Tensor, error) {
 	}
 
 	return dst, nil
+}
+
+func mulLastDimInPlace(x, scale *tensor.Tensor) (*tensor.Tensor, error) {
+	if x == nil || scale == nil {
+		return nil, errors.New("native: mulLastDimInPlace requires non-nil tensors")
+	}
+
+	xShape := x.Shape()
+	if len(xShape) < 1 {
+		return nil, errors.New("native: mulLastDimInPlace rank must be >= 1")
+	}
+
+	sShape := scale.Shape()
+	if len(sShape) != 1 {
+		return nil, fmt.Errorf("native: mulLastDimInPlace scale must be rank-1, got %v", sShape)
+	}
+
+	last := int(xShape[len(xShape)-1])
+	if last <= 0 || int(sShape[0]) != last {
+		return nil, fmt.Errorf("native: mulLastDimInPlace scale length mismatch: got %v want %d", sShape, last)
+	}
+
+	xd := x.RawData()
+	sd := scale.RawData()
+	for i := range xd {
+		xd[i] *= sd[i%last]
+	}
+
+	return x, nil
 }
 
 func replaceNaNWithVector(x, vec *tensor.Tensor) (*tensor.Tensor, error) {
