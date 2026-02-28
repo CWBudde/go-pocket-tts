@@ -118,7 +118,9 @@ func (t *Tensor) Clone() *Tensor {
 	return dup
 }
 
-// Reshape returns a tensor with a new shape and shared values.
+// Reshape returns a tensor with a new shape and shared backing data.
+// Callers must treat RawData as read-only unless they intentionally want
+// aliasing effects between the original and reshaped tensors.
 func (t *Tensor) Reshape(shape []int64) (*Tensor, error) {
 	if t == nil {
 		return nil, errors.New("tensor: reshape on nil tensor")
@@ -133,5 +135,5 @@ func (t *Tensor) Reshape(shape []int64) (*Tensor, error) {
 		return nil, fmt.Errorf("tensor: cannot reshape %v (%d elements) to %v (%d elements)", t.shape, len(t.data), shape, total)
 	}
 
-	return &Tensor{shape: append([]int64(nil), shape...), data: append([]float32(nil), t.data...)}, nil
+	return &Tensor{shape: append([]int64(nil), shape...), data: t.data}, nil
 }

@@ -253,6 +253,7 @@ func MatMul(a, b *Tensor) (*Tensor, error) {
 
 	const matMulParallelMinFMAs = int64(1 << 19)
 	totalFMAs := int64(batchCount) * int64(mI) * int64(nI) * int64(kI)
+
 	workers := getWorkers()
 	if workers > 1 && jobCount > 1 && totalFMAs >= matMulParallelMinFMAs {
 		parallelFor(jobCount, workers, runRows)
@@ -299,6 +300,7 @@ func Linear(x, weight, bias *Tensor) (*Tensor, error) {
 	runBatchRange := func(lo, hi int) {
 		for bIdx := lo; bIdx < hi; bIdx++ {
 			xSlice := x.data[bIdx*inI : bIdx*inI+inI]
+
 			yBase := bIdx * outI
 			for o := range outI {
 				sum := dotF32(xSlice, wData[o*inI:(o+1)*inI])
@@ -325,6 +327,7 @@ func Linear(x, weight, bias *Tensor) (*Tensor, error) {
 
 	const linearParallelMinFMAs = int64(1 << 18)
 	totalFMAs := int64(batch) * int64(outI) * int64(inI)
+
 	workers := getWorkers()
 	switch {
 	case workers > 1 && totalFMAs >= linearParallelMinFMAs && batch > 1:

@@ -30,21 +30,7 @@ func CausalMask(scores *tensor.Tensor, offset int64) (*tensor.Tensor, error) {
 	out := scores.Clone()
 	data := out.RawData()
 	blocks := len(data) / (q * k)
-	negInf := float32(math.Inf(-1))
-
-	for b := range blocks {
-		base := b * q * k
-		for qi := range q {
-			maxKey := int64(qi) + offset
-
-			row := base + qi*k
-			for ki := range k {
-				if int64(ki) > maxKey {
-					data[row+ki] = negInf
-				}
-			}
-		}
-	}
+	applyCausalMaskInPlace(data, q, k, blocks, offset)
 
 	return out, nil
 }
@@ -84,29 +70,109 @@ func Attention(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Tenso
 		return nil, fmt.Errorf("ops: attention q*k^T: %w", err)
 	}
 
-	scaled := scores.Clone()
-
 	scale := float32(1.0 / math.Sqrt(float64(d)))
-	for i := range scaled.RawData() {
-		scaled.RawData()[i] *= scale
-	}
 
-	if causal {
-		scaled, err = CausalMask(scaled, offset)
-		if err != nil {
-			return nil, fmt.Errorf("ops: attention causal mask: %w", err)
-		}
-	}
-
-	probs, err := tensor.Softmax(scaled, -1)
+	err = scaleMaskSoftmaxInPlace(scores, scale, causal, offset)
 	if err != nil {
-		return nil, fmt.Errorf("ops: attention softmax: %w", err)
+		return nil, fmt.Errorf("ops: attention scale/mask/softmax: %w", err)
 	}
 
-	out, err := tensor.MatMul(probs, v)
+	out, err := tensor.MatMul(scores, v)
 	if err != nil {
 		return nil, fmt.Errorf("ops: attention probs*v: %w", err)
 	}
 
 	return out, nil
+}
+
+func applyCausalMaskInPlace(data []float32, q, k, blocks int, offset int64) {
+	negInf := float32(math.Inf(-1))
+
+	for b := range blocks {
+		base := b * q * k
+		for qi := range q {
+			maxKey := int64(qi) + offset
+
+			row := base + qi*k
+			for ki := range k {
+				if int64(ki) > maxKey {
+					data[row+ki] = negInf
+				}
+			}
+		}
+	}
+}
+
+func scaleMaskSoftmaxInPlace(scores *tensor.Tensor, scale float32, causal bool, offset int64) error {
+	if scores == nil {
+		return errors.New("ops: softmax input is nil")
+	}
+
+	shape := scores.Shape()
+	if len(shape) < 2 {
+		return fmt.Errorf("ops: softmax expects rank >= 2, got %d", len(shape))
+	}
+
+	q := int(shape[len(shape)-2])
+	k := int(shape[len(shape)-1])
+
+	if q <= 0 || k <= 0 {
+		return fmt.Errorf("ops: softmax expects positive query/key dims, got %d and %d", q, k)
+	}
+
+	data := scores.RawData()
+
+	blocks := len(data) / (q * k)
+	for b := range blocks {
+		base := b * q * k
+		for qi := range q {
+			row := base + qi*k
+			maxKey := int64(qi) + offset
+			maxV := float32(math.Inf(-1))
+
+			for ki := range k {
+				idx := row + ki
+
+				v := data[idx] * scale
+				if causal && int64(ki) > maxKey {
+					v = float32(math.Inf(-1))
+				}
+
+				data[idx] = v
+				if v > maxV {
+					maxV = v
+				}
+			}
+
+			if math.IsInf(float64(maxV), -1) {
+				for ki := range k {
+					data[row+ki] = 0
+				}
+
+				continue
+			}
+
+			var sum float64
+
+			for ki := range k {
+				idx := row + ki
+				e := math.Exp(float64(data[idx] - maxV))
+				data[idx] = float32(e)
+				sum += e
+			}
+
+			if sum == 0 || math.IsNaN(sum) {
+				return errors.New("ops: softmax encountered zero normalization sum")
+			}
+
+			inv := float32(1.0 / sum)
+
+			for ki := range k {
+				idx := row + ki
+				data[idx] *= inv
+			}
+		}
+	}
+
+	return nil
 }

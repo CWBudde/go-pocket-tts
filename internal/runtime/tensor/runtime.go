@@ -59,8 +59,10 @@ func parallelFor(n, maxWorkers int, fn func(lo, hi int)) {
 		hi := min(lo+chunk, n)
 
 		wg.Add(1)
+
 		go func(lo, hi int) {
 			defer wg.Done()
+
 			fn(lo, hi)
 		}(lo, hi)
 	}

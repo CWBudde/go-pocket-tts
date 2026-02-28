@@ -111,6 +111,11 @@ func (t *Tensor) Transpose(dim1, dim2 int) (*Tensor, error) {
 		return t.Clone(), nil
 	}
 
+	fast, ok, err := transposeFastPath(t, d1, d2)
+	if ok || err != nil {
+		return fast, err
+	}
+
 	outShape := append([]int64(nil), t.shape...)
 	outShape[d1], outShape[d2] = outShape[d2], outShape[d1]
 
@@ -133,6 +138,51 @@ func (t *Tensor) Transpose(dim1, dim2 int) (*Tensor, error) {
 	}
 
 	return out, nil
+}
+
+func transposeFastPath(t *Tensor, d1, d2 int) (*Tensor, bool, error) {
+	// Hot-path in FlowLM/Mimi attention: [B,T,H,D] <-> [B,H,T,D].
+	if t.Rank() == 4 && ((d1 == 1 && d2 == 2) || (d1 == 2 && d2 == 1)) {
+		return transposeRank4Swap12(t)
+	}
+
+	return nil, false, nil
+}
+
+func transposeRank4Swap12(t *Tensor) (*Tensor, bool, error) {
+	shape := t.shape
+	b := int(shape[0])
+	tLen := int(shape[1])
+	h := int(shape[2])
+	d := int(shape[3])
+
+	out, err := Zeros([]int64{shape[0], shape[2], shape[1], shape[3]})
+	if err != nil {
+		return nil, true, err
+	}
+
+	src := t.data
+	dst := out.data
+	srcBTStride := h * d
+	srcBStride := tLen * srcBTStride
+	dstHBStride := tLen * d
+	dstBStride := h * dstHBStride
+
+	for bi := range b {
+		srcBBase := bi * srcBStride
+		dstBBase := bi * dstBStride
+
+		for ti := range tLen {
+			srcTBase := srcBBase + ti*srcBTStride
+			for hi := range h {
+				srcOff := srcTBase + hi*d
+				dstOff := dstBBase + hi*dstHBStride + ti*d
+				copy(dst[dstOff:dstOff+d], src[srcOff:srcOff+d])
+			}
+		}
+	}
+
+	return out, true, nil
 }
 
 // Concat concatenates tensors along dim.

@@ -93,6 +93,23 @@ func TestReshapePreservesValues(t *testing.T) {
 	}
 }
 
+func TestReshapeSharesBackingData(t *testing.T) {
+	x, err := New([]float32{1, 2, 3, 4}, []int64{2, 2})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	y, err := x.Reshape([]int64{4})
+	if err != nil {
+		t.Fatalf("reshape: %v", err)
+	}
+
+	y.RawData()[2] = 99
+	if got := x.RawData()[2]; got != 99 {
+		t.Fatalf("reshape should share backing data, got x[2]=%v", got)
+	}
+}
+
 func TestReshape_NilTensor(t *testing.T) {
 	var nilT *Tensor
 

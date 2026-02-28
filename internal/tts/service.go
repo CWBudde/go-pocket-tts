@@ -46,12 +46,14 @@ func NewService(cfg config.Config) (*Service, error) {
 	switch backend {
 	case config.BackendNative:
 		ops.SetConvWorkers(cfg.Runtime.ConvWorkers)
+
 		if w := cfg.Runtime.ConvWorkers; w > 1 {
 			slog.Info("conv parallelism enabled", "workers", w)
 		}
 
 		tensorWorkers, source := resolveTensorWorkers(cfg.Runtime)
 		tensor.SetWorkers(tensorWorkers)
+
 		if tensorWorkers > 1 {
 			slog.Info("tensor parallelism enabled", "workers", tensorWorkers, "source", source)
 		}
