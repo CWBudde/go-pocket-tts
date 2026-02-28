@@ -12,6 +12,7 @@ import (
 	nativemodel "github.com/example/go-pocket-tts/internal/native"
 	"github.com/example/go-pocket-tts/internal/onnx"
 	"github.com/example/go-pocket-tts/internal/runtime/ops"
+	"github.com/example/go-pocket-tts/internal/runtime/tensor"
 	"github.com/example/go-pocket-tts/internal/safetensors"
 	"github.com/example/go-pocket-tts/internal/text"
 	"github.com/example/go-pocket-tts/internal/tokenizer"
@@ -44,9 +45,15 @@ func NewService(cfg config.Config) (*Service, error) {
 
 	switch backend {
 	case config.BackendNative:
+		ops.SetConvWorkers(cfg.Runtime.ConvWorkers)
 		if w := cfg.Runtime.ConvWorkers; w > 1 {
-			ops.SetConvWorkers(w)
 			slog.Info("conv parallelism enabled", "workers", w)
+		}
+
+		tensorWorkers, source := resolveTensorWorkers(cfg.Runtime)
+		tensor.SetWorkers(tensorWorkers)
+		if tensorWorkers > 1 {
+			slog.Info("tensor parallelism enabled", "workers", tensorWorkers, "source", source)
 		}
 
 		modelPath, err := resolveNativeModelPath(cfg)
@@ -245,4 +252,16 @@ func resolveNativeModelPath(cfg config.Config) (string, error) {
 	}
 
 	return p, nil
+}
+
+func resolveTensorWorkers(cfg config.RuntimeConfig) (int, string) {
+	if cfg.Workers > 0 {
+		return cfg.Workers, "runtime-workers"
+	}
+
+	if cfg.ConvWorkers > 0 {
+		return cfg.ConvWorkers, "conv-workers"
+	}
+
+	return 1, "default"
 }

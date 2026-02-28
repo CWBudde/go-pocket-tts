@@ -27,6 +27,7 @@ type PathsConfig struct {
 type RuntimeConfig struct {
 	Threads        int    `mapstructure:"threads"`
 	InterOpThreads int    `mapstructure:"inter_op_threads"`
+	Workers        int    `mapstructure:"workers"`
 	ConvWorkers    int    `mapstructure:"conv_workers"`
 	ORTLibraryPath string `mapstructure:"ort_library_path"`
 	ORTVersion     string `mapstructure:"ort_version"`
@@ -75,6 +76,7 @@ func DefaultConfig() Config {
 		Runtime: RuntimeConfig{
 			Threads:        4,
 			InterOpThreads: 1,
+			Workers:        0,
 			ConvWorkers:    2,
 			ORTLibraryPath: "",
 			ORTVersion:     "",
@@ -110,6 +112,11 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.String("paths-tokenizer-model", defaults.Paths.TokenizerModel, "Path to SentencePiece tokenizer model")
 	fs.Int("runtime-threads", defaults.Runtime.Threads, "Inference thread count (ONNX intra-op for native-onnx backend)")
 	fs.Int("runtime-inter-op-threads", defaults.Runtime.InterOpThreads, "Inter-op thread count (ONNX-only, native-onnx backend)")
+	fs.Int(
+		"runtime-workers",
+		defaults.Runtime.Workers,
+		"Parallel goroutines for tensor kernels (Linear/MatMul/Attention path); 0 falls back to --conv-workers",
+	)
 	fs.Int("conv-workers", defaults.Runtime.ConvWorkers, "Parallel goroutines for Conv1D/ConvTranspose1D (1 = sequential, default 2)")
 	fs.String("runtime-ort-library-path", defaults.Runtime.ORTLibraryPath, "Path to ONNX Runtime shared library")
 	fs.String("ort-lib", defaults.Runtime.ORTLibraryPath, "Path to ONNX Runtime shared library (alias for --runtime-ort-library-path)")
@@ -201,6 +208,7 @@ func setDefaults(v *viper.Viper, c Config) {
 	v.SetDefault("paths.tokenizer_model", c.Paths.TokenizerModel)
 	v.SetDefault("runtime.threads", c.Runtime.Threads)
 	v.SetDefault("runtime.inter_op_threads", c.Runtime.InterOpThreads)
+	v.SetDefault("runtime.workers", c.Runtime.Workers)
 	v.SetDefault("runtime.conv_workers", c.Runtime.ConvWorkers)
 	v.SetDefault("runtime.ort_library_path", c.Runtime.ORTLibraryPath)
 	v.SetDefault("runtime.ort_version", c.Runtime.ORTVersion)
@@ -230,6 +238,7 @@ func registerAliases(v *viper.Viper) {
 	v.RegisterAlias("paths.tokenizer_model", "paths-tokenizer-model")
 	v.RegisterAlias("runtime.threads", "runtime-threads")
 	v.RegisterAlias("runtime.inter_op_threads", "runtime-inter-op-threads")
+	v.RegisterAlias("runtime.workers", "runtime-workers")
 	v.RegisterAlias("runtime.conv_workers", "conv-workers")
 	v.RegisterAlias("runtime.ort_library_path", "runtime-ort-library-path")
 	v.RegisterAlias("runtime.ort_library_path", "ort-lib")
