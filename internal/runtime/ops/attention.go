@@ -43,6 +43,14 @@ func Attention(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Tenso
 		return nil, errors.New("ops: attention requires non-nil q/k/v")
 	}
 
+	if out, handled, err := attention4D(q, k, v, causal, offset); handled || err != nil {
+		return out, err
+	}
+
+	return attentionGeneric(q, k, v, causal, offset)
+}
+
+func attentionGeneric(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Tensor, error) {
 	qShape := q.Shape()
 	kShape := k.Shape()
 
@@ -83,6 +91,138 @@ func Attention(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Tenso
 	}
 
 	return out, nil
+}
+
+func attention4D(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Tensor, bool, error) {
+	qShape := q.Shape()
+	kShape := k.Shape()
+	vShape := v.Shape()
+	if len(qShape) != 4 || len(kShape) != 4 || len(vShape) != 4 {
+		return nil, false, nil
+	}
+
+	b, h, tq, d := qShape[0], qShape[1], qShape[2], qShape[3]
+	if d != kShape[3] {
+		return nil, true, fmt.Errorf("ops: attention q/k depth mismatch %d vs %d", d, kShape[3])
+	}
+
+	if kShape[0] != b || kShape[1] != h || vShape[0] != b || vShape[1] != h {
+		return nil, true, fmt.Errorf("ops: attention batch/head mismatch q=%v k=%v v=%v", qShape, kShape, vShape)
+	}
+
+	tk := kShape[2]
+	if vShape[2] != tk {
+		return nil, true, fmt.Errorf("ops: attention key/value sequence mismatch %d vs %d", tk, vShape[2])
+	}
+
+	dv := vShape[3]
+	if b <= 0 || h <= 0 || tq <= 0 || tk <= 0 || d <= 0 || dv <= 0 {
+		return nil, true, fmt.Errorf("ops: attention expects positive dims, got q=%v k=%v v=%v", qShape, kShape, vShape)
+	}
+
+	out, err := tensor.Zeros([]int64{b, h, tq, dv})
+	if err != nil {
+		return nil, true, err
+	}
+
+	qData := q.RawData()
+	kData := k.RawData()
+	vData := v.RawData()
+	outData := out.RawData()
+	scale := float32(1.0 / math.Sqrt(float64(d)))
+
+	bI := int(b)
+	hI := int(h)
+	tqI := int(tq)
+	tkI := int(tk)
+	dI := int(d)
+	dvI := int(dv)
+	qBStride := hI * tqI * dI
+	qBHStride := tqI * dI
+	kBStride := hI * tkI * dI
+	kBHStride := tkI * dI
+	vBStride := hI * tkI * dvI
+	vBHStride := tkI * dvI
+	outBStride := hI * tqI * dvI
+	outBHStride := tqI * dvI
+
+	for bi := range bI {
+		qBBase := bi * qBStride
+		kBBase := bi * kBStride
+		vBBase := bi * vBStride
+		outBBase := bi * outBStride
+		for hi := range hI {
+			qBHBase := qBBase + hi*qBHStride
+			kBHBase := kBBase + hi*kBHStride
+			vBHBase := vBBase + hi*vBHStride
+			outBHBase := outBBase + hi*outBHStride
+
+			scores := getScratch(tkI)
+			for qi := range tqI {
+				qOff := qBHBase + qi*dI
+				qRow := qData[qOff : qOff+dI]
+
+				maxV := float32(math.Inf(-1))
+				maxKey := int64(qi) + offset
+				for ki := range tkI {
+					if causal && int64(ki) > maxKey {
+						scores[ki] = float32(math.Inf(-1))
+						continue
+					}
+
+					kOff := kBHBase + ki*dI
+					kRow := kData[kOff : kOff+dI]
+					s := tensor.DotProduct(qRow, kRow) * scale
+					scores[ki] = s
+					if s > maxV {
+						maxV = s
+					}
+				}
+
+				outRow := outData[outBHBase+qi*dvI : outBHBase+(qi+1)*dvI]
+				for i := range outRow {
+					outRow[i] = 0
+				}
+				if math.IsInf(float64(maxV), -1) {
+					continue
+				}
+
+				var sum float64
+				for ki := range tkI {
+					s := scores[ki]
+					if math.IsInf(float64(s), -1) {
+						scores[ki] = 0
+						continue
+					}
+
+					e := math.Exp(float64(s - maxV))
+					scores[ki] = float32(e)
+					sum += e
+				}
+				if sum == 0 || math.IsNaN(sum) {
+					putScratch(scores)
+					return nil, true, errors.New("ops: softmax encountered zero normalization sum")
+				}
+
+				inv := float32(1.0 / sum)
+				for ki := range tkI {
+					w := scores[ki] * inv
+					if w == 0 {
+						continue
+					}
+
+					vOff := vBHBase + ki*dvI
+					vRow := vData[vOff : vOff+dvI]
+					for dvi := range dvI {
+						outRow[dvi] += w * vRow[dvi]
+					}
+				}
+			}
+			putScratch(scores)
+		}
+	}
+
+	return out, true, nil
 }
 
 func applyCausalMaskInPlace(data []float32, q, k, blocks int, offset int64) {
