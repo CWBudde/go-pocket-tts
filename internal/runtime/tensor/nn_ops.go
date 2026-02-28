@@ -202,27 +202,62 @@ func MatMul(a, b *Tensor) (*Tensor, error) {
 
 	batchCoords := make([]int64, len(batchShape))
 	batchStrides := computeStrides(batchShape)
+	aBatchOffsets := make([]int64, batchCount)
+	bBatchOffsets := make([]int64, batchCount)
+	outBatchOffsets := make([]int64, batchCount)
 
 	for batchIdx := range batchCount {
 		linearToCoord(int64(batchIdx), batchShape, batchStrides, batchCoords)
-		aBatchOffset := broadcastBatchOffset(batchCoords, aShape[:aRank-2], aStrides[:aRank-2])
-		bBatchOffset := broadcastBatchOffset(batchCoords, bShape[:bRank-2], bStrides[:bRank-2])
-		outBatchOffset := coordToLinear(batchCoords, outStrides[:len(batchShape)])
+		aBatchOffsets[batchIdx] = broadcastBatchOffset(batchCoords, aShape[:aRank-2], aStrides[:aRank-2])
+		bBatchOffsets[batchIdx] = broadcastBatchOffset(batchCoords, bShape[:bRank-2], bStrides[:bRank-2])
+		outBatchOffsets[batchIdx] = coordToLinear(batchCoords, outStrides[:len(batchShape)])
+	}
 
-		for i := range m {
-			for j := range n {
+	mI := int(m)
+	nI := int(n)
+	kI := int(k)
+	jobCount := batchCount * mI
+	rowStrideA := aStrides[aRank-2]
+	rowStrideOut := outStrides[len(outShape)-2]
+	colStrideB := bStrides[bRank-1]
+	kStrideA := aStrides[aRank-1]
+	kStrideB := bStrides[bRank-2]
+	colStrideOut := outStrides[len(outShape)-1]
+
+	runRows := func(lo, hi int) {
+		for job := lo; job < hi; job++ {
+			batchIdx := job / mI
+			row := int64(job % mI)
+			aBatchBase := aBatchOffsets[batchIdx]
+			bBatchBase := bBatchOffsets[batchIdx]
+			outBatchBase := outBatchOffsets[batchIdx]
+			aRowBase := aBatchBase + row*rowStrideA
+			outRowBase := outBatchBase + row*rowStrideOut
+
+			for j := range nI {
+				j64 := int64(j)
 				var sum float32
 
-				for kk := range k {
-					aIdx := aBatchOffset + i*aStrides[aRank-2] + kk*aStrides[aRank-1]
-					bIdx := bBatchOffset + kk*bStrides[bRank-2] + j*bStrides[bRank-1]
+				for kk := range kI {
+					kk64 := int64(kk)
+					aIdx := aRowBase + kk64*kStrideA
+					bIdx := bBatchBase + kk64*kStrideB + j64*colStrideB
 					sum += a.data[aIdx] * b.data[bIdx]
 				}
 
-				outIdx := outBatchOffset + i*outStrides[len(outShape)-2] + j*outStrides[len(outShape)-1]
+				outIdx := outRowBase + j64*colStrideOut
 				out.data[outIdx] = sum
 			}
 		}
+	}
+
+	const matMulParallelMinFMAs = int64(1 << 19)
+	totalFMAs := int64(batchCount) * int64(mI) * int64(nI) * int64(kI)
+	workers := getWorkers()
+	if workers > 1 && jobCount > 1 && totalFMAs >= matMulParallelMinFMAs {
+		parallelFor(jobCount, workers, runRows)
+	} else {
+		runRows(0, jobCount)
 	}
 
 	return out, nil
@@ -261,18 +296,43 @@ func Linear(x, weight, bias *Tensor) (*Tensor, error) {
 	outI := int(out)
 
 	wData := weight.data
-	for bIdx := range batch {
-		xSlice := x.data[bIdx*inI : bIdx*inI+inI]
+	runBatchRange := func(lo, hi int) {
+		for bIdx := lo; bIdx < hi; bIdx++ {
+			xSlice := x.data[bIdx*inI : bIdx*inI+inI]
+			yBase := bIdx * outI
+			for o := range outI {
+				sum := dotF32(xSlice, wData[o*inI:(o+1)*inI])
+				if bias != nil {
+					sum += bias.data[o]
+				}
 
-		yBase := bIdx * outI
-		for o := range outI {
+				outData[yBase+o] = sum
+			}
+		}
+	}
+
+	runOutputRangeSingleRow := func(lo, hi int) {
+		xSlice := x.data[:inI]
+		for o := lo; o < hi; o++ {
 			sum := dotF32(xSlice, wData[o*inI:(o+1)*inI])
 			if bias != nil {
 				sum += bias.data[o]
 			}
 
-			outData[yBase+o] = sum
+			outData[o] = sum
 		}
+	}
+
+	const linearParallelMinFMAs = int64(1 << 18)
+	totalFMAs := int64(batch) * int64(outI) * int64(inI)
+	workers := getWorkers()
+	switch {
+	case workers > 1 && totalFMAs >= linearParallelMinFMAs && batch > 1:
+		parallelFor(batch, workers, runBatchRange)
+	case workers > 1 && totalFMAs >= linearParallelMinFMAs && batch == 1 && outI > 1:
+		parallelFor(outI, workers, runOutputRangeSingleRow)
+	default:
+		runBatchRange(0, batch)
 	}
 
 	// Build outShape in-place; reuse the first (rank-1) elements of x.shape.

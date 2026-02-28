@@ -44,6 +44,10 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("Runtime.InterOpThreads = %d; want 1", cfg.Runtime.InterOpThreads)
 	}
 
+	if cfg.Runtime.Workers != 0 {
+		t.Errorf("Runtime.Workers = %d; want 0", cfg.Runtime.Workers)
+	}
+
 	if cfg.Server.ListenAddr != ":8080" {
 		t.Errorf("Server.ListenAddr = %q; want %q", cfg.Server.ListenAddr, ":8080")
 	}
@@ -144,6 +148,7 @@ func TestRegisterFlags(t *testing.T) {
 	}{
 		{"paths-model-path", "models/tts_b6369a24.safetensors"},
 		{"paths-voice-path", "models/voice.bin"},
+		{"runtime-workers", "0"},
 		{"server-listen-addr", ":8080"},
 		{"backend", "native-safetensors"},
 		{"log-level", "info"},
@@ -200,6 +205,7 @@ func TestLoad_FlagOverride(t *testing.T) {
 
 	err := fs.Parse([]string{
 		"--backend=cli",
+		"--runtime-workers=6",
 		"--workers=8",
 		"--log-level=debug",
 	})
@@ -221,6 +227,10 @@ func TestLoad_FlagOverride(t *testing.T) {
 
 	if cfg.Server.Workers != 8 {
 		t.Errorf("Server.Workers = %d; want 8", cfg.Server.Workers)
+	}
+
+	if cfg.Runtime.Workers != 6 {
+		t.Errorf("Runtime.Workers = %d; want 6", cfg.Runtime.Workers)
 	}
 
 	if cfg.LogLevel != "debug" {

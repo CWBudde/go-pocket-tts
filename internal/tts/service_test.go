@@ -31,6 +31,43 @@ func TestNewService_MissingORTLibrary(t *testing.T) {
 	}
 }
 
+func TestResolveTensorWorkers(t *testing.T) {
+	tests := []struct {
+		name       string
+		runtimeCfg config.RuntimeConfig
+		wantN      int
+		wantSource string
+	}{
+		{
+			name:       "runtime workers override",
+			runtimeCfg: config.RuntimeConfig{Workers: 6, ConvWorkers: 2},
+			wantN:      6,
+			wantSource: "runtime-workers",
+		},
+		{
+			name:       "fallback to conv workers",
+			runtimeCfg: config.RuntimeConfig{Workers: 0, ConvWorkers: 3},
+			wantN:      3,
+			wantSource: "conv-workers",
+		},
+		{
+			name:       "default sequential",
+			runtimeCfg: config.RuntimeConfig{Workers: 0, ConvWorkers: 0},
+			wantN:      1,
+			wantSource: "default",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotN, gotSource := resolveTensorWorkers(tt.runtimeCfg)
+			if gotN != tt.wantN || gotSource != tt.wantSource {
+				t.Fatalf("resolveTensorWorkers() = (%d,%q), want (%d,%q)", gotN, gotSource, tt.wantN, tt.wantSource)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Service.Synthesize — tested via a directly-constructed Service
 // (bypassing NewService to avoid ORT/manifest dependency)
