@@ -4,6 +4,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/example/go-pocket-tts/internal/runtime/tensor"
 )
 
 func TestCausalMask(t *testing.T) {
@@ -103,4 +105,84 @@ func TestAttentionErrors(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "sequence mismatch") {
 		t.Fatalf("Attention(sequence mismatch) err = %v, want sequence mismatch error", err)
 	}
+}
+
+func TestAttention4DMatchesGeneric(t *testing.T) {
+	q := mustTensorT(t, seqDataT(2*3*5*4), []int64{2, 3, 5, 4})
+	k := mustTensorT(t, seqDataT(2*3*7*4), []int64{2, 3, 7, 4})
+	v := mustTensorT(t, seqDataT(2*3*7*6), []int64{2, 3, 7, 6})
+
+	got, err := Attention(q, k, v, true, 1)
+	if err != nil {
+		t.Fatalf("Attention failed: %v", err)
+	}
+
+	want, err := attentionGeneric(q, k, v, true, 1)
+	if err != nil {
+		t.Fatalf("attentionGeneric failed: %v", err)
+	}
+
+	if !equalApprox(got.Data(), want.Data(), 1e-4) {
+		t.Fatalf("4D fast-path output mismatch with generic implementation")
+	}
+}
+
+func TestAttention4DMatchesGenericNonCausal(t *testing.T) {
+	q := mustTensorT(t, seqDataT(1*2*4*8), []int64{1, 2, 4, 8})
+	k := mustTensorT(t, seqDataT(1*2*6*8), []int64{1, 2, 6, 8})
+	v := mustTensorT(t, seqDataT(1*2*6*5), []int64{1, 2, 6, 5})
+
+	got, err := Attention(q, k, v, false, 0)
+	if err != nil {
+		t.Fatalf("Attention failed: %v", err)
+	}
+
+	want, err := attentionGeneric(q, k, v, false, 0)
+	if err != nil {
+		t.Fatalf("attentionGeneric failed: %v", err)
+	}
+
+	if !equalApprox(got.Data(), want.Data(), 1e-4) {
+		t.Fatalf("4D fast-path output mismatch with generic implementation")
+	}
+}
+
+func BenchmarkAttention4DFused(b *testing.B) {
+	q := mustTensorB(b, seqDataT(1*16*32*64), []int64{1, 16, 32, 64})
+	k := mustTensorB(b, seqDataT(1*16*32*64), []int64{1, 16, 32, 64})
+	v := mustTensorB(b, seqDataT(1*16*32*64), []int64{1, 16, 32, 64})
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for range b.N {
+		_, err := Attention(q, k, v, true, 0)
+		if err != nil {
+			b.Fatalf("Attention failed: %v", err)
+		}
+	}
+}
+
+func BenchmarkAttention4DGeneric(b *testing.B) {
+	q := mustTensorB(b, seqDataT(1*16*32*64), []int64{1, 16, 32, 64})
+	k := mustTensorB(b, seqDataT(1*16*32*64), []int64{1, 16, 32, 64})
+	v := mustTensorB(b, seqDataT(1*16*32*64), []int64{1, 16, 32, 64})
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for range b.N {
+		_, err := attentionGeneric(q, k, v, true, 0)
+		if err != nil {
+			b.Fatalf("attentionGeneric failed: %v", err)
+		}
+	}
+}
+
+func mustTensorB(b *testing.B, data []float32, shape []int64) *tensor.Tensor {
+	b.Helper()
+	t, err := tensor.New(data, shape)
+	if err != nil {
+		b.Fatalf("tensor.New(%v, %v): %v", data, shape, err)
+	}
+
+	return t
 }
