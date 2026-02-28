@@ -177,6 +177,25 @@ func BenchmarkAttention4DGeneric(b *testing.B) {
 	}
 }
 
+func BenchmarkAttention4DFusedParallel(b *testing.B) {
+	prev := tensor.Workers()
+	tensor.SetWorkers(8)
+	defer tensor.SetWorkers(prev)
+
+	q := mustTensorB(b, seqDataT(1*16*32*64), []int64{1, 16, 32, 64})
+	k := mustTensorB(b, seqDataT(1*16*32*64), []int64{1, 16, 32, 64})
+	v := mustTensorB(b, seqDataT(1*16*32*64), []int64{1, 16, 32, 64})
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for range b.N {
+		_, err := Attention(q, k, v, true, 0)
+		if err != nil {
+			b.Fatalf("Attention failed: %v", err)
+		}
+	}
+}
+
 func mustTensorB(b *testing.B, data []float32, shape []int64) *tensor.Tensor {
 	b.Helper()
 	t, err := tensor.New(data, shape)

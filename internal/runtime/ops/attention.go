@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sync"
+	"sync/atomic"
 
 	"github.com/example/go-pocket-tts/internal/runtime/tensor"
 )
@@ -145,81 +147,118 @@ func attention4D(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Ten
 	vBHStride := tkI * dvI
 	outBStride := hI * tqI * dvI
 	outBHStride := tqI * dvI
+	jobsPerHead := tqI
+	jobsPerBatch := hI * jobsPerHead
+	jobCount := bI * jobsPerBatch
 
-	for bi := range bI {
-		qBBase := bi * qBStride
-		kBBase := bi * kBStride
-		vBBase := bi * vBStride
-		outBBase := bi * outBStride
-		for hi := range hI {
-			qBHBase := qBBase + hi*qBHStride
-			kBHBase := kBBase + hi*kBHStride
-			vBHBase := vBBase + hi*vBHStride
-			outBHBase := outBBase + hi*outBHStride
+	const attentionParallelMinWork = int64(1 << 20)
+	totalWork := int64(jobCount) * int64(tkI) * int64(dI+dvI)
+	workers := tensor.Workers()
+	runParallel := workers > 1 && jobCount > 1 && totalWork >= attentionParallelMinWork
 
-			scores := getScratch(tkI)
-			for qi := range tqI {
-				qOff := qBHBase + qi*dI
-				qRow := qData[qOff : qOff+dI]
+	var failed atomic.Bool
+	var firstErr error
+	var errMu sync.Mutex
+	setErr := func(err error) {
+		if err == nil {
+			return
+		}
 
-				maxV := float32(math.Inf(-1))
-				maxKey := int64(qi) + offset
-				for ki := range tkI {
-					if causal && int64(ki) > maxKey {
-						scores[ki] = float32(math.Inf(-1))
-						continue
-					}
+		if failed.CompareAndSwap(false, true) {
+			errMu.Lock()
+			firstErr = err
+			errMu.Unlock()
+		}
+	}
 
-					kOff := kBHBase + ki*dI
-					kRow := kData[kOff : kOff+dI]
-					s := tensor.DotProduct(qRow, kRow) * scale
-					scores[ki] = s
-					if s > maxV {
-						maxV = s
-					}
-				}
+	runJobs := func(lo, hi int) {
+		scores := getScratch(tkI)
+		defer putScratch(scores)
 
-				outRow := outData[outBHBase+qi*dvI : outBHBase+(qi+1)*dvI]
-				for i := range outRow {
-					outRow[i] = 0
-				}
-				if math.IsInf(float64(maxV), -1) {
+		for job := lo; job < hi; job++ {
+			if failed.Load() {
+				return
+			}
+
+			bi := job / jobsPerBatch
+			rem := job % jobsPerBatch
+			headIdx := rem / jobsPerHead
+			qi := rem % jobsPerHead
+
+			qBBase := bi * qBStride
+			kBBase := bi * kBStride
+			vBBase := bi * vBStride
+			outBBase := bi * outBStride
+			qBHBase := qBBase + headIdx*qBHStride
+			kBHBase := kBBase + headIdx*kBHStride
+			vBHBase := vBBase + headIdx*vBHStride
+			outBHBase := outBBase + headIdx*outBHStride
+
+			qOff := qBHBase + qi*dI
+			qRow := qData[qOff : qOff+dI]
+
+			maxV := float32(math.Inf(-1))
+			maxKey := int64(qi) + offset
+			for ki := range tkI {
+				if causal && int64(ki) > maxKey {
+					scores[ki] = float32(math.Inf(-1))
 					continue
 				}
 
-				var sum float64
-				for ki := range tkI {
-					s := scores[ki]
-					if math.IsInf(float64(s), -1) {
-						scores[ki] = 0
-						continue
-					}
-
-					e := math.Exp(float64(s - maxV))
-					scores[ki] = float32(e)
-					sum += e
-				}
-				if sum == 0 || math.IsNaN(sum) {
-					putScratch(scores)
-					return nil, true, errors.New("ops: softmax encountered zero normalization sum")
-				}
-
-				inv := float32(1.0 / sum)
-				for ki := range tkI {
-					w := scores[ki] * inv
-					if w == 0 {
-						continue
-					}
-
-					vOff := vBHBase + ki*dvI
-					vRow := vData[vOff : vOff+dvI]
-					for dvi := range dvI {
-						outRow[dvi] += w * vRow[dvi]
-					}
+				kOff := kBHBase + ki*dI
+				kRow := kData[kOff : kOff+dI]
+				s := tensor.DotProduct(qRow, kRow) * scale
+				scores[ki] = s
+				if s > maxV {
+					maxV = s
 				}
 			}
-			putScratch(scores)
+
+			outRow := outData[outBHBase+qi*dvI : outBHBase+(qi+1)*dvI]
+			for i := range outRow {
+				outRow[i] = 0
+			}
+			if math.IsInf(float64(maxV), -1) {
+				continue
+			}
+
+			var sum float64
+			for ki := range tkI {
+				s := scores[ki]
+				if math.IsInf(float64(s), -1) {
+					scores[ki] = 0
+					continue
+				}
+
+				e := math.Exp(float64(s - maxV))
+				scores[ki] = float32(e)
+				sum += e
+			}
+			if sum == 0 || math.IsNaN(sum) {
+				setErr(errors.New("ops: softmax encountered zero normalization sum"))
+				return
+			}
+
+			inv := float32(1.0 / sum)
+			for ki := range tkI {
+				w := scores[ki] * inv
+				if w == 0 {
+					continue
+				}
+
+				vOff := vBHBase + ki*dvI
+				vRow := vData[vOff : vOff+dvI]
+				tensor.Axpy(outRow, w, vRow)
+			}
 		}
+	}
+	if runParallel {
+		parallelFor(jobCount, workers, runJobs)
+	} else {
+		runJobs(0, jobCount)
+	}
+	if firstErr != nil {
+		return nil, true, firstErr
 	}
 
 	return out, true, nil
