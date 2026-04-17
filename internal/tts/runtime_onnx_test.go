@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/onnx"
+	"github.com/cwbudde/go-pocket-tts/internal/onnx"
 )
 
 type closeSpyGraphRunner struct {

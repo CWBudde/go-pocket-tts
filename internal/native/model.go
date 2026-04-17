@@ -6,8 +6,8 @@ import (
 	"math/rand"
 	"sync"
 
-	"github.com/example/go-pocket-tts/internal/runtime/tensor"
-	"github.com/example/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
 type Config struct {

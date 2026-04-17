@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/testutil"
+	"github.com/cwbudde/go-pocket-tts/internal/testutil"
 )
 
 // runModelVerifyCapture executes "pockettts model verify" with the given extra

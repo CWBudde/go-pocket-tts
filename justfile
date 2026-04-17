@@ -126,3 +126,7 @@ generate:
         --text "Hello, world!" \
         --out hello-world.wav
     @echo "==> Done: hello-world.wav"
+
+fix:
+    just lint-fix
+    just fmt

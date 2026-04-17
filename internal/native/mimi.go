@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/example/go-pocket-tts/internal/runtime/ops"
-	"github.com/example/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 )
 
 var ErrMimiEncoderNotImplemented = errors.New("native mimi encoder is not implemented")

@@ -16,11 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/example/go-pocket-tts/internal/audio"
-	"github.com/example/go-pocket-tts/internal/config"
-	"github.com/example/go-pocket-tts/internal/server"
-	"github.com/example/go-pocket-tts/internal/testutil"
-	"github.com/example/go-pocket-tts/internal/tts"
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/server"
+	"github.com/cwbudde/go-pocket-tts/internal/testutil"
+	"github.com/cwbudde/go-pocket-tts/internal/tts"
 )
 
 // ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/bench"
+	"github.com/cwbudde/go-pocket-tts/internal/bench"
 )
 
 func TestWAVDuration_TooShort(t *testing.T) {

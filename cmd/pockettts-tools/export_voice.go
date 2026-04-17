@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/exec"
 
-	pockettts "github.com/MeKo-Christian/go-call-pocket-tts"
+	pockettts "github.com/cwbudde/go-call-pocket-tts"
 	"github.com/spf13/cobra"
 )
 

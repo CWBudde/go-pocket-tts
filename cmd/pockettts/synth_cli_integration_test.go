@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/testutil"
+	"github.com/cwbudde/go-pocket-tts/internal/testutil"
 )
 
 // TestSynthCLI_ShortText synthesizes a short phrase via the CLI backend and

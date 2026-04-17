@@ -19,7 +19,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/tts"
+	"github.com/cwbudde/go-pocket-tts/internal/tts"
 )
 
 // RequirePocketTTS skips the test if the pocket-tts binary is not found in

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/example/go-pocket-tts/internal/bench"
+	"github.com/cwbudde/go-pocket-tts/internal/bench"
 	"github.com/spf13/cobra"
 )
 

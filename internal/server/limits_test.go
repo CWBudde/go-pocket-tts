@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/example/go-pocket-tts/internal/server"
-	"github.com/example/go-pocket-tts/internal/tts"
+	"github.com/cwbudde/go-pocket-tts/internal/server"
+	"github.com/cwbudde/go-pocket-tts/internal/tts"
 )
 
 // ---------------------------------------------------------------------------

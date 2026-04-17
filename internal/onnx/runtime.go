@@ -9,7 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/example/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
 )
 
 type RuntimeInfo struct {

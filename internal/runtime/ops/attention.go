@@ -7,7 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/example/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 )
 
 // CausalMask sets positions where key index > query index + offset to -Inf.

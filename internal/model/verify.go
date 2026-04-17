@@ -9,7 +9,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/example/go-pocket-tts/internal/onnx"
+	"github.com/cwbudde/go-pocket-tts/internal/onnx"
 	ort "github.com/shota3506/onnxruntime-purego/onnxruntime"
 )
 

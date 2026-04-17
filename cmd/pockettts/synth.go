@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/example/go-pocket-tts/internal/audio"
-	"github.com/example/go-pocket-tts/internal/config"
-	textpkg "github.com/example/go-pocket-tts/internal/text"
-	"github.com/example/go-pocket-tts/internal/tts"
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	textpkg "github.com/cwbudde/go-pocket-tts/internal/text"
+	"github.com/cwbudde/go-pocket-tts/internal/tts"
 	"github.com/spf13/cobra"
 )
 

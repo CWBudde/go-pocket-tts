@@ -1,6 +1,6 @@
 package main
 
-import "github.com/example/go-pocket-tts/internal/bench/stageprof"
+import "github.com/cwbudde/go-pocket-tts/internal/bench/stageprof"
 
 func main() {
 	stageprof.Main()

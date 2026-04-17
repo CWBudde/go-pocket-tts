@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/example/go-pocket-tts/internal/config"
-	"github.com/example/go-pocket-tts/internal/tts"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/tts"
 )
 
 // --- New & WithShutdownTimeout ---

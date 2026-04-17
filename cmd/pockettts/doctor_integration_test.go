@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/testutil"
+	"github.com/cwbudde/go-pocket-tts/internal/testutil"
 )
 
 // runDoctorCapture executes the doctor command with the given extra args and

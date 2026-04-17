@@ -8,14 +8,14 @@ import (
 	"os"
 	"strings"
 
-	"github.com/example/go-pocket-tts/internal/config"
-	nativemodel "github.com/example/go-pocket-tts/internal/native"
-	"github.com/example/go-pocket-tts/internal/onnx"
-	"github.com/example/go-pocket-tts/internal/runtime/ops"
-	"github.com/example/go-pocket-tts/internal/runtime/tensor"
-	"github.com/example/go-pocket-tts/internal/safetensors"
-	"github.com/example/go-pocket-tts/internal/text"
-	"github.com/example/go-pocket-tts/internal/tokenizer"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
+	"github.com/cwbudde/go-pocket-tts/internal/onnx"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/text"
+	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
 )
 
 // maxTokensPerChunk is the SentencePiece token budget per synthesis chunk,

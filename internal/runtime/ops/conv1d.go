@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/example/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 )
 
 // conv1DFastGroups1 is the im2col fast path for Conv1D with groups=1.

@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/testutil"
+	"github.com/cwbudde/go-pocket-tts/internal/testutil"
 )
 
 func TestSilenceWAVPath_FileExists(t *testing.T) {

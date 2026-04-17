@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/example/go-pocket-tts/internal/audio"
-	"github.com/example/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
 const (

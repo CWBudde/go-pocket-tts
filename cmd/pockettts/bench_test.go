@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/audio"
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
 )
 
 // makeMinimalWAV returns a valid WAV byte slice with a few samples.

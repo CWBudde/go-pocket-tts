@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
 )
 
 func TestNewRootCmd_HasExpectedSubcommands(t *testing.T) {

@@ -6,9 +6,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/example/go-pocket-tts/internal/config"
-	"github.com/example/go-pocket-tts/internal/server"
-	"github.com/example/go-pocket-tts/internal/tts"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/server"
+	"github.com/cwbudde/go-pocket-tts/internal/tts"
 	"github.com/spf13/cobra"
 )
 

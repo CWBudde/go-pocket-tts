@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/example/go-pocket-tts/internal/runtime/tensor"
-	"github.com/example/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
 // VarBuilder provides xn-like hierarchical tensor lookup over safetensors.

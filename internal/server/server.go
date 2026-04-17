@@ -14,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/example/go-pocket-tts/internal/audio"
-	"github.com/example/go-pocket-tts/internal/config"
-	"github.com/example/go-pocket-tts/internal/tts"
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/tts"
 )
 
 // ParseLogLevel converts a case-insensitive level string to slog.Level.

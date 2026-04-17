@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/onnx"
-	"github.com/example/go-pocket-tts/internal/safetensors"
-	"github.com/example/go-pocket-tts/internal/testutil"
+	"github.com/cwbudde/go-pocket-tts/internal/onnx"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/testutil"
 )
 
 func findRepoFile(t *testing.T, rel string) string {

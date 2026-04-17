@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/server"
+	"github.com/cwbudde/go-pocket-tts/internal/server"
 )
 
 // capturingHandler captures all slog records during a test.

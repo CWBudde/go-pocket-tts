@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/example/go-pocket-tts/internal/config"
-	"github.com/example/go-pocket-tts/internal/onnx"
-	"github.com/example/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/onnx"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/spf13/cobra"
 )
 

@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/example/go-pocket-tts/internal/config"
-	"github.com/example/go-pocket-tts/internal/doctor"
-	"github.com/example/go-pocket-tts/internal/model"
-	"github.com/example/go-pocket-tts/internal/safetensors"
-	"github.com/example/go-pocket-tts/internal/tts"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/doctor"
+	"github.com/cwbudde/go-pocket-tts/internal/model"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/tts"
 	"github.com/spf13/cobra"
 )
 

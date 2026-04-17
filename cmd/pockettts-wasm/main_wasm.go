@@ -11,13 +11,13 @@ import (
 	"syscall/js"
 	"time"
 
-	"github.com/example/go-pocket-tts/internal/audio"
-	"github.com/example/go-pocket-tts/internal/config"
-	nativemodel "github.com/example/go-pocket-tts/internal/native"
-	"github.com/example/go-pocket-tts/internal/safetensors"
-	"github.com/example/go-pocket-tts/internal/text"
-	"github.com/example/go-pocket-tts/internal/tokenizer"
-	"github.com/example/go-pocket-tts/internal/tts"
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/text"
+	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
+	"github.com/cwbudde/go-pocket-tts/internal/tts"
 )
 
 const maxTokensPerChunk = 50

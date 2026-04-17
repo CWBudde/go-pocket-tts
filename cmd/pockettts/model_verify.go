@@ -5,10 +5,10 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/example/go-pocket-tts/internal/config"
-	"github.com/example/go-pocket-tts/internal/model"
-	nativemodel "github.com/example/go-pocket-tts/internal/native"
-	"github.com/example/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/model"
+	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/spf13/cobra"
 )
 

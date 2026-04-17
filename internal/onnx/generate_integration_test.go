@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/safetensors"
-	"github.com/example/go-pocket-tts/internal/tokenizer"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
 )
 
 // TestGenerateAudioIntegration_ProducesPlausibleAudio runs the full generation

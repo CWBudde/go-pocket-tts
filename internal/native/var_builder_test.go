@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
 type tensorMeta struct {

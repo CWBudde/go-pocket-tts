@@ -3,7 +3,7 @@ package native
 import (
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
 func TestDetectNumHeads(t *testing.T) {

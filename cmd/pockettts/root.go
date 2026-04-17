@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/example/go-pocket-tts/internal/config"
-	"github.com/example/go-pocket-tts/internal/server"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/server"
 	"github.com/spf13/cobra"
 )
 

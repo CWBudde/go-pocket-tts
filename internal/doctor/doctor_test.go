@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/doctor"
+	"github.com/cwbudde/go-pocket-tts/internal/doctor"
 )
 
 // ---------------------------------------------------------------------------

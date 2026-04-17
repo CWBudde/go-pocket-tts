@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
 )
 
 // ortLibPath returns the ORT library path, skipping if unavailable.

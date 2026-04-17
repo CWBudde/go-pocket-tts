@@ -10,8 +10,8 @@ import (
 	"math"
 	"os"
 
-	"github.com/example/go-pocket-tts/internal/config"
-	textpkg "github.com/example/go-pocket-tts/internal/text"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	textpkg "github.com/cwbudde/go-pocket-tts/internal/text"
 )
 
 var ErrBackendNotImplemented = errors.New("tts backend is not implemented")

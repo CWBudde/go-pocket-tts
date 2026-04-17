@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/example/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 )
 
 // MLP computes linear(silu(linear(x))).

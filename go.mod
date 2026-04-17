@@ -1,9 +1,9 @@
-module github.com/example/go-pocket-tts
+module github.com/cwbudde/go-pocket-tts
 
 go 1.25.0
 
 require (
-	github.com/MeKo-Christian/go-call-pocket-tts v0.0.0-20260220171509-60efea706958
+	github.com/cwbudde/go-call-pocket-tts v0.0.0-20260220171509-60efea706958
 	github.com/cwbudde/algo-dsp v0.4.0
 	github.com/cwbudde/wav v0.0.0-20260207095734-97d781a5fb8a
 	github.com/go-audio/audio v1.0.0

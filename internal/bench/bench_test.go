@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/example/go-pocket-tts/internal/audio"
-	"github.com/example/go-pocket-tts/internal/bench"
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
+	"github.com/cwbudde/go-pocket-tts/internal/bench"
 )
 
 // ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/audio"
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
 )
 
 func TestMapSynthError_NotFound(t *testing.T) {

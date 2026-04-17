@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/tokenizer"
+	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
 )
 
 // tokenizerModelPath finds models/tokenizer.model by walking up from the

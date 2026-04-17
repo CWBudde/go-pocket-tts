@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/example/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
 )
 
 func TestStart_CLIBackend_LifecycleHealthAndShutdown(t *testing.T) {

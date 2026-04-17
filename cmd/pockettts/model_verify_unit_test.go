@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
 )
 
 func TestVerifyNativeSafetensors_MissingModel(t *testing.T) {

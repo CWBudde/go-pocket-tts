@@ -6,10 +6,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/config"
-	"github.com/example/go-pocket-tts/internal/onnx"
-	"github.com/example/go-pocket-tts/internal/runtime/ops"
-	"github.com/example/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/onnx"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 )
 
 func TestParity_FlowDirection_VsONNX(t *testing.T) {

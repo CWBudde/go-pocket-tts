@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	nativemodel "github.com/example/go-pocket-tts/internal/native"
-	"github.com/example/go-pocket-tts/internal/runtime/tensor"
+	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 )
 
 func TestNewNativeSafetensorsRuntime(t *testing.T) {

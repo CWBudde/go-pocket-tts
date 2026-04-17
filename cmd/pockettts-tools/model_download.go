@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/example/go-pocket-tts/internal/model"
+	"github.com/cwbudde/go-pocket-tts/internal/model"
 	"github.com/spf13/cobra"
 )
 

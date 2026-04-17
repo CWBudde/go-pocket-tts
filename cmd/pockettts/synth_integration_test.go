@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/example/go-pocket-tts/internal/audio"
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
 )
 
 func TestSynthIntegration(t *testing.T) {
