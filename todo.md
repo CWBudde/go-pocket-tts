@@ -14,6 +14,7 @@ This list is organized for reintegrating upstream Python changes into this Go po
 - [x] 2026-05-06: Added a Python reference dump script plus optional Go parity tests for FlowLM prefill/step and Mimi decode fixtures.
 - [x] 2026-05-06: Synced `original/pockettts` to latest `main`, installed upstream Python dependencies in `.venv`, generated `/tmp/native_runtime_parity.json`, and passed the P0 native Python parity tests.
 - [x] 2026-05-06: Added upstream model-state export mode to `export-voice`, added browser/WASM full-state voice ingestion, refreshed local default voices to upstream model-state format, and passed a native synth smoke with `--voice alba`.
+- [x] 2026-05-06: Completed P1 generation sizing and CLI parity: dynamic per-chunk max generation estimates, config-derived Mimi step metadata, `--text -` stdin alias, and docs for Go vs upstream Python config/model paths.
 - [x] Remaining P0 runtime work: run Python parity fixtures.
 
 ## P0: Native Runtime Compatibility
@@ -77,57 +78,67 @@ This list is organized for reintegrating upstream Python changes into this Go po
 
 ## P1: Generation Cache Sizing and Streaming
 
-- [ ] Mirror upstream dynamic generation length estimation.
+- [x] Mirror upstream dynamic generation length estimation.
   - Upstream source: `a47c7e4` and `33a9371`, `TTSModel._estimate_max_gen_len`.
   - Formula: `ceil((token_count / 3.0 + 2.0) * mimi.frame_rate)`.
-  - Use the estimate to size or grow FlowLM and Mimi decode state before generation.
+  - [x] Use the estimate as the default per-chunk generation step limit and pass Mimi sequence sizing metadata into runtime configs.
 
-- [ ] Replace hardcoded Mimi decoder step assumptions with config-derived values.
+- [x] Replace hardcoded Mimi decoder step assumptions with config-derived values.
   - Upstream source: `33a9371`, `_generate_audio_stream_short_text`.
   - Compute `mimi_steps_per_latent = int(mimi.encoder_frame_rate / mimi.frame_rate)`.
   - Compute `mimi_sequence_length = max_gen_len * mimi_steps_per_latent`.
-  - Go targets: `internal/native/mimi.go`, service streaming path when frame-level streaming is added.
+  - [x] Go targets: `internal/native/mimi.go`, service streaming path when frame-level streaming is added.
 
-- [ ] Revalidate chunked long-text generation against upstream.
+- [x] Revalidate chunked long-text generation against upstream.
   - Upstream keeps simple sentence splitting and adds `frames_after_eos_guess + 2` per chunk.
   - Go targets: `internal/text`, `internal/tts`, `cmd/pockettts/synth.go`.
-  - Add a parity test for short text, multi-sentence text, and very short prompts with eight-space padding.
+  - [x] Add a parity test for short text, multi-sentence text, and very short prompts with eight-space padding.
 
 ## P1: CLI and API Parity
 
-- [ ] Add `--text -` as an explicit stdin alias for `pockettts synth`.
+- [x] Add `--text -` as an explicit stdin alias for `pockettts synth`.
   - Upstream source: `431878c`, `pocket_tts/main.py::generate`.
   - Current Go behavior reads stdin only when `--text` is empty. Keep that, but also treat `--text -` as stdin for upstream CLI compatibility.
-  - Go target: `cmd/pockettts/synth.go`.
+  - [x] Go target: `cmd/pockettts/synth.go`.
 
-- [ ] Check local config/model-file behavior.
+- [x] Check local config/model-file behavior.
   - Upstream source: `2b51649` and `28b8244`.
   - Upstream accepts either a model variant signature or a path to a local config `.yaml`.
-  - Confirm Go tooling and docs clearly map this to `--config`, model safetensors paths, and ONNX manifest paths.
+  - [x] Confirm Go tooling and docs clearly map this to `--config`, `--tts-cli-config-path`, model safetensors paths, and ONNX manifest paths.
 
-- [ ] Decide whether to mirror upstream `export-voice` CLI simplification.
+- [x] Decide whether to mirror upstream `export-voice` CLI simplification.
   - Upstream removed most generation flags from `export-voice` and always calls `get_state_for_audio_prompt(..., truncate=True)`.
-  - Go currently has a richer native/ONNX-oriented command surface. Keep it if useful, but document differences and add compatibility aliases if needed.
+  - [x] Kept the richer native/ONNX-oriented command surface and documented `--format=model-state` for upstream-compatible export.
 
-- [ ] Expose an equivalent public API for voice-state import/export if this port grows a Go library API.
+- [x] Expose an equivalent public API for voice-state import/export if this port grows a Go library API.
   - Upstream source: `8443de8`, `pocket_tts/__init__.py`.
-  - Public Python API now exports both `TTSModel` and `export_model_state`.
+  - [x] No public Go library API exists yet; internal voice-state load/export seams are in place and documented for future promotion.
 
 ## P2: Device, ONNX, and Browser Details
 
-- [ ] Fold in CUDA/device-state fixes where relevant.
+- [x] Fold in CUDA/device-state fixes where relevant.
   - Upstream source: `a5da339`, `aca7dc8`.
   - Python fixed state tensor device placement for streaming convs and Mimi attention, then removed the old CUDA graph workaround.
   - Pure Go native does not need CUDA handling, but ONNX/GPU paths should ensure state buffers live on the execution provider's device when applicable.
+  - [x] 2026-05-06: Confirmed no native-Go CUDA/device action is needed. The Go ONNX path passes host tensors through `onnxruntime-purego`; full upstream model-state voice files remain native/Python-only and are rejected before ONNX state handling.
 
-- [ ] Re-export ONNX graphs after transformer/state changes.
+- [x] Update ONNX export/runtime contract after transformer/state changes.
   - Upstream transformer cache schema changed to `offset`.
   - Go target: `scripts/export_onnx.py`, `bundles/onnx-bundles.lock.json`, ONNX backend tests.
   - Confirm exported `flow_lm_prefill` and `flow_lm_step` use the same KV order, cache shape, and offset updates expected by Go.
+  - [x] 2026-05-06: Updated `scripts/export_onnx.py` for the current upstream `TTSModel.load_model(language=...|config=...)` API while preserving legacy `--variant=b6369a24` as an alias for `english_2026-01`.
+  - [x] 2026-05-06: Pinned Go-side ONNX state behavior with a unit test that `FlowLMStepStateful` passes the current `offset` input and stores the returned offset.
 
-- [ ] Consider the upstream web `AudioContext` latency hint.
+- [ ] Publish the rebuilt ONNX graph bundle.
+  - [x] 2026-05-06: Rebuilt local ignored `models/onnx` for `english_2026-01` with `flow_lm_prefill`, `flow_lm_step`, and the corrected `kv_out_N`/`offset_out` step outputs.
+  - [x] 2026-05-06: Fixed `mimi_decoder` export sizing so its state length is `max_latents * mimi_steps_per_latent`; this passes the 256-frame stateful integration path.
+  - [x] 2026-05-06: Created upload-ready archive `/tmp/pockettts-onnx-english_2026-01-stateful.tar.gz` (468.1M), SHA256 `8d5124e35cc609a35c4ad038c532498189f3d40fdfef1f6a0f931a7ce3f070f6`.
+  - [ ] `bundles/onnx-bundles.lock.json` still needs the final published artifact URL plus this checksum after upload.
+
+- [x] Consider the upstream web `AudioContext` latency hint.
   - Upstream source: `9878cd0`, `pocket_tts/static/index.html`.
   - Go target: `web/main.js` if the browser demo creates an `AudioContext`.
+  - [x] 2026-05-06: No code change needed in `web/main.js`; this demo attaches a completed WAV `Blob` to an `HTMLAudioElement` and does not create an `AudioContext`. The upstream `{ latencyHint: "playback" }` applies to its streaming `AudioContext` player.
 
 ## P2: Docs and Metadata
 

@@ -13,6 +13,8 @@ func newModelExportCmd() *cobra.Command {
 	var outDir string
 	var int8Quant bool
 	var variant string
+	var language string
+	var configPath string
 	var pythonBin string
 	var maxSeq int
 
@@ -27,6 +29,8 @@ func newModelExportCmd() *cobra.Command {
 				OutDir:    outDir,
 				Int8:      int8Quant,
 				Variant:   variant,
+				Language:  language,
+				Config:    configPath,
 				PythonBin: pythonBin,
 				MaxSeq:    maxSeq,
 				Stdout:    os.Stdout,
@@ -46,7 +50,9 @@ func newModelExportCmd() *cobra.Command {
 	cmd.Flags().StringVar(&modelsDir, "models-dir", "models", "Directory containing downloaded model files")
 	cmd.Flags().StringVar(&outDir, "out-dir", "models/onnx", "Directory for ONNX output files")
 	cmd.Flags().BoolVar(&int8Quant, "int8", false, "Enable post-export INT8 quantization")
-	cmd.Flags().StringVar(&variant, "variant", "b6369a24", "PocketTTS model variant signature or config alias")
+	cmd.Flags().StringVar(&variant, "variant", "b6369a24", "Deprecated compatibility alias; b6369a24 maps to english_2026-01")
+	cmd.Flags().StringVar(&language, "language", "", "Upstream PocketTTS language/config name")
+	cmd.Flags().StringVar(&configPath, "tts-config-path", "", "Path to an upstream PocketTTS config .yaml")
 	cmd.Flags().StringVar(&pythonBin, "python-bin", "", "Python interpreter for export helper (auto-detected from pocket-tts by default)")
 	cmd.Flags().IntVar(&maxSeq, "max-seq", 0, "KV-cache max sequence length (0 = script default 256; use 512+ for voice conditioning)")
 

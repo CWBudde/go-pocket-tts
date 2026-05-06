@@ -14,14 +14,23 @@ import (
 var ErrMimiEncoderNotImplemented = errors.New("native mimi encoder is not implemented")
 
 type MimiConfig struct {
-	SampleRate int64
-	NumHeads   int64
-	MaxPeriod  float64
-	Context    int64
+	SampleRate       int64
+	FrameRate        float64
+	EncoderFrameRate float64
+	NumHeads         int64
+	MaxPeriod        float64
+	Context          int64
 }
 
 func DefaultMimiConfig() MimiConfig {
-	return MimiConfig{SampleRate: 24000, NumHeads: 8, MaxPeriod: 10000.0, Context: 250}
+	return MimiConfig{
+		SampleRate:       24000,
+		FrameRate:        12.5,
+		EncoderFrameRate: 200,
+		NumHeads:         8,
+		MaxPeriod:        10000.0,
+		Context:          250,
+	}
 }
 
 type conv1dLayer struct {
@@ -541,6 +550,12 @@ func LoadMimiModel(vb *VarBuilder, cfg MimiConfig) (*MimiModel, error) {
 	if cfg.Context == 0 {
 		cfg.Context = DefaultMimiConfig().Context
 	}
+	if cfg.FrameRate == 0 {
+		cfg.FrameRate = DefaultMimiConfig().FrameRate
+	}
+	if cfg.EncoderFrameRate == 0 {
+		cfg.EncoderFrameRate = DefaultMimiConfig().EncoderFrameRate
+	}
 
 	mimi := vb.Path("mimi")
 
@@ -549,7 +564,7 @@ func LoadMimiModel(vb *VarBuilder, cfg MimiConfig) (*MimiModel, error) {
 		return nil, err
 	}
 
-	upsample, err := loadConvTr1D(mimi.Path("upsample", "convtr", "convtr"), 16, 512, false)
+	upsample, err := loadConvTr1D(mimi.Path("upsample", "convtr", "convtr"), int64(cfg.MimiStepsPerLatent()), 512, false)
 	if err != nil {
 		return nil, err
 	}
@@ -622,6 +637,53 @@ func LoadMimiModel(vb *VarBuilder, cfg MimiConfig) (*MimiModel, error) {
 }
 
 func (m *MimiModel) SampleRate() int64 { return m.cfg.SampleRate }
+
+func (m *MimiModel) FrameRate() float64 {
+	if m == nil || m.cfg.FrameRate == 0 {
+		return DefaultMimiConfig().FrameRate
+	}
+
+	return m.cfg.FrameRate
+}
+
+func (m *MimiModel) EncoderFrameRate() float64 {
+	if m == nil || m.cfg.EncoderFrameRate == 0 {
+		return DefaultMimiConfig().EncoderFrameRate
+	}
+
+	return m.cfg.EncoderFrameRate
+}
+
+func (m *MimiModel) MimiStepsPerLatent() int {
+	if m == nil {
+		return DefaultMimiConfig().MimiStepsPerLatent()
+	}
+
+	return m.cfg.MimiStepsPerLatent()
+}
+
+func (c MimiConfig) MimiStepsPerLatent() int {
+	frameRate := c.FrameRate
+	if frameRate == 0 {
+		frameRate = DefaultMimiConfig().FrameRate
+	}
+
+	encoderFrameRate := c.EncoderFrameRate
+	if encoderFrameRate == 0 {
+		encoderFrameRate = DefaultMimiConfig().EncoderFrameRate
+	}
+
+	if frameRate <= 0 || encoderFrameRate <= 0 {
+		return 1
+	}
+
+	steps := int(encoderFrameRate / frameRate)
+	if steps <= 0 {
+		return 1
+	}
+
+	return steps
+}
 
 // QuantizerProject maps [B, 32, T] -> [B, 512, T].
 func (m *MimiModel) QuantizerProject(latentBCT *tensor.Tensor) (*tensor.Tensor, error) {

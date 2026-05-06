@@ -48,6 +48,8 @@ from pocket_tts.modules.stateful_module import init_states
 
 
 OPSET_VERSION = 17
+LEGACY_DEFAULT_VARIANT = "b6369a24"
+DEFAULT_LANGUAGE = "english_2026-01"
 
 
 @dataclass
@@ -280,10 +282,14 @@ class MimiEncoderWrapper(torch.nn.Module):
 
 
 class MimiDecoderWrapper(torch.nn.Module):
-    def __init__(self, model: TTSModel, max_sequence_length: int = 256):
+    def __init__(self, model: TTSModel, max_latent_steps: int = 256):
         super().__init__()
         self.mimi = model.mimi
-        self.base_state = init_states(self.mimi, batch_size=1, sequence_length=max_sequence_length)
+        mimi_steps_per_latent = int(round(model.mimi.encoder_frame_rate / model.mimi.frame_rate))
+        decoder_sequence_length = max_latent_steps * mimi_steps_per_latent
+        self.base_state = init_states(
+            self.mimi, batch_size=1, sequence_length=decoder_sequence_length
+        )
 
     def forward(self, latent: torch.Tensor) -> torch.Tensor:
         state = clone_model_state(self.base_state)
@@ -374,6 +380,7 @@ def build_specs(model: TTSModel, max_sequence_length: int = 256) -> list[ExportS
     ]
     _example_offset = torch.tensor([_T_ex], dtype=torch.long)
     _kv_names = [f"kv_{i}" for i in range(_num_kv_layers)]
+    _kv_out_names = [f"kv_out_{i}" for i in range(_num_kv_layers)]
 
     return [
         ExportSpec(
@@ -421,9 +428,10 @@ def build_specs(model: TTSModel, max_sequence_length: int = 256) -> list[ExportS
             name="flow_lm_step",
             filename="flow_lm_step.onnx",
             input_names=["sequence_frame"] + _kv_names + ["offset"],
-            output_names=["last_hidden", "eos_logits"] + _kv_names + ["offset"],
+            output_names=["last_hidden", "eos_logits"] + _kv_out_names + ["offset_out"],
             dynamic_axes={
                 **{f"kv_{i}": {2: "seq_len"} for i in range(_num_kv_layers)},
+                **{f"kv_out_{i}": {2: "seq_len_plus_one"} for i in range(_num_kv_layers)},
             },
             example_inputs=(
                 torch.full((1, 1, 32), float("nan")),
@@ -470,17 +478,62 @@ def build_specs(model: TTSModel, max_sequence_length: int = 256) -> list[ExportS
             input_names=["latent"],
             output_names=["audio"],
             dynamic_axes={"latent": {2: "latent_steps"}, "audio": {2: "audio_samples"}},
-            example_inputs=(torch.randn(1, 512, 13, dtype=torch.float32),),
-            module=MimiDecoderWrapper(model, max_sequence_length=max_sequence_length),
+            # Mimi contains shape-dependent streaming/padding branches that are
+            # traced as constants by the legacy ONNX exporter. Trace at the
+            # configured maximum latent length, while the wrapper sizes Mimi's
+            # internal state to max_latents * mimi_steps_per_latent.
+            example_inputs=(torch.randn(1, 512, max_sequence_length, dtype=torch.float32),),
+            module=MimiDecoderWrapper(model, max_latent_steps=max_sequence_length),
         ),
     ]
+
+
+def resolve_model_source(args: argparse.Namespace) -> tuple[dict[str, str], dict[str, str]]:
+    """Resolve CLI model selection into current upstream TTSModel.load_model kwargs.
+
+    The Go tooling historically passed --variant=b6369a24. Latest pocket-tts
+    selects models by language or explicit config path, so keep the legacy flag
+    as a compatibility alias while exposing the new API directly.
+    """
+    if args.config and args.language:
+        raise SystemExit("--language and --config are mutually exclusive")
+
+    if args.config:
+        return {"config": args.config}, {"config": args.config}
+
+    if args.language:
+        return {"language": args.language}, {"language": args.language}
+
+    variant = args.variant or LEGACY_DEFAULT_VARIANT
+    if variant == LEGACY_DEFAULT_VARIANT:
+        return {"language": DEFAULT_LANGUAGE}, {
+            "language": DEFAULT_LANGUAGE,
+            "legacy_variant": variant,
+        }
+
+    if variant.endswith((".yaml", ".yml")):
+        return {"config": variant}, {
+            "config": variant,
+            "legacy_variant": variant,
+        }
+
+    return {"language": variant}, {
+        "language": variant,
+        "legacy_variant": variant,
+    }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Export PocketTTS subgraphs to ONNX")
     parser.add_argument("--models-dir", default="models", help="Directory containing downloaded checkpoints")
     parser.add_argument("--out-dir", default="models/onnx", help="Output directory for ONNX files")
-    parser.add_argument("--variant", default="b6369a24", help="PocketTTS model variant/config")
+    parser.add_argument("--language", help=f"PocketTTS language/config name (default: {DEFAULT_LANGUAGE})")
+    parser.add_argument("--config", help="Path to an upstream PocketTTS config .yaml")
+    parser.add_argument(
+        "--variant",
+        default=LEGACY_DEFAULT_VARIANT,
+        help="Deprecated compatibility alias; b6369a24 maps to english_2026-01",
+    )
     parser.add_argument("--int8", action="store_true", help="Apply dynamic INT8 quantization to exported ONNX files")
     parser.add_argument("--max-seq", type=int, default=256, help="KV-cache max sequence length for flow_lm_main and mimi_decoder (default: 256; use 512+ when using voice conditioning)")
     args = parser.parse_args()
@@ -496,12 +549,15 @@ def main() -> int:
     # can override environment/model placement and still keep CLI contract explicit.
     os.environ.setdefault("POCKETTTS_MODELS_DIR", models_dir.as_posix())
 
-    print(f"loading pocket-tts model variant={args.variant}")
-    model = TTSModel.load_model(args.variant)
+    load_kwargs, manifest_source = resolve_model_source(args)
+    source_label = ", ".join(f"{key}={value}" for key, value in load_kwargs.items())
+    print(f"loading pocket-tts model {source_label}")
+    model = TTSModel.load_model(**load_kwargs)
 
     specs = build_specs(model, max_sequence_length=args.max_seq)
     manifest: dict[str, Any] = {
         "variant": args.variant,
+        **manifest_source,
         "int8": bool(args.int8),
         "graphs": [],
     }

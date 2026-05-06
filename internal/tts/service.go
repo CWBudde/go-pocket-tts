@@ -141,7 +141,7 @@ func (s *Service) SynthesizeCtx(ctx context.Context, input string, voicePath str
 			return nil, err
 		}
 
-		cfg := s.generateConfig(chunk.FramesAfterEOS())
+		cfg := s.generateConfig(chunk)
 		voiceConditioning.applyTo(&cfg)
 
 		pcm, err := s.runtime.GenerateAudio(ctx, chunk.TokenIDs, cfg)
@@ -181,7 +181,7 @@ func (s *Service) SynthesizeStream(ctx context.Context, input string, voicePath 
 			return err
 		}
 
-		cfg := s.generateConfig(chunk.FramesAfterEOS())
+		cfg := s.generateConfig(chunk)
 		voiceConditioning.applyTo(&cfg)
 
 		pcm, err := s.runtime.GenerateAudio(ctx, chunk.TokenIDs, cfg)
@@ -250,16 +250,51 @@ func (s *Service) Close() {
 	}
 }
 
-// generateConfig builds a GenerateConfig from the stored TTS config,
-// overriding FramesAfterEOS per chunk.
-func (s *Service) generateConfig(framesAfterEOS int) RuntimeGenerateConfig {
+// generateConfig builds a GenerateConfig from the stored TTS config, adding
+// upstream per-chunk generation length and Mimi decode sizing estimates.
+func (s *Service) generateConfig(chunk text.ChunkMetadata) RuntimeGenerateConfig {
+	mimiFrameRate, _, mimiStepsPerLatent := mimiTimingForRuntime(s.runtime)
+	estimatedMaxSteps := text.EstimateMaxFrames(chunk.NumTokens, mimiFrameRate)
+
 	return RuntimeGenerateConfig{
-		Temperature:    s.ttsCfg.Temperature,
-		EOSThreshold:   s.ttsCfg.EOSThreshold,
-		MaxSteps:       s.ttsCfg.MaxSteps,
-		LSDDecodeSteps: s.ttsCfg.LSDDecodeSteps,
-		FramesAfterEOS: framesAfterEOS,
+		Temperature:        s.ttsCfg.Temperature,
+		EOSThreshold:       s.ttsCfg.EOSThreshold,
+		MaxSteps:           generationStepLimit(s.ttsCfg.MaxSteps, estimatedMaxSteps),
+		EstimatedMaxSteps:  estimatedMaxSteps,
+		LSDDecodeSteps:     s.ttsCfg.LSDDecodeSteps,
+		FramesAfterEOS:     chunk.FramesAfterEOS(),
+		MimiStepsPerLatent: mimiStepsPerLatent,
+		MimiSequenceLength: estimatedMaxSteps * mimiStepsPerLatent,
 	}
+}
+
+func generationStepLimit(configured, estimated int) int {
+	defaultMax := config.DefaultConfig().TTS.MaxSteps
+	if estimated > 0 && (configured <= 0 || configured == defaultMax) {
+		return estimated
+	}
+
+	return configured
+}
+
+type mimiTimingRuntime interface {
+	MimiTiming() (frameRate float64, encoderFrameRate float64, stepsPerLatent int)
+}
+
+func mimiTimingForRuntime(rt Runtime) (float64, float64, int) {
+	if timed, ok := rt.(mimiTimingRuntime); ok {
+		frameRate, encoderFrameRate, steps := timed.MimiTiming()
+		if frameRate > 0 && encoderFrameRate > 0 && steps > 0 {
+			return frameRate, encoderFrameRate, steps
+		}
+	}
+
+	const (
+		mimiFrameRate        = text.DefaultMimiFrameRate
+		mimiEncoderFrameRate = 200.0
+	)
+
+	return mimiFrameRate, mimiEncoderFrameRate, int(mimiEncoderFrameRate / mimiFrameRate)
 }
 
 func resolveNativeModelPath(cfg config.Config) (string, error) {

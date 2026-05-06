@@ -271,19 +271,26 @@ func (e *Engine) FlowLMStepStateful(ctx context.Context, sequenceFrame *Tensor, 
 
 	// Update state in-place.
 	for i := range state.KV {
-		key := fmt.Sprintf("kv_%d", i)
+		key := fmt.Sprintf("kv_out_%d", i)
 
 		updated, ok := outputs[key]
 		if !ok {
-			return nil, nil, fmt.Errorf("flow_lm_step: missing '%s' in output", key)
+			legacyKey := fmt.Sprintf("kv_%d", i)
+			updated, ok = outputs[legacyKey]
+			if !ok {
+				return nil, nil, fmt.Errorf("flow_lm_step: missing '%s' in output", key)
+			}
 		}
 
 		state.KV[i] = updated
 	}
 
-	updatedOffset, ok := outputs["offset"]
+	updatedOffset, ok := outputs["offset_out"]
 	if !ok {
-		return nil, nil, errors.New("flow_lm_step: missing 'offset' in output")
+		updatedOffset, ok = outputs["offset"]
+		if !ok {
+			return nil, nil, errors.New("flow_lm_step: missing 'offset_out' in output")
+		}
 	}
 
 	offsetData, err := ExtractInt64(updatedOffset)

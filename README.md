@@ -173,6 +173,14 @@ Write the WAV to stdout:
 ./pockettts-tools model export --models-dir models --out-dir models/onnx
 ```
 
+The exporter uses the current upstream PocketTTS loader. Select a built-in
+language or a custom upstream `.yaml` config when needed:
+
+```bash
+./pockettts-tools model export --language english_2026-01
+./pockettts-tools model export --tts-config-path ./pocket_tts_config.yaml
+```
+
 Optional INT8 quantization:
 
 ```bash
@@ -212,12 +220,21 @@ export ORT_LIBRARY_PATH=/usr/local/lib/libonnxruntime.so
 ./pockettts model verify --manifest models/onnx/manifest.json
 ```
 
-## Export a voice embedding
+## Export a voice
 
-Exports a `.safetensors` voice embedding from a speaker WAV/PCM prompt using the native ONNX `mimi_encoder` + speaker projection path and prints a suggested `voices/manifest.json` entry.
+By default, exports a legacy `audio_prompt` `.safetensors` voice embedding
+from a speaker WAV/PCM prompt using the native ONNX `mimi_encoder` + speaker
+projection path and prints a suggested `voices/manifest.json` entry.
 
 ```bash
 ./pockettts export-voice --input speaker.wav --out voices/my_voice.safetensors --id my-voice --license "CC-BY-4.0"
+```
+
+To produce an upstream-compatible full model-state voice file, use the Python
+tooling fallback:
+
+```bash
+./pockettts export-voice --format=model-state --input speaker.wav --out voices/my_voice.safetensors --tts-cli-path original/pockettts/.venv/bin/pocket-tts
 ```
 
 See [voices/README.md](voices/README.md) for licensing guidance.
@@ -281,6 +298,15 @@ Configuration is loaded in this order:
 3. Config file passed with `--config`
 4. Optional local config file named `pockettts.(yaml|yml|toml|json)` in the working directory
 
+`--config` always points to this Go port's config file. To use an upstream
+Python PocketTTS `.yaml` config with `--backend cli` or `export-voice
+--format=model-state`, pass it via `--tts-cli-config-path`. For native Go
+inference, point `--paths-model-path` at a local model `.safetensors` checkpoint
+and `--paths-tokenizer-model` at the matching tokenizer model.
+
+`pockettts synth --text -` explicitly reads text from stdin. Omitting `--text`
+continues to read stdin as well.
+
 ### Example `pockettts.yaml`
 
 ```yaml
@@ -299,7 +325,7 @@ server:
   grpc_addr: ":9090"
 
 tts:
-  # Backend: native (default) or cli
+  # Backend: native-safetensors (default), native-onnx, or cli
   backend: "native"
   # Voice name/ID (or a .safetensors path, depending on your PocketTTS setup)
   voice: "mimi"

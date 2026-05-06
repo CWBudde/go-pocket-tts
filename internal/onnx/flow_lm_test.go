@@ -553,6 +553,64 @@ func TestFlowLMStepStateful_UpdatesStateInPlace(t *testing.T) {
 	}
 }
 
+func TestFlowLMStepStateful_PassesOffsetInput(t *testing.T) {
+	const initialOffset = int64(11)
+	const newOffset = int64(12)
+
+	var seenOffset int64
+	var sawOffset bool
+	fakeStep := &fakeRunner{
+		name: "flow_lm_step",
+		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+			offset, ok := inputs["offset"]
+			if !ok {
+				t.Fatal("missing offset input")
+			}
+
+			data, err := ExtractInt64(offset)
+			if err != nil {
+				t.Fatalf("extract offset input: %v", err)
+			}
+			if len(data) != 1 {
+				t.Fatalf("offset input len = %d; want 1", len(data))
+			}
+			seenOffset = data[0]
+			sawOffset = true
+
+			kv, _ := NewTensor(make([]float32, 2*1*int(newOffset)*2*4), []int64{2, 1, newOffset, 2, 4})
+			updatedOffset, _ := NewTensor([]int64{newOffset}, []int64{1})
+			hidden, _ := NewTensor(make([]float32, 1024), []int64{1, 1024})
+			eos, _ := NewTensor([]float32{-10.0}, []int64{1, 1})
+			return map[string]*Tensor{
+				"kv_out_0":    kv,
+				"offset_out":  updatedOffset,
+				"last_hidden": hidden,
+				"eos_logits":  eos,
+			}, nil
+		},
+	}
+
+	e := engineWithFakeRunners(map[string]runnerIface{"flow_lm_step": fakeStep})
+	kv, _ := NewTensor(make([]float32, 2*1*int(initialOffset)*2*4), []int64{2, 1, initialOffset, 2, 4})
+	state := &FlowLMKVState{KV: []*Tensor{kv}, Offset: initialOffset}
+	frame, _ := NewTensor(make([]float32, 32), []int64{1, 1, 32})
+
+	_, _, err := e.FlowLMStepStateful(context.Background(), frame, state)
+	if err != nil {
+		t.Fatalf("FlowLMStepStateful: %v", err)
+	}
+
+	if !sawOffset {
+		t.Fatal("runner did not receive offset input")
+	}
+	if seenOffset != initialOffset {
+		t.Fatalf("offset input = %d; want %d", seenOffset, initialOffset)
+	}
+	if state.Offset != newOffset {
+		t.Fatalf("state.Offset = %d; want %d", state.Offset, newOffset)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Regression test: NaN propagation from BOS sequence
 // ---------------------------------------------------------------------------

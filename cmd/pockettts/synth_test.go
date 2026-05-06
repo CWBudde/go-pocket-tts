@@ -35,6 +35,17 @@ func TestReadSynthText(t *testing.T) {
 		}
 	})
 
+	t.Run("dash reads stdin", func(t *testing.T) {
+		got, err := readSynthText("-", strings.NewReader(" from dash stdin \n"))
+		if err != nil {
+			t.Fatalf("readSynthText returned error: %v", err)
+		}
+
+		if got != "from dash stdin" {
+			t.Fatalf("expected trimmed stdin text, got %q", got)
+		}
+	})
+
 	t.Run("fails when both empty", func(t *testing.T) {
 		_, err := readSynthText("", strings.NewReader("   \n\t"))
 		if err == nil {

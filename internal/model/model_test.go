@@ -865,6 +865,22 @@ func TestExportONNX_PythonBinNotFound(t *testing.T) {
 	}
 }
 
+func TestExportONNX_LanguageAndConfigMutuallyExclusive(t *testing.T) {
+	err := ExportONNX(ExportOptions{
+		ModelsDir: t.TempDir(),
+		OutDir:    t.TempDir(),
+		Language:  "english_2026-01",
+		Config:    "custom.yaml",
+	})
+	if err == nil {
+		t.Fatal("ExportONNX(language + config) = nil; want error")
+	}
+
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("error = %q; want mutually exclusive", err.Error())
+	}
+}
+
 // ---------------------------------------------------------------------------
 // validateExportTooling
 // ---------------------------------------------------------------------------

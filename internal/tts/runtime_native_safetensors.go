@@ -12,6 +12,7 @@ import (
 
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/text"
 )
 
 const nativeLatentDim = 32
@@ -36,6 +37,17 @@ func NewNativeSafetensorsRuntime(model *nativemodel.Model) Runtime {
 	return newNativeSafetensorsRuntime(model)
 }
 
+func (r *nativeSafetensorsRuntime) MimiTiming() (float64, float64, int) {
+	if r == nil || r.model == nil || r.model.Mimi() == nil {
+		cfg := nativemodel.DefaultMimiConfig()
+		return cfg.FrameRate, cfg.EncoderFrameRate, cfg.MimiStepsPerLatent()
+	}
+
+	mimi := r.model.Mimi()
+
+	return mimi.FrameRate(), mimi.EncoderFrameRate(), mimi.MimiStepsPerLatent()
+}
+
 //nolint:gocognit,cyclop,funlen // Generation pipeline intentionally keeps staged control-flow and logging in one place.
 func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []int64, cfg RuntimeGenerateConfig) ([]float32, error) {
 	if r == nil || r.model == nil {
@@ -48,7 +60,10 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 
 	maxSteps := cfg.MaxSteps
 	if maxSteps <= 0 {
-		maxSteps = 256
+		maxSteps = cfg.EstimatedMaxSteps
+	}
+	if maxSteps <= 0 {
+		maxSteps = text.EstimateMaxFrames(len(tokens), text.DefaultMimiFrameRate)
 	}
 
 	decodeSteps := cfg.LSDDecodeSteps
@@ -63,6 +78,9 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 		"native-safetensors generation start",
 		"tokens", len(tokens),
 		"max_steps", maxSteps,
+		"estimated_max_steps", cfg.EstimatedMaxSteps,
+		"mimi_steps_per_latent", cfg.MimiStepsPerLatent,
+		"mimi_sequence_length", cfg.MimiSequenceLength,
 		"lsd_steps", decodeSteps,
 		"temperature", cfg.Temperature,
 		"eos_threshold", cfg.EOSThreshold,

@@ -24,7 +24,7 @@ func (r *onnxRuntime) GenerateAudio(ctx context.Context, tokens []int64, cfg Run
 	genCfg := onnx.GenerateConfig{
 		Temperature:    cfg.Temperature,
 		EOSThreshold:   cfg.EOSThreshold,
-		MaxSteps:       cfg.MaxSteps,
+		MaxSteps:       effectiveConfiguredMaxSteps(cfg),
 		LSDDecodeSteps: cfg.LSDDecodeSteps,
 		FramesAfterEOS: cfg.FramesAfterEOS,
 	}
@@ -44,4 +44,12 @@ func (r *onnxRuntime) Close() {
 	if r.engine != nil {
 		r.engine.Close()
 	}
+}
+
+func effectiveConfiguredMaxSteps(cfg RuntimeGenerateConfig) int {
+	if cfg.MaxSteps > 0 {
+		return cfg.MaxSteps
+	}
+
+	return cfg.EstimatedMaxSteps
 }

@@ -23,12 +23,28 @@ type ChunkMetadata struct {
 	NumWords  int     // word count (for FramesAfterEOS)
 }
 
+const DefaultMimiFrameRate = 12.5
+
 // MaxFrames returns the maximum number of latent frames for this chunk.
 // Formula: ceil((num_tokens / 3 + 2) × 12.5)
 // Matches the reference: ceil(gen_len_sec × frame_rate)
 // where gen_len_sec = token_count / 3.0 + 2.0 and frame_rate = 12.5.
 func (c ChunkMetadata) MaxFrames() float64 {
-	return math.Ceil((float64(c.NumTokens)/3.0 + 2.0) * 12.5)
+	return float64(EstimateMaxFrames(c.NumTokens, DefaultMimiFrameRate))
+}
+
+// EstimateMaxFrames mirrors upstream TTSModel._estimate_max_gen_len:
+// ceil((token_count / 3.0 + 2.0) * mimi.frame_rate).
+func EstimateMaxFrames(tokenCount int, frameRate float64) int {
+	if tokenCount < 0 {
+		tokenCount = 0
+	}
+
+	if frameRate <= 0 || math.IsNaN(frameRate) || math.IsInf(frameRate, 0) {
+		frameRate = DefaultMimiFrameRate
+	}
+
+	return int(math.Ceil((float64(tokenCount)/3.0 + 2.0) * frameRate))
 }
 
 // FramesAfterEOS returns the number of extra frames to generate after EOS is

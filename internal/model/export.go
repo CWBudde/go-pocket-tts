@@ -15,6 +15,8 @@ type ExportOptions struct {
 	OutDir    string
 	Int8      bool
 	Variant   string
+	Language  string
+	Config    string
 	PythonBin string
 	MaxSeq    int // KV-cache max sequence length (0 = script default 256; use 512+ for voice conditioning)
 	Stdout    io.Writer
@@ -32,6 +34,10 @@ func ExportONNX(opts ExportOptions) error {
 
 	if opts.Variant == "" {
 		opts.Variant = "b6369a24"
+	}
+
+	if opts.Language != "" && opts.Config != "" {
+		return errors.New("language and config are mutually exclusive")
 	}
 
 	if opts.Stdout == nil {
@@ -58,6 +64,14 @@ func ExportONNX(opts ExportOptions) error {
 	}
 
 	args := []string{scriptPath, "--models-dir", opts.ModelsDir, "--out-dir", opts.OutDir, "--variant", opts.Variant}
+	if opts.Language != "" {
+		args = append(args, "--language", opts.Language)
+	}
+
+	if opts.Config != "" {
+		args = append(args, "--config", opts.Config)
+	}
+
 	if opts.Int8 {
 		args = append(args, "--int8")
 	}

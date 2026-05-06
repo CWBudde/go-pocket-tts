@@ -374,19 +374,21 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 		progress.Emit("synthesize", chunkStart, 100, fmt.Sprintf("chunk %d/%d · step 0", i+1, nChunks))
 		browserYield() // repaint before TextEmbeddings + PromptFlow block the thread
 
-		maxSteps := opts.MaxSteps
-		if maxSteps <= 0 {
-			maxSteps = 256
-		}
+		estimatedMaxSteps := text.EstimateMaxFrames(len(chunk.TokenIDs), text.DefaultMimiFrameRate)
+		maxSteps := wasmGenerationStepLimit(opts.MaxSteps, estimatedMaxSteps)
+		mimiStepsPerLatent := 16
 
 		cfg := tts.RuntimeGenerateConfig{
-			Temperature:     opts.Temperature,
-			EOSThreshold:    opts.EOSThreshold,
-			MaxSteps:        opts.MaxSteps,
-			LSDDecodeSteps:  opts.LSDDecodeSteps,
-			FramesAfterEOS:  chunk.FramesAfterEOS(),
-			VoiceEmbedding:  voiceEmb,
-			VoiceModelState: voiceState,
+			Temperature:        opts.Temperature,
+			EOSThreshold:       opts.EOSThreshold,
+			MaxSteps:           maxSteps,
+			EstimatedMaxSteps:  estimatedMaxSteps,
+			LSDDecodeSteps:     opts.LSDDecodeSteps,
+			FramesAfterEOS:     chunk.FramesAfterEOS(),
+			MimiStepsPerLatent: mimiStepsPerLatent,
+			MimiSequenceLength: estimatedMaxSteps * mimiStepsPerLatent,
+			VoiceEmbedding:     voiceEmb,
+			VoiceModelState:    voiceState,
 			StepCallback: func(step, _ int) {
 				stepPct := 0
 				if maxSteps > 0 {
@@ -428,6 +430,14 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 	})
 	progress.Emit("done", 100, 100, "synthesis complete")
 	return result, nil
+}
+
+func wasmGenerationStepLimit(configured, estimated int) int {
+	if estimated > 0 && (configured <= 0 || configured == defaults.TTS.MaxSteps) {
+		return estimated
+	}
+
+	return configured
 }
 
 func copyJSBytes(v js.Value) ([]byte, bool) {

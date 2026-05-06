@@ -158,6 +158,19 @@ func TestMimiSelfAttentionUsesContextWindow(t *testing.T) {
 	}
 }
 
+func TestMimiConfigDerivesStepsPerLatent(t *testing.T) {
+	if got := DefaultMimiConfig().MimiStepsPerLatent(); got != 16 {
+		t.Fatalf("default MimiStepsPerLatent = %d, want 16", got)
+	}
+
+	cfg := DefaultMimiConfig()
+	cfg.FrameRate = 25
+	cfg.EncoderFrameRate = 200
+	if got := cfg.MimiStepsPerLatent(); got != 8 {
+		t.Fatalf("custom MimiStepsPerLatent = %d, want 8", got)
+	}
+}
+
 func TestLatentToMimiProjectorMatchesReference(t *testing.T) {
 	t.Parallel()
 

@@ -405,7 +405,7 @@ func writeSynthOutput(outPath string, wavData []byte, stdout io.Writer) error {
 }
 
 func readSynthText(text string, stdin io.Reader) (string, error) {
-	if strings.TrimSpace(text) != "" {
+	if strings.TrimSpace(text) != "" && strings.TrimSpace(text) != "-" {
 		return text, nil
 	}
 

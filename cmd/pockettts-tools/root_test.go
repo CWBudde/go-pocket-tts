@@ -122,6 +122,8 @@ func TestModelExportCmd_Flags(t *testing.T) {
 		{"models-dir", "models"},
 		{"out-dir", "models/onnx"},
 		{"variant", "b6369a24"},
+		{"language", ""},
+		{"tts-config-path", ""},
 		{"python-bin", ""},
 	}
 

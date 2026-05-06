@@ -266,6 +266,14 @@ func (c *captureRuntime) GenerateAudio(_ context.Context, tokens []int64, cfg Ru
 
 func (c *captureRuntime) Close() {}
 
+type timedCaptureRuntime struct {
+	captureRuntime
+}
+
+func (t *timedCaptureRuntime) MimiTiming() (float64, float64, int) {
+	return 25, 200, 8
+}
+
 // newVoiceTestService builds a Service with a fake tokenizer and no real engine.
 // This is sufficient for testing the voice loading error paths in Synthesize,
 // which occur before the engine is invoked.
@@ -374,6 +382,86 @@ func TestSynthesize_ReusesGenerationConfig(t *testing.T) {
 
 	if rt.lastCfg.VoiceEmbedding != nil {
 		t.Fatalf("VoiceEmbedding = %+v; want nil", rt.lastCfg.VoiceEmbedding)
+	}
+}
+
+func TestSynthesize_UsesEstimatedMaxStepsForDefaultLimit(t *testing.T) {
+	rt := &captureRuntime{audio: []float32{0.1}}
+	svc := &Service{
+		runtime:   rt,
+		tokenizer: fakeTokenizer{},
+		ttsCfg:    config.DefaultConfig().TTS,
+	}
+
+	_, err := svc.Synthesize("hello world", "")
+	if err != nil {
+		t.Fatalf("Synthesize returned error: %v", err)
+	}
+
+	if rt.lastCfg.EstimatedMaxSteps != 38 {
+		t.Fatalf("EstimatedMaxSteps = %d, want 38", rt.lastCfg.EstimatedMaxSteps)
+	}
+
+	if rt.lastCfg.MaxSteps != rt.lastCfg.EstimatedMaxSteps {
+		t.Fatalf("MaxSteps = %d, want estimated %d", rt.lastCfg.MaxSteps, rt.lastCfg.EstimatedMaxSteps)
+	}
+
+	if rt.lastCfg.MimiStepsPerLatent != 16 {
+		t.Fatalf("MimiStepsPerLatent = %d, want 16", rt.lastCfg.MimiStepsPerLatent)
+	}
+
+	if rt.lastCfg.MimiSequenceLength != 38*16 {
+		t.Fatalf("MimiSequenceLength = %d, want %d", rt.lastCfg.MimiSequenceLength, 38*16)
+	}
+}
+
+func TestSynthesize_ExplicitMaxStepsOverridesEstimate(t *testing.T) {
+	rt := &captureRuntime{audio: []float32{0.1}}
+	ttsCfg := config.DefaultConfig().TTS
+	ttsCfg.MaxSteps = 123
+	svc := &Service{
+		runtime:   rt,
+		tokenizer: fakeTokenizer{},
+		ttsCfg:    ttsCfg,
+	}
+
+	_, err := svc.Synthesize("hello world", "")
+	if err != nil {
+		t.Fatalf("Synthesize returned error: %v", err)
+	}
+
+	if rt.lastCfg.MaxSteps != 123 {
+		t.Fatalf("MaxSteps = %d, want explicit override 123", rt.lastCfg.MaxSteps)
+	}
+
+	if rt.lastCfg.EstimatedMaxSteps != 38 {
+		t.Fatalf("EstimatedMaxSteps = %d, want 38", rt.lastCfg.EstimatedMaxSteps)
+	}
+}
+
+func TestSynthesize_UsesRuntimeMimiTimingForEstimate(t *testing.T) {
+	rt := &timedCaptureRuntime{captureRuntime: captureRuntime{audio: []float32{0.1}}}
+	svc := &Service{
+		runtime:   rt,
+		tokenizer: fakeTokenizer{},
+		ttsCfg:    config.DefaultConfig().TTS,
+	}
+
+	_, err := svc.Synthesize("hello world", "")
+	if err != nil {
+		t.Fatalf("Synthesize returned error: %v", err)
+	}
+
+	if rt.lastCfg.EstimatedMaxSteps != 75 {
+		t.Fatalf("EstimatedMaxSteps = %d, want 75", rt.lastCfg.EstimatedMaxSteps)
+	}
+
+	if rt.lastCfg.MimiStepsPerLatent != 8 {
+		t.Fatalf("MimiStepsPerLatent = %d, want 8", rt.lastCfg.MimiStepsPerLatent)
+	}
+
+	if rt.lastCfg.MimiSequenceLength != 75*8 {
+		t.Fatalf("MimiSequenceLength = %d, want %d", rt.lastCfg.MimiSequenceLength, 75*8)
 	}
 }
 

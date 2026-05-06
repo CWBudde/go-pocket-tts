@@ -190,12 +190,17 @@ func runOnce(ctx context.Context, rt tts.Runtime, tok textpkg.Tokenizer, cfg con
 		start := time.Now()
 
 		for _, chunk := range chunks {
+			estimatedMaxSteps := textpkg.EstimateMaxFrames(chunk.NumTokens, textpkg.DefaultMimiFrameRate)
+			mimiStepsPerLatent := 16
 			gcfg := tts.RuntimeGenerateConfig{
-				Temperature:    cfg.TTS.Temperature,
-				EOSThreshold:   cfg.TTS.EOSThreshold,
-				MaxSteps:       cfg.TTS.MaxSteps,
-				LSDDecodeSteps: cfg.TTS.LSDDecodeSteps,
-				FramesAfterEOS: chunk.FramesAfterEOS(),
+				Temperature:        cfg.TTS.Temperature,
+				EOSThreshold:       cfg.TTS.EOSThreshold,
+				MaxSteps:           cfg.TTS.MaxSteps,
+				EstimatedMaxSteps:  estimatedMaxSteps,
+				LSDDecodeSteps:     cfg.TTS.LSDDecodeSteps,
+				FramesAfterEOS:     chunk.FramesAfterEOS(),
+				MimiStepsPerLatent: mimiStepsPerLatent,
+				MimiSequenceLength: estimatedMaxSteps * mimiStepsPerLatent,
 			}
 
 			pcm, err := rt.GenerateAudio(ctx, chunk.TokenIDs, gcfg)

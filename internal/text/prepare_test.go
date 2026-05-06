@@ -141,6 +141,16 @@ func TestChunkMetadata_MaxFrames(t *testing.T) {
 	}
 }
 
+func TestEstimateMaxFramesUsesConfiguredFrameRate(t *testing.T) {
+	if got := EstimateMaxFrames(3, 25); got != 75 {
+		t.Fatalf("EstimateMaxFrames(3,25) = %d, want 75", got)
+	}
+
+	if got := EstimateMaxFrames(3, 0); got != 38 {
+		t.Fatalf("EstimateMaxFrames(3,0) = %d, want default-rate estimate 38", got)
+	}
+}
+
 func TestChunkMetadata_FramesAfterEOS_ShortInput(t *testing.T) {
 	// ≤ 4 words → base 3 + 2 = 5 (matching reference implementation)
 	if got := (ChunkMetadata{NumWords: 4}).FramesAfterEOS(); got != 5 {
@@ -173,6 +183,57 @@ func TestPrepareChunks_SingleChunkShortText(t *testing.T) {
 
 	if len(chunks) != 1 {
 		t.Fatalf("PrepareChunks returned %d chunks, want 1", len(chunks))
+	}
+}
+
+func TestPrepareChunks_P1UpstreamCases(t *testing.T) {
+	tok := &stubTokenizer{}
+
+	tests := []struct {
+		name      string
+		input     string
+		wantMin   int
+		wantFirst string
+	}{
+		{
+			name:      "very short prompt pads eight spaces",
+			input:     "hi",
+			wantMin:   1,
+			wantFirst: "        Hi.",
+		},
+		{
+			name:      "multi sentence stays sentence based",
+			input:     "hello world. another short sentence.",
+			wantMin:   1,
+			wantFirst: "Hello world. another short sentence.",
+		},
+		{
+			name:      "short text adds punctuation",
+			input:     "hello world",
+			wantMin:   1,
+			wantFirst: "        Hello world.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			chunks, err := PrepareChunks(tt.input, tok, 50)
+			if err != nil {
+				t.Fatalf("PrepareChunks: %v", err)
+			}
+
+			if len(chunks) < tt.wantMin {
+				t.Fatalf("chunks len = %d, want at least %d", len(chunks), tt.wantMin)
+			}
+
+			if chunks[0].Text != tt.wantFirst {
+				t.Fatalf("first chunk text = %q, want %q", chunks[0].Text, tt.wantFirst)
+			}
+
+			if chunks[0].FramesAfterEOS() <= 0 {
+				t.Fatalf("FramesAfterEOS = %d, want positive", chunks[0].FramesAfterEOS())
+			}
+		})
 	}
 }
 
