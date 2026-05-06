@@ -2,6 +2,8 @@ package tts
 
 import (
 	"context"
+
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
 // VoiceEmbedding is a runtime-neutral voice conditioning tensor payload.
@@ -13,12 +15,13 @@ type VoiceEmbedding struct {
 
 // RuntimeGenerateConfig controls a single chunk generation call.
 type RuntimeGenerateConfig struct {
-	Temperature    float64
-	EOSThreshold   float64
-	MaxSteps       int
-	LSDDecodeSteps int
-	FramesAfterEOS int
-	VoiceEmbedding *VoiceEmbedding
+	Temperature     float64
+	EOSThreshold    float64
+	MaxSteps        int
+	LSDDecodeSteps  int
+	FramesAfterEOS  int
+	VoiceEmbedding  *VoiceEmbedding
+	VoiceModelState *safetensors.VoiceModelState
 	// StepCallback is called after each AR step with the 1-based step index
 	// and the configured maxSteps ceiling. It may be nil.
 	StepCallback func(step, maxSteps int)

@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
 type flowTransformerLayer struct {
@@ -24,7 +26,7 @@ type flowTransformerLayer struct {
 type flowTransformerLayerState struct {
 	kCache *tensor.Tensor // [B, H, Tk, Dh]
 	vCache *tensor.Tensor // [B, H, Tk, Dh]
-	seqLen int64
+	offset int64
 }
 
 func (s *flowTransformerLayerState) appendKV(k, v *tensor.Tensor) error {
@@ -39,24 +41,68 @@ func (s *flowTransformerLayerState) appendKV(k, v *tensor.Tensor) error {
 	if s.kCache == nil || s.vCache == nil {
 		s.kCache = k
 		s.vCache = v
-		s.seqLen = k.Shape()[2]
+		s.offset += k.Shape()[2]
 
 		return nil
 	}
 
-	kAll, err := tensor.Concat([]*tensor.Tensor{s.kCache, k}, 2)
+	err := s.ensureKVCapacity(k.Shape()[2])
+	if err != nil {
+		return err
+	}
+
+	err = copyKVAt(s.kCache, k, s.offset)
 	if err != nil {
 		return fmt.Errorf("native: append key cache: %w", err)
 	}
 
-	vAll, err := tensor.Concat([]*tensor.Tensor{s.vCache, v}, 2)
+	err = copyKVAt(s.vCache, v, s.offset)
 	if err != nil {
 		return fmt.Errorf("native: append value cache: %w", err)
 	}
 
-	s.kCache = kAll
-	s.vCache = vAll
-	s.seqLen = kAll.Shape()[2]
+	s.offset += k.Shape()[2]
+
+	return nil
+}
+
+func (s *flowTransformerLayerState) ensureKVCapacity(extra int64) error {
+	if s == nil {
+		return errors.New("native: flow transformer layer state is nil")
+	}
+
+	needed := s.offset + extra
+	if needed < 0 {
+		return fmt.Errorf("native: invalid KV cache size %d", needed)
+	}
+
+	kShape := s.kCache.Shape()
+	vShape := s.vCache.Shape()
+	if len(kShape) != 4 || len(vShape) != 4 {
+		return fmt.Errorf("native: KV cache rank mismatch k=%v v=%v", kShape, vShape)
+	}
+
+	if !equalKVCacheLayout(kShape, vShape) {
+		return fmt.Errorf("native: KV cache shape mismatch k=%v v=%v", kShape, vShape)
+	}
+
+	if needed <= kShape[2] {
+		return nil
+	}
+
+	newCap := growCacheCapacity(kShape[2], needed)
+	kNew, err := growKVCache(s.kCache, newCap)
+	if err != nil {
+		return fmt.Errorf("native: grow key cache: %w", err)
+	}
+
+	vNew, err := growKVCache(s.vCache, newCap)
+	if err != nil {
+		return fmt.Errorf("native: grow value cache: %w", err)
+	}
+
+	s.kCache = kNew
+	s.vCache = vNew
 
 	return nil
 }
@@ -222,7 +268,44 @@ func (l *flowTransformerLayer) attentionFromQKV(
 	b, t := qShape[0], qShape[2]
 	d := l.nHeads * l.headDim
 
-	a, err := ops.Attention(q, k, v, causal, offset)
+	var a *tensor.Tensor
+	var err error
+	if causal {
+		a, err = ops.Attention(q, k, v, true, offset)
+	} else {
+		a, err = ops.Attention(q, k, v, false, 0)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	a, err = a.Transpose(1, 2) // [B, T, H, Dh]
+	if err != nil {
+		return nil, err
+	}
+
+	a, err = a.Reshape([]int64{b, t, d})
+	if err != nil {
+		return nil, err
+	}
+
+	return l.outProj.Forward(a)
+}
+
+func (l *flowTransformerLayer) attentionFromPositions(
+	q, k, v *tensor.Tensor,
+	posQ, posK []int64,
+	context int64,
+) (*tensor.Tensor, error) {
+	qShape := q.Shape()
+	if len(qShape) != 4 {
+		return nil, fmt.Errorf("native: attentionFromPositions expects q rank 4, got %v", qShape)
+	}
+
+	b, t := qShape[0], qShape[2]
+	d := l.nHeads * l.headDim
+
+	a, err := ops.AttentionWithPositions(q, k, v, posQ, posK, context)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +337,7 @@ func (l *flowTransformerLayer) forwardWithState(
 		return nil, err
 	}
 
-	pos := state.seqLen
+	pos := state.offset
 
 	q, k, v, err := l.projectQKV(n1, ropeCos, ropeSin, pos)
 	if err != nil {
@@ -266,17 +349,16 @@ func (l *flowTransformerLayer) forwardWithState(
 		return nil, err
 	}
 
-	causal := true
-	offset := pos
-
-	if incremental {
-		// In step mode, query length is 1 and caches only contain historical+current
-		// keys, so no future keys are present.
-		causal = false
-		offset = 0
+	qLen := int64(0)
+	if shape := q.Shape(); len(shape) == 4 {
+		qLen = shape[2]
 	}
 
-	attn, err := l.attentionFromQKV(q, state.kCache, state.vCache, causal, offset)
+	kLen := state.offset
+	posQ := positionsRange(pos, qLen)
+	posK := cachePositions(state.kCache, kLen)
+
+	attn, err := l.attentionFromPositions(q, state.kCache, state.vCache, posQ, posK, ops.AttentionNoContext)
 	if err != nil {
 		return nil, err
 	}
@@ -304,6 +386,37 @@ func (l *flowTransformerLayer) forwardWithState(
 	}
 
 	return addSameShape(x, ff)
+}
+
+func positionsRange(start, count int64) []int64 {
+	if count <= 0 {
+		return nil
+	}
+
+	out := make([]int64, count)
+	for i := range out {
+		out[i] = start + int64(i)
+	}
+
+	return out
+}
+
+func cachePositions(cache *tensor.Tensor, validLen int64) []int64 {
+	shape := cache.Shape()
+	if len(shape) != 4 || shape[2] <= 0 {
+		return nil
+	}
+
+	out := make([]int64, shape[2])
+	for i := range out {
+		if int64(i) < validLen {
+			out[i] = int64(i)
+		} else {
+			out[i] = -1
+		}
+	}
+
+	return out
 }
 
 func (l *flowTransformerLayer) selfAttention(x, ropeCos, ropeSin *tensor.Tensor) (*tensor.Tensor, error) {
@@ -335,6 +448,37 @@ func (t *flowTransformer) initState() (*flowTransformerState, error) {
 	}, nil
 }
 
+func (t *flowTransformer) initStateFromVoiceModelState(voiceState *safetensors.VoiceModelState) (*flowTransformerState, error) {
+	if t == nil {
+		return nil, errors.New("native: flow transformer is nil")
+	}
+
+	if voiceState == nil {
+		return nil, errors.New("native: voice model state is nil")
+	}
+
+	state := &flowTransformerState{
+		layers: make([]flowTransformerLayerState, len(t.layers)),
+	}
+
+	for i, layer := range t.layers {
+		moduleName := flowAttentionModuleName(i)
+		module := voiceState.Modules[moduleName]
+		if module == nil {
+			return nil, fmt.Errorf("native: voice model state missing module %q", moduleName)
+		}
+
+		layerState, err := layerStateFromVoiceModule(moduleName, module, layer)
+		if err != nil {
+			return nil, err
+		}
+
+		state.layers[i] = layerState
+	}
+
+	return state, nil
+}
+
 func loadFlowTransformer(vb *VarBuilder, nHeads int64, maxPeriod float64) (*flowTransformer, error) {
 	layers := make([]*flowTransformerLayer, 0, 8)
 
@@ -364,6 +508,226 @@ func loadFlowTransformer(vb *VarBuilder, nHeads int64, maxPeriod float64) (*flow
 	}
 
 	return &flowTransformer{layers: layers, ropeCos: cos, ropeSin: sin}, nil
+}
+
+func flowAttentionModuleName(layer int) string {
+	return "transformer.layers." + strconv.Itoa(layer) + ".self_attn"
+}
+
+func layerStateFromVoiceModule(moduleName string, module map[string]*safetensors.Tensor, layer *flowTransformerLayer) (flowTransformerLayerState, error) {
+	cache := module["cache"]
+	if cache == nil {
+		return flowTransformerLayerState{}, fmt.Errorf("native: voice model state module %q missing cache", moduleName)
+	}
+
+	offsetTensor := module["offset"]
+	if offsetTensor == nil {
+		return flowTransformerLayerState{}, fmt.Errorf("native: voice model state module %q missing offset", moduleName)
+	}
+
+	offset, err := readVoiceStateOffset(moduleName, offsetTensor)
+	if err != nil {
+		return flowTransformerLayerState{}, err
+	}
+
+	kCache, vCache, err := splitVoiceKVCache(moduleName, cache, layer)
+	if err != nil {
+		return flowTransformerLayerState{}, err
+	}
+
+	if offset < 0 {
+		return flowTransformerLayerState{}, fmt.Errorf("native: voice model state module %q has negative offset %d", moduleName, offset)
+	}
+
+	cacheShape := kCache.Shape()
+	if len(cacheShape) != 4 {
+		return flowTransformerLayerState{}, fmt.Errorf("native: internal key cache rank %d, want 4", len(cacheShape))
+	}
+
+	if offset > cacheShape[2] {
+		return flowTransformerLayerState{}, fmt.Errorf("native: voice model state module %q offset %d exceeds cache length %d", moduleName, offset, cacheShape[2])
+	}
+
+	return flowTransformerLayerState{kCache: kCache, vCache: vCache, offset: offset}, nil
+}
+
+func readVoiceStateOffset(moduleName string, offset *safetensors.Tensor) (int64, error) {
+	if len(offset.Data) == 0 {
+		return 0, fmt.Errorf("native: voice model state module %q has empty offset tensor", moduleName)
+	}
+
+	v := offset.Data[0]
+	i := int64(v)
+	if float32(i) != v {
+		return 0, fmt.Errorf("native: voice model state module %q offset %v is not an integer", moduleName, v)
+	}
+
+	return i, nil
+}
+
+func splitVoiceKVCache(moduleName string, cache *safetensors.Tensor, layer *flowTransformerLayer) (*tensor.Tensor, *tensor.Tensor, error) {
+	shape := cache.Shape
+	if len(shape) != 5 {
+		return nil, nil, fmt.Errorf("native: voice model state module %q cache shape %v, want [2,B,T,H,D]", moduleName, shape)
+	}
+
+	if shape[0] != 2 {
+		return nil, nil, fmt.Errorf("native: voice model state module %q cache first dim %d, want 2", moduleName, shape[0])
+	}
+
+	b, steps, heads, headDim := shape[1], shape[2], shape[3], shape[4]
+	if b <= 0 || steps < 0 || heads <= 0 || headDim <= 0 {
+		return nil, nil, fmt.Errorf("native: voice model state module %q has invalid cache shape %v", moduleName, shape)
+	}
+
+	if layer != nil {
+		if layer.nHeads != 0 && heads != layer.nHeads {
+			return nil, nil, fmt.Errorf("native: voice model state module %q heads %d, want %d", moduleName, heads, layer.nHeads)
+		}
+
+		if layer.headDim != 0 && headDim != layer.headDim {
+			return nil, nil, fmt.Errorf("native: voice model state module %q head dim %d, want %d", moduleName, headDim, layer.headDim)
+		}
+	}
+
+	want := int(shape[0] * b * steps * heads * headDim)
+	if len(cache.Data) != want {
+		return nil, nil, fmt.Errorf("native: voice model state module %q cache data length %d, want %d", moduleName, len(cache.Data), want)
+	}
+
+	outLen := int(b * heads * steps * headDim)
+	kData := make([]float32, outLen)
+	vData := make([]float32, outLen)
+
+	for batch := int64(0); batch < b; batch++ {
+		for step := int64(0); step < steps; step++ {
+			for head := int64(0); head < heads; head++ {
+				for dim := int64(0); dim < headDim; dim++ {
+					dst := (((batch*heads+head)*steps+step)*headDim + dim)
+					kSrc := voiceKVIndex(0, batch, step, head, dim, b, steps, heads, headDim)
+					vSrc := voiceKVIndex(1, batch, step, head, dim, b, steps, heads, headDim)
+					kData[dst] = cache.Data[kSrc]
+					vData[dst] = cache.Data[vSrc]
+				}
+			}
+		}
+	}
+
+	k, err := tensor.New(kData, []int64{b, heads, steps, headDim})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	v, err := tensor.New(vData, []int64{b, heads, steps, headDim})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return k, v, nil
+}
+
+func voiceKVIndex(kv, batch, step, head, dim, batches, steps, heads, headDim int64) int {
+	return int(((((kv*batches+batch)*steps+step)*heads+head)*headDim + dim))
+}
+
+func equalKVCacheLayout(a, b []int64) bool {
+	return len(a) == 4 &&
+		len(b) == 4 &&
+		a[0] == b[0] &&
+		a[1] == b[1] &&
+		a[2] == b[2] &&
+		a[3] == b[3]
+}
+
+func growCacheCapacity(current, needed int64) int64 {
+	if current < 1 {
+		current = 1
+	}
+
+	next := current
+	for next < needed {
+		next *= 2
+	}
+
+	return next
+}
+
+func growKVCache(cache *tensor.Tensor, capacity int64) (*tensor.Tensor, error) {
+	shape := cache.Shape()
+	if len(shape) != 4 {
+		return nil, fmt.Errorf("cache shape %v, want [B,H,T,D]", shape)
+	}
+
+	if capacity == shape[2] {
+		return cache, nil
+	}
+
+	batches, heads, fullSteps, headDim := shape[0], shape[1], shape[2], shape[3]
+	if capacity < fullSteps {
+		return nil, fmt.Errorf("capacity %d smaller than current cache length %d", capacity, fullSteps)
+	}
+
+	data := cache.RawData()
+	out := make([]float32, int(batches*heads*capacity*headDim))
+	for batch := int64(0); batch < batches; batch++ {
+		for head := int64(0); head < heads; head++ {
+			for step := int64(0); step < fullSteps; step++ {
+				src := int((((batch*heads+head)*fullSteps + step) * headDim))
+				dst := int((((batch*heads+head)*capacity + step) * headDim))
+				copy(out[dst:dst+int(headDim)], data[src:src+int(headDim)])
+			}
+		}
+	}
+
+	return tensor.New(out, []int64{batches, heads, capacity, headDim})
+}
+
+func copyKVAt(dst, src *tensor.Tensor, offset int64) error {
+	dstShape := dst.Shape()
+	srcShape := src.Shape()
+	if len(dstShape) != 4 || len(srcShape) != 4 {
+		return fmt.Errorf("cache rank mismatch dst=%v src=%v", dstShape, srcShape)
+	}
+
+	if dstShape[0] != srcShape[0] || dstShape[1] != srcShape[1] || dstShape[3] != srcShape[3] {
+		return fmt.Errorf("cache layout mismatch dst=%v src=%v", dstShape, srcShape)
+	}
+
+	if offset < 0 || offset+srcShape[2] > dstShape[2] {
+		return fmt.Errorf("write range [%d:%d] outside cache length %d", offset, offset+srcShape[2], dstShape[2])
+	}
+
+	dstData := dst.RawData()
+	srcData := src.RawData()
+	batches, heads, dstSteps, headDim := dstShape[0], dstShape[1], dstShape[2], dstShape[3]
+	srcSteps := srcShape[2]
+	for batch := int64(0); batch < batches; batch++ {
+		for head := int64(0); head < heads; head++ {
+			for step := int64(0); step < srcSteps; step++ {
+				dstOff := int((((batch*heads+head)*dstSteps + offset + step) * headDim))
+				srcOff := int((((batch*heads+head)*srcSteps + step) * headDim))
+				copy(dstData[dstOff:dstOff+int(headDim)], srcData[srcOff:srcOff+int(headDim)])
+			}
+		}
+	}
+
+	return nil
+}
+
+func flowLayerIndexFromModule(module string) (int, bool) {
+	const prefix = "transformer.layers."
+	const suffix = ".self_attn"
+	if !strings.HasPrefix(module, prefix) || !strings.HasSuffix(module, suffix) {
+		return 0, false
+	}
+
+	raw := strings.TrimSuffix(strings.TrimPrefix(module, prefix), suffix)
+	idx, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false
+	}
+
+	return idx, true
 }
 
 func (t *flowTransformer) forward(x *tensor.Tensor) (*tensor.Tensor, error) {

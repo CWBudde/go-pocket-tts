@@ -79,6 +79,10 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 		"text_frames", textEmb.Shape()[1],
 	)
 
+	if cfg.VoiceEmbedding != nil && cfg.VoiceModelState != nil {
+		return nil, errors.New("generate: voice embedding and voice model state are mutually exclusive")
+	}
+
 	if cfg.VoiceEmbedding != nil {
 		voiceEmb, err := tensor.New(cfg.VoiceEmbedding.Data, cfg.VoiceEmbedding.Shape)
 		if err != nil {
@@ -98,9 +102,19 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 
 	stageStart = time.Now()
 
-	flowState, err := r.model.NewFlowState()
-	if err != nil {
-		return nil, fmt.Errorf("generate: init flow state: %w", err)
+	var flowState *nativemodel.FlowLMState
+	if cfg.VoiceModelState != nil {
+		flowState, err = r.model.NewFlowStateFromVoiceModelState(cfg.VoiceModelState)
+		if err != nil {
+			return nil, fmt.Errorf("generate: load voice model state: %w", err)
+		}
+
+		slog.Debug("voice model-state conditioning applied")
+	} else {
+		flowState, err = r.model.NewFlowState()
+		if err != nil {
+			return nil, fmt.Errorf("generate: init flow state: %w", err)
+		}
 	}
 
 	err = r.model.PromptFlow(flowState, textEmb)

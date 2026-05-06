@@ -50,6 +50,46 @@ func TestAttentionCausal(t *testing.T) {
 	}
 }
 
+func TestAttentionWithPositionsContextAndInvalidKeys(t *testing.T) {
+	q := mustTensorT(t, []float32{0, 0}, []int64{1, 1, 2, 1})
+	k := mustTensorT(t, []float32{0, 0, 0, 0}, []int64{1, 1, 4, 1})
+	v := mustTensorT(t, []float32{100, 1, 3, 20}, []int64{1, 1, 4, 1})
+
+	out, err := AttentionWithPositions(q, k, v, []int64{2, 3}, []int64{-1, 1, 2, 3}, 2)
+	if err != nil {
+		t.Fatalf("AttentionWithPositions: %v", err)
+	}
+
+	got := out.Data()
+	if math.Abs(float64(got[0]-2.0)) > 1e-4 {
+		t.Fatalf("query pos 2 output = %f, want average of key positions 1 and 2", got[0])
+	}
+
+	if math.Abs(float64(got[1]-11.5)) > 1e-4 {
+		t.Fatalf("query pos 3 output = %f, want average of key positions 2 and 3", got[1])
+	}
+}
+
+func TestAttentionWithPositionsMatchesCausalOffset(t *testing.T) {
+	q := mustTensorT(t, seqDataT(1*2*3*4), []int64{1, 2, 3, 4})
+	k := mustTensorT(t, seqDataT(1*2*5*4), []int64{1, 2, 5, 4})
+	v := mustTensorT(t, seqDataT(1*2*5*3), []int64{1, 2, 5, 3})
+
+	got, err := AttentionWithPositions(q, k, v, []int64{2, 3, 4}, []int64{0, 1, 2, 3, 4}, AttentionNoContext)
+	if err != nil {
+		t.Fatalf("AttentionWithPositions: %v", err)
+	}
+
+	want, err := Attention(q, k, v, true, 2)
+	if err != nil {
+		t.Fatalf("Attention: %v", err)
+	}
+
+	if !equalApprox(got.Data(), want.Data(), 1e-4) {
+		t.Fatalf("position attention output mismatch with causal offset attention")
+	}
+}
+
 func TestCausalMaskErrors(t *testing.T) {
 	_, err := CausalMask(nil, 0)
 	if err == nil || !strings.Contains(err.Error(), "is nil") {

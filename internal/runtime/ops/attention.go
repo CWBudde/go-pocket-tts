@@ -10,6 +10,8 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 )
 
+const AttentionNoContext int64 = -1
+
 // CausalMask sets positions where key index > query index + offset to -Inf.
 // Expected input shape: [..., query, key].
 func CausalMask(scores *tensor.Tensor, offset int64) (*tensor.Tensor, error) {
@@ -50,6 +52,37 @@ func Attention(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Tenso
 	}
 
 	return attentionGeneric(q, k, v, causal, offset)
+}
+
+// AttentionWithPositions computes scaled dot-product attention using absolute
+// query/key positions, matching PocketTTS' upstream streaming attention mask.
+// q, k and v must have shape [B, H, T, D]. posQ and posK are absolute sequence
+// positions shared by all batches; key positions below zero are treated as
+// invalid padding. If context is non-negative, keys older than context steps are
+// masked out.
+func AttentionWithPositions(q, k, v *tensor.Tensor, posQ, posK []int64, context int64) (*tensor.Tensor, error) {
+	if q == nil || k == nil || v == nil {
+		return nil, errors.New("ops: attention with positions requires non-nil q/k/v")
+	}
+
+	qShape := q.Shape()
+	kShape := k.Shape()
+	vShape := v.Shape()
+	if len(qShape) != 4 || len(kShape) != 4 || len(vShape) != 4 {
+		return nil, fmt.Errorf("ops: attention with positions requires 4D q/k/v, got q=%v k=%v v=%v", qShape, kShape, vShape)
+	}
+
+	tq := int(qShape[2])
+	tk := int(kShape[2])
+	if len(posQ) != tq {
+		return nil, fmt.Errorf("ops: attention posQ length %d does not match query length %d", len(posQ), tq)
+	}
+
+	if len(posK) != tk {
+		return nil, fmt.Errorf("ops: attention posK length %d does not match key length %d", len(posK), tk)
+	}
+
+	return attention4DPositions(q, k, v, posQ, posK, context)
 }
 
 func attentionGeneric(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Tensor, error) {
@@ -269,6 +302,185 @@ func attention4D(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Ten
 	}
 
 	return out, true, nil
+}
+
+func attention4DPositions(q, k, v *tensor.Tensor, posQ, posK []int64, context int64) (*tensor.Tensor, error) {
+	qShape := q.Shape()
+	kShape := k.Shape()
+	vShape := v.Shape()
+
+	b, h, tq, d := qShape[0], qShape[1], qShape[2], qShape[3]
+	if d != kShape[3] {
+		return nil, fmt.Errorf("ops: attention q/k depth mismatch %d vs %d", d, kShape[3])
+	}
+
+	if kShape[0] != b || kShape[1] != h || vShape[0] != b || vShape[1] != h {
+		return nil, fmt.Errorf("ops: attention batch/head mismatch q=%v k=%v v=%v", qShape, kShape, vShape)
+	}
+
+	tk := kShape[2]
+	if vShape[2] != tk {
+		return nil, fmt.Errorf("ops: attention key/value sequence mismatch %d vs %d", tk, vShape[2])
+	}
+
+	dv := vShape[3]
+	if b <= 0 || h <= 0 || tq <= 0 || tk <= 0 || d <= 0 || dv <= 0 {
+		return nil, fmt.Errorf("ops: attention expects positive dims, got q=%v k=%v v=%v", qShape, kShape, vShape)
+	}
+
+	out, err := tensor.Zeros([]int64{b, h, tq, dv})
+	if err != nil {
+		return nil, err
+	}
+
+	qData := q.RawData()
+	kData := k.RawData()
+	vData := v.RawData()
+	outData := out.RawData()
+	scale := float32(1.0 / math.Sqrt(float64(d)))
+
+	bI := int(b)
+	hI := int(h)
+	tqI := int(tq)
+	tkI := int(tk)
+	dI := int(d)
+	dvI := int(dv)
+	qBStride := hI * tqI * dI
+	qBHStride := tqI * dI
+	kBStride := hI * tkI * dI
+	kBHStride := tkI * dI
+	vBStride := hI * tkI * dvI
+	vBHStride := tkI * dvI
+	outBStride := hI * tqI * dvI
+	outBHStride := tqI * dvI
+	jobsPerHead := tqI
+	jobsPerBatch := hI * jobsPerHead
+	jobCount := bI * jobsPerBatch
+
+	var failed atomic.Bool
+	var firstErr error
+	var errMu sync.Mutex
+	setErr := func(err error) {
+		if err == nil {
+			return
+		}
+
+		if failed.CompareAndSwap(false, true) {
+			errMu.Lock()
+			firstErr = err
+			errMu.Unlock()
+		}
+	}
+
+	runJobs := func(lo, hi int) {
+		scores := getScratch(tkI)
+		defer putScratch(scores)
+
+		for job := lo; job < hi; job++ {
+			if failed.Load() {
+				return
+			}
+
+			bi := job / jobsPerBatch
+			rem := job % jobsPerBatch
+			headIdx := rem / jobsPerHead
+			qi := rem % jobsPerHead
+
+			qBBase := bi * qBStride
+			kBBase := bi * kBStride
+			vBBase := bi * vBStride
+			outBBase := bi * outBStride
+			qBHBase := qBBase + headIdx*qBHStride
+			kBHBase := kBBase + headIdx*kBHStride
+			vBHBase := vBBase + headIdx*vBHStride
+			outBHBase := outBBase + headIdx*outBHStride
+
+			qOff := qBHBase + qi*dI
+			qRow := qData[qOff : qOff+dI]
+
+			maxV := float32(math.Inf(-1))
+			for ki := range tkI {
+				if !positionMaskAllows(posQ[qi], posK[ki], context) {
+					scores[ki] = float32(math.Inf(-1))
+					continue
+				}
+
+				kOff := kBHBase + ki*dI
+				kRow := kData[kOff : kOff+dI]
+				s := tensor.DotProduct(qRow, kRow) * scale
+
+				scores[ki] = s
+				if s > maxV {
+					maxV = s
+				}
+			}
+
+			outRow := outData[outBHBase+qi*dvI : outBHBase+(qi+1)*dvI]
+			for i := range outRow {
+				outRow[i] = 0
+			}
+
+			if math.IsInf(float64(maxV), -1) {
+				continue
+			}
+
+			var sum float64
+			for ki := range tkI {
+				s := scores[ki]
+				if math.IsInf(float64(s), -1) {
+					scores[ki] = 0
+					continue
+				}
+
+				e := math.Exp(float64(s - maxV))
+				scores[ki] = float32(e)
+				sum += e
+			}
+
+			if sum == 0 || math.IsNaN(sum) {
+				setErr(errors.New("ops: softmax encountered zero normalization sum"))
+				return
+			}
+
+			inv := float32(1.0 / sum)
+			for ki := range tkI {
+				w := scores[ki] * inv
+				if w == 0 {
+					continue
+				}
+
+				vOff := vBHBase + ki*dvI
+				vRow := vData[vOff : vOff+dvI]
+				tensor.Axpy(outRow, w, vRow)
+			}
+		}
+	}
+
+	workers := tensor.Workers()
+	if workers > 1 && jobCount > 1 {
+		parallelFor(jobCount, workers, runJobs)
+	} else {
+		runJobs(0, jobCount)
+	}
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
+	return out, nil
+}
+
+func positionMaskAllows(posQ, posK, context int64) bool {
+	if posK < 0 {
+		return false
+	}
+
+	delta := posQ - posK
+	if delta < 0 {
+		return false
+	}
+
+	return context < 0 || delta < context
 }
 
 func applyCausalMaskInPlace(data []float32, q, k, blocks int, offset int64) {

@@ -76,6 +76,29 @@ func float32Bytes(vals []float32) []byte {
 	return buf
 }
 
+func int64Bytes(vals []int64) []byte {
+	buf := make([]byte, len(vals)*8)
+	for i, v := range vals {
+		binary.LittleEndian.PutUint64(buf[i*8:], uint64(v))
+	}
+
+	return buf
+}
+
+func equalInt64s(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+
+	return true
+}
+
 // writeTempSafetensors writes raw bytes to a temp file and returns the path.
 func writeTempSafetensors(t *testing.T, data []byte) string {
 	t.Helper()
@@ -223,21 +246,20 @@ func TestLoadFirstTensor_NoTensors(t *testing.T) {
 }
 
 func TestLoadFirstTensor_UnsupportedDtype(t *testing.T) {
-	// I64 dtype is not supported — we only handle F32.
-	data := make([]byte, 8) // 1 x int64
+	data := make([]byte, 4)
 	blob := buildSafetensors(t, map[string]struct {
 		dtype string
 		shape []int64
 		data  []byte
 	}{
-		"tensor": {dtype: "I64", shape: []int64{1}, data: data},
+		"tensor": {dtype: "U32", shape: []int64{1}, data: data},
 	})
 
 	path := writeTempSafetensors(t, blob)
 
 	_, err := LoadFirstTensor(path)
 	if err == nil {
-		t.Fatal("expected error for unsupported dtype I64")
+		t.Fatal("expected error for unsupported dtype U32")
 	}
 }
 
@@ -352,6 +374,87 @@ func TestLoadVoiceEmbedding_3D_PassesThrough(t *testing.T) {
 
 	if len(data) != 2*1024 {
 		t.Fatalf("data length = %d, want %d", len(data), 2*1024)
+	}
+}
+
+func TestInspectVoiceFile_ModelState(t *testing.T) {
+	blob := buildSafetensors(t, map[string]struct {
+		dtype string
+		shape []int64
+		data  []byte
+	}{
+		"transformer.layers.0.self_attn/cache": {
+			dtype: "F32",
+			shape: []int64{2, 1, 2, 1, 1},
+			data:  float32Bytes([]float32{1, 2, 3, 4}),
+		},
+		"transformer.layers.0.self_attn/offset": {
+			dtype: "I64",
+			shape: []int64{1},
+			data:  int64Bytes([]int64{2}),
+		},
+	})
+
+	path := writeTempSafetensors(t, blob)
+
+	kind, err := InspectVoiceFile(path)
+	if err != nil {
+		t.Fatalf("InspectVoiceFile: %v", err)
+	}
+
+	if kind != VoiceFileModelState {
+		t.Fatalf("kind = %q, want %q", kind, VoiceFileModelState)
+	}
+
+	state, err := LoadVoiceModelState(path)
+	if err != nil {
+		t.Fatalf("LoadVoiceModelState: %v", err)
+	}
+
+	module := state.Modules["transformer.layers.0.self_attn"]
+	if module == nil {
+		t.Fatal("expected module state for transformer layer")
+	}
+
+	if got := module["offset"].Data; len(got) != 1 || got[0] != 2 {
+		t.Fatalf("offset data = %v, want [2]", got)
+	}
+
+	if _, _, err := LoadVoiceEmbedding(path); err == nil || !strings.Contains(err.Error(), "model state") {
+		t.Fatalf("LoadVoiceEmbedding(model state) err = %v, want model-state error", err)
+	}
+}
+
+func TestLoadVoiceModelState_LegacyCurrentEndBecomesOffset(t *testing.T) {
+	blob := buildSafetensors(t, map[string]struct {
+		dtype string
+		shape []int64
+		data  []byte
+	}{
+		"layer/cache": {
+			dtype: "F32",
+			shape: []int64{2, 1, 3, 1, 1},
+			data:  float32Bytes(make([]float32, 6)),
+		},
+		"layer/current_end": {
+			dtype: "F32",
+			shape: []int64{3},
+			data:  float32Bytes([]float32{0, 0, 0}),
+		},
+	})
+
+	state, err := LoadVoiceModelState(writeTempSafetensors(t, blob))
+	if err != nil {
+		t.Fatalf("LoadVoiceModelState: %v", err)
+	}
+
+	offset := state.Modules["layer"]["offset"]
+	if offset == nil {
+		t.Fatal("expected current_end to be imported as offset")
+	}
+
+	if !equalInt64s(offset.Shape, []int64{1}) || len(offset.Data) != 1 || offset.Data[0] != 3 {
+		t.Fatalf("offset tensor = shape %v data %v, want shape [1] data [3]", offset.Shape, offset.Data)
 	}
 }
 

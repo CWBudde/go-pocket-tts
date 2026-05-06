@@ -2,6 +2,7 @@ package tts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
@@ -16,6 +17,10 @@ func newONNXRuntime(engine *onnx.Engine) Runtime {
 }
 
 func (r *onnxRuntime) GenerateAudio(ctx context.Context, tokens []int64, cfg RuntimeGenerateConfig) ([]float32, error) {
+	if cfg.VoiceModelState != nil {
+		return nil, errors.New("onnx runtime does not support upstream voice model-state safetensors")
+	}
+
 	genCfg := onnx.GenerateConfig{
 		Temperature:    cfg.Temperature,
 		EOSThreshold:   cfg.EOSThreshold,

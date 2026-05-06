@@ -2,6 +2,11 @@
 
 This project expects voice entries in `voices/manifest.json`.
 
+Voice files may be either upstream PocketTTS model-state `.safetensors` files
+with `<module>/cache` and `<module>/offset` tensors, or legacy Go
+`audio_prompt` `.safetensors` files. The native backend accepts both so local
+manifests continue to work while voices are regenerated.
+
 Each entry must define:
 
 - `id`: stable voice identifier used by CLI and APIs

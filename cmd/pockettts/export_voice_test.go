@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,6 +50,8 @@ func TestNewExportVoiceCmd_Flags(t *testing.T) {
 		{name: "audio", def: ""},
 		{name: "out", def: ""},
 		{name: "model-safetensors", def: ""},
+		{name: "format", def: exportVoiceFormatLegacyEmbedding},
+		{name: "language", def: "english_2026-01"},
 		{name: "id", def: "custom-voice"},
 		{name: "license", def: "unknown"},
 	} {
@@ -176,5 +179,89 @@ func TestExportVoiceCmd_WritesSafetensorsViaNativeEncoder(t *testing.T) {
 
 	if got[0] != fake.output[0] || got[onnx.VoiceEmbeddingDim+1] != fake.output[onnx.VoiceEmbeddingDim+1] {
 		t.Fatalf("output values mismatch")
+	}
+}
+
+func TestExportVoiceCmd_WritesUpstreamModelStateViaPythonExporter(t *testing.T) {
+	origExporter := exportVoiceModelState
+	origBuilder := buildVoiceEncoder
+
+	t.Cleanup(func() {
+		exportVoiceModelState = origExporter
+		buildVoiceEncoder = origBuilder
+	})
+
+	var called bool
+	var gotAudioPath string
+	var gotOutPath string
+	var gotLanguage string
+	exportVoiceModelState = func(_ context.Context, _ config.Config, audioPath, outPath, language string) error {
+		called = true
+		gotAudioPath = audioPath
+		gotOutPath = outPath
+		gotLanguage = language
+
+		return safetensors.WriteFile(outPath, []safetensors.Tensor{
+			{
+				Name:  "transformer.layers.0.self_attn/cache",
+				Shape: []int64{2, 1, 1, 1, 1},
+				Data:  []float32{1, 2},
+			},
+			{
+				Name:  "transformer.layers.0.self_attn/offset",
+				Shape: []int64{1},
+				Data:  []float32{1},
+			},
+		})
+	}
+	buildVoiceEncoder = func(_ config.Config, _ string) (voiceEncoder, error) {
+		t.Fatal("legacy voice encoder should not be built for --format=model-state")
+		return nil, nil
+	}
+
+	in := filepath.Join(t.TempDir(), "prompt.wav")
+	if err := os.WriteFile(in, []byte{1, 2, 3, 4}, 0o644); err != nil {
+		t.Fatalf("write input fixture: %v", err)
+	}
+
+	out := filepath.Join(t.TempDir(), "voice.safetensors")
+
+	cmd := NewRootCmd()
+	cmd.SilenceUsage = true
+	cmd.SetArgs([]string{
+		"export-voice",
+		"--input=" + in,
+		"--out=" + out,
+		"--format=model-state",
+		"--language=english_2026-01",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("export-voice command failed: %v", err)
+	}
+
+	if !called {
+		t.Fatal("model-state exporter was not called")
+	}
+
+	if gotAudioPath != in {
+		t.Fatalf("audio path = %q, want %q", gotAudioPath, in)
+	}
+
+	if gotOutPath != out {
+		t.Fatalf("out path = %q, want %q", gotOutPath, out)
+	}
+
+	if gotLanguage != "english_2026-01" {
+		t.Fatalf("language = %q, want english_2026-01", gotLanguage)
+	}
+
+	kind, err := safetensors.InspectVoiceFile(out)
+	if err != nil {
+		t.Fatalf("InspectVoiceFile: %v", err)
+	}
+
+	if kind != safetensors.VoiceFileModelState {
+		t.Fatalf("voice file kind = %q, want %q", kind, safetensors.VoiceFileModelState)
 	}
 }

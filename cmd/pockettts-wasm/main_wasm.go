@@ -341,14 +341,27 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 	progress.Emit("prepare", 10, 100, fmt.Sprintf("prepared %d chunks", len(chunks)))
 
 	var voiceEmb *tts.VoiceEmbedding
+	var voiceState *safetensors.VoiceModelState
 	if len(opts.VoiceSafetensors) > 0 {
 		browserYield()
-		vData, vShape, vErr := safetensors.LoadVoiceEmbeddingFromBytes(opts.VoiceSafetensors)
+		kind, vErr := safetensors.InspectVoiceFileBytes(opts.VoiceSafetensors)
 		if vErr != nil {
-			return nil, fmt.Errorf("load voice embedding: %w", vErr)
+			return nil, fmt.Errorf("inspect voice safetensors: %w", vErr)
 		}
-		voiceEmb = &tts.VoiceEmbedding{Data: vData, Shape: vShape}
-		progress.Emit("voice", 15, 100, fmt.Sprintf("loaded voice embedding (%d frames)", vShape[1]))
+		if kind == safetensors.VoiceFileModelState {
+			voiceState, vErr = safetensors.LoadVoiceModelStateFromBytes(opts.VoiceSafetensors)
+			if vErr != nil {
+				return nil, fmt.Errorf("load voice model state: %w", vErr)
+			}
+			progress.Emit("voice", 15, 100, "loaded voice model state")
+		} else {
+			vData, vShape, vErr := safetensors.LoadVoiceEmbeddingFromBytes(opts.VoiceSafetensors)
+			if vErr != nil {
+				return nil, fmt.Errorf("load voice embedding: %w", vErr)
+			}
+			voiceEmb = &tts.VoiceEmbedding{Data: vData, Shape: vShape}
+			progress.Emit("voice", 15, 100, fmt.Sprintf("loaded voice embedding (%d frames)", vShape[1]))
+		}
 	}
 
 	allAudio := make([]float32, 0, audio.ExpectedSampleRate)
@@ -367,12 +380,13 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 		}
 
 		cfg := tts.RuntimeGenerateConfig{
-			Temperature:    opts.Temperature,
-			EOSThreshold:   opts.EOSThreshold,
-			MaxSteps:       opts.MaxSteps,
-			LSDDecodeSteps: opts.LSDDecodeSteps,
-			FramesAfterEOS: chunk.FramesAfterEOS(),
-			VoiceEmbedding: voiceEmb,
+			Temperature:     opts.Temperature,
+			EOSThreshold:    opts.EOSThreshold,
+			MaxSteps:        opts.MaxSteps,
+			LSDDecodeSteps:  opts.LSDDecodeSteps,
+			FramesAfterEOS:  chunk.FramesAfterEOS(),
+			VoiceEmbedding:  voiceEmb,
+			VoiceModelState: voiceState,
 			StepCallback: func(step, _ int) {
 				stepPct := 0
 				if maxSteps > 0 {

@@ -96,6 +96,68 @@ func TestDenormLatentToBCTRejectsInvalidShapes(t *testing.T) {
 	}
 }
 
+func TestMimiSelfAttentionUsesContextWindow(t *testing.T) {
+	t.Parallel()
+
+	inProjWeight, err := tensor.New([]float32{
+		0, 0,
+		0, 0,
+		0, 0,
+		0, 0,
+		1, 0,
+		0, 1,
+	}, []int64{6, 2})
+	if err != nil {
+		t.Fatalf("inProj weight: %v", err)
+	}
+
+	outProjWeight, err := tensor.New([]float32{1, 0, 0, 1}, []int64{2, 2})
+	if err != nil {
+		t.Fatalf("outProj weight: %v", err)
+	}
+
+	layer := &mimiTransformerLayer{
+		inProj:  &Linear{Weight: inProjWeight, inDim: 2, outDim: 6},
+		outProj: &Linear{Weight: outProjWeight, inDim: 2, outDim: 2},
+		nHeads:  1,
+		headDim: 2,
+		context: 2,
+	}
+
+	x, err := tensor.New([]float32{
+		1, 10,
+		3, 30,
+		20, 200,
+	}, []int64{1, 3, 2})
+	if err != nil {
+		t.Fatalf("input: %v", err)
+	}
+
+	ropeCos, err := tensor.New([]float32{1, 1, 1}, []int64{3, 1})
+	if err != nil {
+		t.Fatalf("rope cos: %v", err)
+	}
+
+	ropeSin, err := tensor.New([]float32{0, 0, 0}, []int64{3, 1})
+	if err != nil {
+		t.Fatalf("rope sin: %v", err)
+	}
+
+	got, err := layer.selfAttention(x, ropeCos, ropeSin)
+	if err != nil {
+		t.Fatalf("selfAttention: %v", err)
+	}
+
+	want := []float32{
+		1, 10,
+		2, 20,
+		11.5, 115,
+	}
+	if !equalApproxN(got.RawData(), want, 1e-5) {
+		t.Fatalf("selfAttention data = %v, want %v", got.RawData(), want)
+	}
+}
+
 func TestLatentToMimiProjectorMatchesReference(t *testing.T) {
 	t.Parallel()
 

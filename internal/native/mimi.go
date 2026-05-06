@@ -17,10 +17,11 @@ type MimiConfig struct {
 	SampleRate int64
 	NumHeads   int64
 	MaxPeriod  float64
+	Context    int64
 }
 
 func DefaultMimiConfig() MimiConfig {
-	return MimiConfig{SampleRate: 24000, NumHeads: 8, MaxPeriod: 10000.0}
+	return MimiConfig{SampleRate: 24000, NumHeads: 8, MaxPeriod: 10000.0, Context: 250}
 }
 
 type conv1dLayer struct {
@@ -164,9 +165,10 @@ type mimiTransformerLayer struct {
 	layerScale2 *tensor.Tensor // optional [d]
 	nHeads      int64
 	headDim     int64
+	context     int64
 }
 
-func loadMimiTransformerLayer(vb *VarBuilder, nHeads int64) (*mimiTransformerLayer, error) {
+func loadMimiTransformerLayer(vb *VarBuilder, nHeads, context int64) (*mimiTransformerLayer, error) {
 	norm1, err := loadLayerNorm(vb, "norm1", 1e-5)
 	if err != nil {
 		return nil, err
@@ -223,6 +225,7 @@ func loadMimiTransformerLayer(vb *VarBuilder, nHeads int64) (*mimiTransformerLay
 		layerScale2: ls2,
 		nHeads:      nHeads,
 		headDim:     dModel / nHeads,
+		context:     context,
 	}, nil
 }
 
@@ -402,7 +405,8 @@ func (l *mimiTransformerLayer) selfAttentionWithScratch(x, ropeCos, ropeSin *ten
 		return nil, err
 	}
 
-	a, err := ops.Attention(q, k, v, true, 0)
+	pos := positionsRange(0, t)
+	a, err := ops.AttentionWithPositions(q, k, v, pos, pos, l.context)
 	if err != nil {
 		return nil, err
 	}
@@ -470,7 +474,7 @@ func loadMimiDecoderTransformer(vb *VarBuilder, cfg MimiConfig) (*mimiDecoderTra
 			break
 		}
 
-		layer, err := loadMimiTransformerLayer(layerPath, cfg.NumHeads)
+		layer, err := loadMimiTransformerLayer(layerPath, cfg.NumHeads, cfg.Context)
 		if err != nil {
 			return nil, fmt.Errorf("native: load mimi transformer layer %d: %w", i, err)
 		}
@@ -533,6 +537,9 @@ type MimiModel struct {
 func LoadMimiModel(vb *VarBuilder, cfg MimiConfig) (*MimiModel, error) {
 	if cfg.SampleRate == 0 {
 		cfg = DefaultMimiConfig()
+	}
+	if cfg.Context == 0 {
+		cfg.Context = DefaultMimiConfig().Context
 	}
 
 	mimi := vb.Path("mimi")

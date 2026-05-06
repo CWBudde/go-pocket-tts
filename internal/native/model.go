@@ -113,6 +113,14 @@ func (m *Model) NewFlowState() (*FlowLMState, error) {
 	return m.flow.InitState()
 }
 
+func (m *Model) NewFlowStateFromVoiceModelState(voiceState *safetensors.VoiceModelState) (*FlowLMState, error) {
+	if m == nil || m.flow == nil {
+		return nil, errors.New("native: model flow_lm unavailable")
+	}
+
+	return m.flow.InitStateFromVoiceModelState(voiceState)
+}
+
 func (m *Model) PromptFlow(state *FlowLMState, textEmbeddings *tensor.Tensor) error {
 	if m == nil || m.flow == nil {
 		return errors.New("native: model flow_lm unavailable")

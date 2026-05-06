@@ -12,6 +12,7 @@ import (
 
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
 )
 
@@ -287,8 +288,8 @@ func TestSynthesize_BadSafetensorsPath_ReturnsError(t *testing.T) {
 		t.Fatal("Synthesize with missing voice file = nil; want error")
 	}
 
-	if !strings.Contains(err.Error(), "load voice embedding") {
-		t.Errorf("error %q should mention 'load voice embedding'", err.Error())
+	if !strings.Contains(err.Error(), "voice safetensors") {
+		t.Errorf("error %q should mention voice safetensors", err.Error())
 	}
 }
 
@@ -311,8 +312,8 @@ func TestSynthesize_InvalidSafetensorsFile_ReturnsError(t *testing.T) {
 		t.Fatal("Synthesize with invalid safetensors = nil; want error")
 	}
 
-	if !strings.Contains(err.Error(), "load voice embedding") {
-		t.Errorf("error %q should mention 'load voice embedding'", err.Error())
+	if !strings.Contains(err.Error(), "voice safetensors") {
+		t.Errorf("error %q should mention voice safetensors", err.Error())
 	}
 }
 
@@ -436,6 +437,53 @@ func TestSynthesize_ReusesVoiceEmbeddingIngestion(t *testing.T) {
 
 	if len(rt.lastCfg.VoiceEmbedding.Data) != 6 {
 		t.Fatalf("VoiceEmbedding data len = %d; want 6", len(rt.lastCfg.VoiceEmbedding.Data))
+	}
+}
+
+func TestSynthesize_UsesVoiceModelStateIngestion(t *testing.T) {
+	rt := &captureRuntime{audio: []float32{0.4}}
+	svc := &Service{
+		runtime:   rt,
+		tokenizer: fakeTokenizer{},
+		ttsCfg:    config.DefaultConfig().TTS,
+	}
+
+	voicePath := filepath.Join(t.TempDir(), "voice_state.safetensors")
+	err := safetensors.WriteFile(voicePath, []safetensors.Tensor{
+		{
+			Name:  "transformer.layers.0.self_attn/cache",
+			Shape: []int64{2, 1, 1, 1, 1},
+			Data:  []float32{1, 2},
+		},
+		{
+			Name:  "transformer.layers.0.self_attn/offset",
+			Shape: []int64{1},
+			Data:  []float32{1},
+		},
+	})
+	if err != nil {
+		t.Fatalf("write voice state: %v", err)
+	}
+
+	_, err = svc.Synthesize("hello world", voicePath)
+	if err != nil {
+		t.Fatalf("Synthesize returned error: %v", err)
+	}
+
+	if rt.calls != 1 {
+		t.Fatalf("runtime calls = %d; want 1", rt.calls)
+	}
+
+	if rt.lastCfg.VoiceEmbedding != nil {
+		t.Fatalf("VoiceEmbedding = %+v; want nil for upstream model state", rt.lastCfg.VoiceEmbedding)
+	}
+
+	if rt.lastCfg.VoiceModelState == nil {
+		t.Fatal("VoiceModelState = nil; want non-nil")
+	}
+
+	if got := len(rt.lastCfg.VoiceModelState.Modules); got != 1 {
+		t.Fatalf("VoiceModelState modules = %d; want 1", got)
 	}
 }
 

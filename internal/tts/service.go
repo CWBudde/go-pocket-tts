@@ -124,7 +124,7 @@ func (s *Service) SynthesizeCtx(ctx context.Context, input string, voicePath str
 		return nil, fmt.Errorf("no tokens produced from input: %w", err)
 	}
 
-	voiceEmb, hasVoiceEmb, err := loadVoiceEmbedding(voicePath)
+	voiceConditioning, err := loadVoiceConditioning(voicePath)
 	if err != nil {
 		return nil, err
 	}
@@ -142,9 +142,7 @@ func (s *Service) SynthesizeCtx(ctx context.Context, input string, voicePath str
 		}
 
 		cfg := s.generateConfig(chunk.FramesAfterEOS())
-		if hasVoiceEmb {
-			cfg.VoiceEmbedding = voiceEmb
-		}
+		voiceConditioning.applyTo(&cfg)
 
 		pcm, err := s.runtime.GenerateAudio(ctx, chunk.TokenIDs, cfg)
 		if err != nil {
@@ -168,7 +166,7 @@ func (s *Service) SynthesizeStream(ctx context.Context, input string, voicePath 
 		return fmt.Errorf("no tokens produced from input: %w", err)
 	}
 
-	voiceEmb, hasVoiceEmb, err := loadVoiceEmbedding(voicePath)
+	voiceConditioning, err := loadVoiceConditioning(voicePath)
 	if err != nil {
 		return err
 	}
@@ -184,9 +182,7 @@ func (s *Service) SynthesizeStream(ctx context.Context, input string, voicePath 
 		}
 
 		cfg := s.generateConfig(chunk.FramesAfterEOS())
-		if hasVoiceEmb {
-			cfg.VoiceEmbedding = voiceEmb
-		}
+		voiceConditioning.applyTo(&cfg)
 
 		pcm, err := s.runtime.GenerateAudio(ctx, chunk.TokenIDs, cfg)
 		if err != nil {
@@ -203,20 +199,48 @@ func (s *Service) SynthesizeStream(ctx context.Context, input string, voicePath 
 	return nil
 }
 
-func loadVoiceEmbedding(voicePath string) (*VoiceEmbedding, bool, error) {
+type voiceConditioning struct {
+	embedding  *VoiceEmbedding
+	modelState *safetensors.VoiceModelState
+}
+
+func (v voiceConditioning) applyTo(cfg *RuntimeGenerateConfig) {
+	if cfg == nil {
+		return
+	}
+
+	cfg.VoiceEmbedding = v.embedding
+	cfg.VoiceModelState = v.modelState
+}
+
+func loadVoiceConditioning(voicePath string) (voiceConditioning, error) {
 	if strings.TrimSpace(voicePath) == "" {
-		return nil, false, nil
+		return voiceConditioning{}, nil
+	}
+
+	kind, err := safetensors.InspectVoiceFile(voicePath)
+	if err != nil {
+		return voiceConditioning{}, fmt.Errorf("inspect voice safetensors: %w", err)
+	}
+
+	if kind == safetensors.VoiceFileModelState {
+		state, err := safetensors.LoadVoiceModelState(voicePath)
+		if err != nil {
+			return voiceConditioning{}, fmt.Errorf("load voice model state: %w", err)
+		}
+
+		return voiceConditioning{modelState: state}, nil
 	}
 
 	data, shape, err := safetensors.LoadVoiceEmbedding(voicePath)
 	if err != nil {
-		return nil, false, fmt.Errorf("load voice embedding: %w", err)
+		return voiceConditioning{}, fmt.Errorf("load voice embedding: %w", err)
 	}
 
-	return &VoiceEmbedding{
+	return voiceConditioning{embedding: &VoiceEmbedding{
 		Data:  data,
 		Shape: shape,
-	}, true, nil
+	}}, nil
 }
 
 // Close releases engine resources.

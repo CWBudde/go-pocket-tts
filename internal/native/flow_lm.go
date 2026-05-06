@@ -7,6 +7,7 @@ import (
 	"math/rand"
 
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
 type FlowLMConfig struct {
@@ -123,6 +124,19 @@ func (f *FlowLM) InitState() (*FlowLMState, error) {
 	}
 
 	tfState, err := f.transformer.initState()
+	if err != nil {
+		return nil, err
+	}
+
+	return &FlowLMState{transformer: tfState}, nil
+}
+
+func (f *FlowLM) InitStateFromVoiceModelState(voiceState *safetensors.VoiceModelState) (*FlowLMState, error) {
+	if f == nil || f.transformer == nil {
+		return nil, errors.New("native: flow_lm transformer unavailable")
+	}
+
+	tfState, err := f.transformer.initStateFromVoiceModelState(voiceState)
 	if err != nil {
 		return nil, err
 	}

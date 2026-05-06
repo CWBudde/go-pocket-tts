@@ -15,6 +15,7 @@ const (
 	dtypeF32  = "F32"
 	dtypeF16  = "F16"
 	dtypeBF16 = "BF16"
+	dtypeI64  = "I64"
 )
 
 type KeyMapper func(name string) (mapped string, keep bool)
@@ -282,7 +283,7 @@ func parseHeaderEntry(raw json.RawMessage) (storeHeaderEntry, error) {
 
 func validateHeaderEntry(name string, entry storeHeaderEntry) error {
 	switch strings.ToUpper(entry.DType) {
-	case dtypeF32, dtypeF16, dtypeBF16:
+	case dtypeF32, dtypeF16, dtypeBF16, dtypeI64:
 	default:
 		return fmt.Errorf("safetensors: tensor %q has unsupported dtype %q", name, entry.DType)
 	}
@@ -328,6 +329,8 @@ func dtypeBytes(dtype string) (int, error) {
 		return 4, nil
 	case dtypeF16, dtypeBF16:
 		return 2, nil
+	case dtypeI64:
+		return 8, nil
 	default:
 		return 0, fmt.Errorf("unsupported dtype %q", dtype)
 	}
@@ -372,6 +375,17 @@ func decodeTensorData(raw []byte, dtype string, shape []int64) ([]float32, error
 		for i := range out {
 			bits := binary.LittleEndian.Uint16(raw[i*2:])
 			out[i] = math.Float32frombits(uint32(bits) << 16)
+		}
+
+		return out, nil
+	case dtypeI64:
+		if len(raw) < n*8 {
+			return nil, fmt.Errorf("need %d bytes for I64, got %d", n*8, len(raw))
+		}
+
+		for i := range out {
+			bits := binary.LittleEndian.Uint64(raw[i*8:])
+			out[i] = float32(int64(bits))
 		}
 
 		return out, nil

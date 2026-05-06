@@ -170,7 +170,7 @@ func TestStore_CorruptionAndUnsupportedDTypeErrors(t *testing.T) {
 		shape []int64
 		data  []byte
 	}{
-		"x": {dtype: "I64", shape: []int64{1}, data: make([]byte, 8)},
+		"x": {dtype: "U32", shape: []int64{1}, data: make([]byte, 4)},
 	})
 
 	_, err := OpenStoreFromBytes(unsupported, StoreOptions{})

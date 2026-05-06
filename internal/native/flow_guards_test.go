@@ -5,7 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
 func TestFlowLMInitState(t *testing.T) {
@@ -225,8 +227,8 @@ func TestFlowTransformerAppendKVAndDetectNumHeads(t *testing.T) {
 		t.Fatalf("appendKV first call error: %v", err)
 	}
 
-	if s.seqLen != 1 {
-		t.Fatalf("seqLen after first append = %d, want 1", s.seqLen)
+	if s.offset != 1 {
+		t.Fatalf("offset after first append = %d, want 1", s.offset)
 	}
 
 	k2 := mustTensorN(t, []float32{3, 4}, []int64{1, 1, 2, 1})
@@ -237,12 +239,12 @@ func TestFlowTransformerAppendKVAndDetectNumHeads(t *testing.T) {
 		t.Fatalf("appendKV second call error: %v", err)
 	}
 
-	if s.seqLen != 3 {
-		t.Fatalf("seqLen after second append = %d, want 3", s.seqLen)
+	if s.offset != 3 {
+		t.Fatalf("offset after second append = %d, want 3", s.offset)
 	}
 
-	if got := s.kCache.Shape()[2]; got != 3 {
-		t.Fatalf("kCache sequence dim = %d, want 3", got)
+	if got := s.kCache.Shape()[2]; got < 3 {
+		t.Fatalf("kCache sequence capacity = %d, want at least 3", got)
 	}
 
 	if got := detectNumHeads(nil, 8); got != 8 {
@@ -251,6 +253,210 @@ func TestFlowTransformerAppendKVAndDetectNumHeads(t *testing.T) {
 
 	if got := detectNumHeads(NewVarBuilder(nil), 6); got != 6 {
 		t.Fatalf("detectNumHeads(uninitialized vb) = %d, want 6", got)
+	}
+}
+
+func TestFlowTransformerInitStateFromVoiceModelState(t *testing.T) {
+	tfm := &flowTransformer{
+		layers: []*flowTransformerLayer{
+			{nHeads: 2, headDim: 1},
+			{nHeads: 2, headDim: 1},
+		},
+	}
+
+	voiceState := &safetensors.VoiceModelState{Modules: map[string]map[string]*safetensors.Tensor{
+		"transformer.layers.0.self_attn": {
+			"cache": {
+				Name:  "transformer.layers.0.self_attn/cache",
+				Shape: []int64{2, 1, 2, 2, 1},
+				Data: []float32{
+					1, 2, 3, 4,
+					5, 6, 7, 8,
+				},
+			},
+			"offset": {
+				Name:  "transformer.layers.0.self_attn/offset",
+				Shape: []int64{1},
+				Data:  []float32{1},
+			},
+		},
+		"transformer.layers.1.self_attn": {
+			"cache": {
+				Name:  "transformer.layers.1.self_attn/cache",
+				Shape: []int64{2, 1, 2, 2, 1},
+				Data: []float32{
+					9, 10, 11, 12,
+					13, 14, 15, 16,
+				},
+			},
+			"offset": {
+				Name:  "transformer.layers.1.self_attn/offset",
+				Shape: []int64{1},
+				Data:  []float32{2},
+			},
+		},
+	}}
+
+	state, err := tfm.initStateFromVoiceModelState(voiceState)
+	if err != nil {
+		t.Fatalf("initStateFromVoiceModelState: %v", err)
+	}
+
+	if len(state.layers) != 2 {
+		t.Fatalf("state layers = %d, want 2", len(state.layers))
+	}
+
+	if got := state.layers[0].offset; got != 1 {
+		t.Fatalf("layer0 offset = %d, want 1", got)
+	}
+
+	if got := state.layers[0].kCache.Shape(); !shapeEqual(got, []int64{1, 2, 2, 1}) {
+		t.Fatalf("layer0 key cache shape = %v, want [1 2 2 1]", got)
+	}
+
+	if got := state.layers[0].kCache.RawData(); !equalApproxN(got, []float32{1, 3, 2, 4}, 0) {
+		t.Fatalf("layer0 key cache data = %v, want [1 3 2 4]", got)
+	}
+
+	if got := state.layers[0].vCache.RawData(); !equalApproxN(got, []float32{5, 7, 6, 8}, 0) {
+		t.Fatalf("layer0 value cache data = %v, want [5 7 6 8]", got)
+	}
+
+	if got := state.layers[1].offset; got != 2 {
+		t.Fatalf("layer1 offset = %d, want 2", got)
+	}
+
+	if got := state.layers[1].kCache.Shape(); !shapeEqual(got, []int64{1, 2, 2, 1}) {
+		t.Fatalf("layer1 key cache shape = %v, want [1 2 2 1]", got)
+	}
+}
+
+func TestFlowTransformerInitStateFromVoiceModelStateGuards(t *testing.T) {
+	tfm := &flowTransformer{layers: []*flowTransformerLayer{{nHeads: 2, headDim: 1}}}
+
+	_, err := tfm.initStateFromVoiceModelState(nil)
+	if err == nil || !strings.Contains(err.Error(), "voice model state is nil") {
+		t.Fatalf("expected nil voice model state error, got: %v", err)
+	}
+
+	_, err = tfm.initStateFromVoiceModelState(&safetensors.VoiceModelState{Modules: map[string]map[string]*safetensors.Tensor{}})
+	if err == nil || !strings.Contains(err.Error(), "missing module") {
+		t.Fatalf("expected missing module error, got: %v", err)
+	}
+
+	_, err = tfm.initStateFromVoiceModelState(&safetensors.VoiceModelState{Modules: map[string]map[string]*safetensors.Tensor{
+		"transformer.layers.0.self_attn": {
+			"cache": {
+				Name:  "transformer.layers.0.self_attn/cache",
+				Shape: []int64{2, 1, 1, 2, 1},
+				Data:  []float32{1, 2, 3, 4},
+			},
+			"offset": {
+				Name:  "transformer.layers.0.self_attn/offset",
+				Shape: []int64{1},
+				Data:  []float32{2},
+			},
+		},
+	}})
+	if err == nil || !strings.Contains(err.Error(), "exceeds cache length") {
+		t.Fatalf("expected offset bounds error, got: %v", err)
+	}
+}
+
+func TestFlowTransformerStatefulAttentionMatchesFullLastToken(t *testing.T) {
+	inProjWeight, err := tensor.New([]float32{
+		1, 0,
+		0, 1,
+		1, 0,
+		0, 1,
+		1, 0,
+		0, 1,
+	}, []int64{6, 2})
+	if err != nil {
+		t.Fatalf("inProj weight: %v", err)
+	}
+
+	outProjWeight, err := tensor.New([]float32{1, 0, 0, 1}, []int64{2, 2})
+	if err != nil {
+		t.Fatalf("outProj weight: %v", err)
+	}
+
+	layer := &flowTransformerLayer{
+		inProj:  &Linear{Weight: inProjWeight, inDim: 2, outDim: 6},
+		outProj: &Linear{Weight: outProjWeight, inDim: 2, outDim: 2},
+		nHeads:  1,
+		headDim: 2,
+	}
+
+	x, err := tensor.New([]float32{
+		1, 0,
+		0, 1,
+		1, 1,
+	}, []int64{1, 3, 2})
+	if err != nil {
+		t.Fatalf("input: %v", err)
+	}
+
+	ropeCos, err := tensor.New([]float32{1, 0, -1}, []int64{3, 1})
+	if err != nil {
+		t.Fatalf("rope cos: %v", err)
+	}
+
+	ropeSin, err := tensor.New([]float32{0, 1, 0}, []int64{3, 1})
+	if err != nil {
+		t.Fatalf("rope sin: %v", err)
+	}
+
+	full, err := layer.selfAttention(x, ropeCos, ropeSin)
+	if err != nil {
+		t.Fatalf("full selfAttention: %v", err)
+	}
+
+	prefix, err := tensor.New(x.RawData()[:4], []int64{1, 2, 2})
+	if err != nil {
+		t.Fatalf("prefix: %v", err)
+	}
+
+	state := &flowTransformerLayerState{}
+	_, k, v, err := layer.projectQKV(prefix, ropeCos, ropeSin, 0)
+	if err != nil {
+		t.Fatalf("project prefix: %v", err)
+	}
+
+	if err := state.appendKV(k, v); err != nil {
+		t.Fatalf("append prefix: %v", err)
+	}
+
+	step, err := tensor.New(x.RawData()[4:], []int64{1, 1, 2})
+	if err != nil {
+		t.Fatalf("step: %v", err)
+	}
+
+	q, k, v, err := layer.projectQKV(step, ropeCos, ropeSin, state.offset)
+	if err != nil {
+		t.Fatalf("project step: %v", err)
+	}
+
+	stepStart := state.offset
+	if err := state.appendKV(k, v); err != nil {
+		t.Fatalf("append step: %v", err)
+	}
+
+	got, err := layer.attentionFromPositions(
+		q,
+		state.kCache,
+		state.vCache,
+		positionsRange(stepStart, 1),
+		cachePositions(state.kCache, state.offset),
+		ops.AttentionNoContext,
+	)
+	if err != nil {
+		t.Fatalf("stateful attention: %v", err)
+	}
+
+	want := full.RawData()[4:6]
+	if !equalApproxN(got.RawData(), want, 1e-5) {
+		t.Fatalf("stateful last attention = %v, want full last token %v", got.RawData(), want)
 	}
 }
 
