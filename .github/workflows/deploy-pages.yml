@@ -47,7 +47,7 @@ jobs:
       - name: Copy Go wasm runtime JS
         run: cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" web/dist/wasm_exec.js
 
-      - name: Download voice embeddings
+      - name: Download voice safetensors
         run: ./pockettts-tools voice download --out-dir voices
 
       - name: Copy static web assets
@@ -59,7 +59,7 @@ jobs:
           cp models/tts_b6369a24.safetensors web/dist/models/
           cp models/tokenizer.model web/dist/models/
 
-      - name: Bundle voice embeddings into web app
+      - name: Bundle voice safetensors into web app
         run: |
           mkdir -p web/dist/voices
           cp voices/*.safetensors voices/manifest.json web/dist/voices/

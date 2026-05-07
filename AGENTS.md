@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Go CLI and HTTP server for [PocketTTS](https://github.com/kyutai-labs/pocket-tts) text-to-speech. The default backend (`native` / `native-safetensors`) runs pure-Go inference from safetensors weights — no Python, no ONNX Runtime required. An ONNX backend (`native-onnx`) is available as a fallback.
 
-**Module:** `github.com/example/go-pocket-tts`
+**Module:** `github.com/cwbudde/go-pocket-tts`
 **Go version:** 1.25+
 
 ## Build & Development Commands
@@ -45,7 +45,7 @@ pockettts
 ├── serve          HTTP server (/healthz, /voices, /tts)
 ├── doctor         Preflight dependency checks
 ├── health         Server health probe
-├── export-voice   Extract voice embedding from WAV
+├── export-voice   Export voice safetensors from WAV/PCM
 └── model
     ├── download   Fetch from Hugging Face
     ├── export     PyTorch → ONNX conversion

@@ -5,7 +5,7 @@ import "github.com/spf13/cobra"
 func newVoiceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "voice",
-		Short: "Voice embedding commands",
+		Short: "Voice safetensors commands",
 	}
 
 	cmd.AddCommand(newVoiceDownloadCmd())

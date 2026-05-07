@@ -3,9 +3,19 @@
 This project expects voice entries in `voices/manifest.json`.
 
 Voice files may be either upstream PocketTTS model-state `.safetensors` files
-with `<module>/cache` and `<module>/offset` tensors, or legacy Go
-`audio_prompt` `.safetensors` files. The native backend accepts both so local
-manifests continue to work while voices are regenerated.
+or legacy Go `audio_prompt` `.safetensors` files. The current default voices
+are upstream model-state files for the `english_2026-01` model family.
+
+Format compatibility:
+
+| Format | Contents | Supported by |
+| ------ | -------- | ------------ |
+| Upstream model state | Prompted FlowLM transformer state with tensors such as `<module>/cache` and `<module>/offset` | Native Go backend and browser/WASM kernel |
+| Legacy `audio_prompt` | Speaker audio prompt embedding from earlier Go tooling | Native Go backend, browser/WASM kernel, and native ONNX voice-injection path |
+
+The native backend accepts both formats so existing local manifests continue to
+work. The ONNX backend still expects legacy `audio_prompt` voice embeddings and
+rejects full upstream model-state voice files.
 
 Each entry must define:
 

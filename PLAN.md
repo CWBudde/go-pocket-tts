@@ -18,10 +18,22 @@ Note: chunk-level streaming (`/tts/stream`) is already implemented — each text
 
 ## ONNX Backend
 
-The ONNX backend (`native-onnx`) is functional but has a known issue: garbled audio at the beginning of longer text inputs. The Go-side stateful ONNX path (prefill+step) is implemented but requires re-exporting the ONNX graphs from Python.
+The ONNX backend (`native-onnx`) is functional but has a known issue: garbled audio at the beginning of longer text inputs. The Go-side stateful ONNX path (prefill+step) is implemented, and a rebuilt local bundle for `english_2026-01` exists.
 
-- [ ] Re-run `scripts/export_onnx.py` to produce `flow_lm_prefill.onnx` and `flow_lm_step.onnx`
+- [ ] Publish rebuilt ONNX graph bundle
+  - Local archive: `/tmp/pockettts-onnx-english_2026-01-stateful.tar.gz`
+  - SHA256: `8d5124e35cc609a35c4ad038c532498189f3d40fdfef1f6a0f931a7ce3f070f6`
+  - After upload, update `bundles/onnx-bundles.lock.json` with the final artifact URL and checksum
 - [ ] Evaluate whether to keep or deprecate the ONNX backend long-term
+
+## Upstream Parity
+
+Follow-up items from the PocketTTS upstream reintegration pass checked against upstream commit `2dff8a2d1b3b21bf44ecf0084cc8ce79ab6d6bba`.
+
+- [ ] Generate fixtures for tokenizer output, text embeddings, and voice model state
+- [ ] Add Go/Python parity tests for attention masks using offset/context edge cases
+- [ ] Keep running `go test ./...` after each reintegration slice
+  - Current caveat: local ONNX-backed native parity tests can panic inside `onnxruntime-purego` with `runtime.AddCleanup`; `go test ./... -skip 'TestParity_.*_VsONNX'` passes.
 
 ## Performance
 

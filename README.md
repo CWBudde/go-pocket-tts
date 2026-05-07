@@ -5,7 +5,7 @@ A pure-Go CLI and HTTP server for [PocketTTS](https://github.com/kyutai-labs/poc
 - Synthesize speech from text with the native Go backend (AVX2/FMA optimized)
 - Serve TTS over HTTP with concurrent worker pool and graceful shutdown
 - Download PocketTTS model checkpoints from Hugging Face
-- Export voice embeddings (`.safetensors`) from a WAV/PCM prompt
+- Export voice `.safetensors` files from a WAV/PCM prompt
 - Optionally export and run ONNX subgraphs via ONNX Runtime
 - Run in-browser via experimental WASM kernel
 
@@ -17,6 +17,9 @@ All core features are implemented and functional.
 - Tooling binary: `pockettts-tools` (`model export`).
 - HTTP server endpoints: `GET /health`, `GET /voices`, `POST /tts`.
 - Experimental browser app via Go WASM kernel (GitHub Pages deployment).
+- Upstream alignment: the current reintegration pass was checked against
+  `kyutai-labs/pocket-tts` commit `2dff8a2d1b3b21bf44ecf0084cc8ce79ab6d6bba`
+  and upstream package version `2.1.0`.
 
 ## Get Started
 
@@ -222,22 +225,31 @@ export ORT_LIBRARY_PATH=/usr/local/lib/libonnxruntime.so
 
 ## Export a voice
 
-By default, exports a legacy `audio_prompt` `.safetensors` voice embedding
-from a speaker WAV/PCM prompt using the native ONNX `mimi_encoder` + speaker
-projection path and prints a suggested `voices/manifest.json` entry.
+By default, exports a legacy `audio_prompt` `.safetensors` file from a speaker
+WAV/PCM prompt using the native ONNX `mimi_encoder` + speaker projection path
+and prints a suggested `voices/manifest.json` entry.
 
 ```bash
 ./pockettts export-voice --input speaker.wav --out voices/my_voice.safetensors --id my-voice --license "CC-BY-4.0"
 ```
 
 To produce an upstream-compatible full model-state voice file, use the Python
-tooling fallback:
+tooling fallback. Upstream voice `.safetensors` files are serialized prompted
+model state: transformer KV-cache tensors plus offsets such as
+`<module>/cache` and `<module>/offset`. They are not just raw audio embeddings.
 
 ```bash
 ./pockettts export-voice --format=model-state --input speaker.wav --out voices/my_voice.safetensors --tts-cli-path original/pockettts/.venv/bin/pocket-tts
 ```
 
-See [voices/README.md](voices/README.md) for licensing guidance.
+Compatibility summary:
+
+| Format | Created by | Native Go backend | ONNX backend |
+| ------ | ---------- | ----------------- | ------------ |
+| Upstream model state | `--format=model-state` or upstream `pocket-tts export-voice` | Accepted directly as prompted FlowLM state | Not supported |
+| Legacy `audio_prompt` | earlier Go tooling or default `--format=legacy-embedding` | Accepted and re-encoded into native state | Accepted as voice embedding |
+
+See [voices/README.md](voices/README.md) for format and licensing guidance.
 
 ## Server
 
@@ -268,7 +280,7 @@ This repo now includes a GitHub Action that builds a browser app artifact with:
 - Go runtime JS shim: `web/dist/wasm_exec.js`
 - Static app: `web/dist/index.html`, `web/dist/main.js`
 - Native safetensors model: `web/dist/models/tts_b6369a24.safetensors`
-- Voice embeddings: `web/dist/voices/*.safetensors` + `web/dist/voices/manifest.json`
+- Voice files: `web/dist/voices/*.safetensors` + `web/dist/voices/manifest.json`
 
 Run/deploy workflow:
 
@@ -281,7 +293,7 @@ The deployed page provides a single synthesis path:
 
 - `Go WASM kernel` orchestration (`PocketTTSKernel.loadModel` + `PocketTTSKernel.synthesize`) for model boot, text preprocessing/chunking, autoregressive generation, and WAV encoding.
 - Native safetensors inference runs directly in Go/wasm (no `onnxruntime-web` graph bridge).
-- Optional voice conditioning by passing `.safetensors` embeddings into the Go kernel.
+- Optional voice conditioning by passing `.safetensors` voice files into the Go kernel.
 
 At startup the app runs capability checks and only enables synthesis when kernel + model are ready.
 

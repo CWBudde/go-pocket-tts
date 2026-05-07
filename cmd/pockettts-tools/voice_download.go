@@ -13,7 +13,7 @@ func newVoiceDownloadCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "download",
-		Short: "Download voice embeddings from Hugging Face",
+		Short: "Download voice safetensors from Hugging Face",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			manifest := model.VoiceManifest()
 

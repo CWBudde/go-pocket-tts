@@ -18,8 +18,9 @@ func newExportVoiceCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "export-voice",
-		Short: "Export a voice embedding (.safetensors) from a WAV prompt",
-		Long: "Export a voice embedding (.safetensors) from a WAV prompt.\n\n" +
+		Short: "Export a voice .safetensors file from a WAV prompt",
+		Long: "Export an upstream-compatible voice .safetensors file from a WAV prompt.\n\n" +
+			"Upstream PocketTTS stores prompted model state, including KV-cache tensors and offsets. " +
 			"This is an optional tooling command and requires a Python pocket-tts installation.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := requireConfig()
