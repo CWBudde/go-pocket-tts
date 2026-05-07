@@ -3,8 +3,8 @@ module github.com/cwbudde/go-pocket-tts
 go 1.25.0
 
 require (
-	github.com/cwbudde/go-call-pocket-tts v0.0.0-20260220171509-60efea706958
 	github.com/cwbudde/algo-dsp v0.4.0
+	github.com/cwbudde/go-call-pocket-tts v0.0.0-20260418165153-7767db81cb09
 	github.com/cwbudde/wav v0.0.0-20260207095734-97d781a5fb8a
 	github.com/go-audio/audio v1.0.0
 	github.com/shota3506/onnxruntime-purego v0.0.0-20251207004809-1c85186598a5

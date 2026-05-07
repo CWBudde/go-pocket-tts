@@ -133,6 +133,7 @@ This list is organized for reintegrating upstream Python changes into this Go po
   - [x] 2026-05-06: Rebuilt local ignored `models/onnx` for `english_2026-01` with `flow_lm_prefill`, `flow_lm_step`, and the corrected `kv_out_N`/`offset_out` step outputs.
   - [x] 2026-05-06: Fixed `mimi_decoder` export sizing so its state length is `max_latents * mimi_steps_per_latent`; this passes the 256-frame stateful integration path.
   - [x] 2026-05-06: Created upload-ready archive `/tmp/pockettts-onnx-english_2026-01-stateful.tar.gz` (468.1M), SHA256 `8d5124e35cc609a35c4ad038c532498189f3d40fdfef1f6a0f931a7ce3f070f6`.
+  - [x] 2026-05-06: Updated `.github/workflows/model-export.yml` so manual/workflow-call runs package the ONNX bundle and can attach it to a GitHub Release when `release-tag` is provided.
   - [ ] `bundles/onnx-bundles.lock.json` still needs the final published artifact URL plus this checksum after upload.
 
 - [x] Consider the upstream web `AudioContext` latency hint.

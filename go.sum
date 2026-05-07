@@ -1,7 +1,5 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/MeKo-Christian/go-call-pocket-tts v0.0.0-20260220171509-60efea706958 h1:agTGPcV26FOucYgsx1rwBraRItMqWZYOSaBJPlGvcIQ=
-github.com/MeKo-Christian/go-call-pocket-tts v0.0.0-20260220171509-60efea706958/go.mod h1:518ZB36Vz1co5KMqSdyhpncmy4LRy5Xl0kXCJ8bgGZQ=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
 github.com/cpuguy83/go-md2man/v2 v2.0.4/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
@@ -9,6 +7,8 @@ github.com/cwbudde/algo-dsp v0.4.0 h1:0qXkIpI0VYTwTfxM6xSDVvovtRmHp9Q4DIKjElvSIK
 github.com/cwbudde/algo-dsp v0.4.0/go.mod h1:cDRwoYw/6i3QKFLXDUuZa2AqeMnzb0u7Yn+nZV6Tl4U=
 github.com/cwbudde/algo-vecmath v0.1.0 h1:RjZLXt3BAu1f3UmdWWXbgw3Xscyh+bsg31PkS5K4y4c=
 github.com/cwbudde/algo-vecmath v0.1.0/go.mod h1:lc9dLv41D4RCmhXG/CsIesfJXmONI7pQXcFrkxQSfeQ=
+github.com/cwbudde/go-call-pocket-tts v0.0.0-20260418165153-7767db81cb09 h1:eqfLNQcQsrKhCRCX8vI82zMRGL5Cx5kaF/U4xRGy7PU=
+github.com/cwbudde/go-call-pocket-tts v0.0.0-20260418165153-7767db81cb09/go.mod h1:1JScqxgKfb+Xc7yhorIOaqrUawgjFAsJaKTTdoUErXY=
 github.com/cwbudde/wav v0.0.0-20260207095734-97d781a5fb8a h1:e6kN+v8Z9TgJz6GClDFcOd7nfI4ZgF8+IvoAb3/XIBs=
 github.com/cwbudde/wav v0.0.0-20260207095734-97d781a5fb8a/go.mod h1:sc3u5nhwaPxuQ8NUWj1bAcZ7jhlTGk4fk5vARqgHrMs=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
