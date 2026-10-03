@@ -156,7 +156,7 @@ export HF_TOKEN=...  # or use --hf-token
 Other languages download into their own directories (see `--language` below):
 `languages/<lang>/` from Hugging Face, pinned to the revisions in the embedded
 model config and checked against pinned SHA256 checksums, goes to
-`models/<lang>/model.safetensors` and `models/<lang>/tokenizer.model`, and the
+`models/<lang>/model.safetensors` and `models/<lang>/tokenizer.json`, and the
 language's predefined voices go next to the voice manifest the runtime reads
 (`--paths-voice-manifest`, by default `voices/<lang>/manifest.json`), which
 lists them:
@@ -359,14 +359,16 @@ Configuration is loaded in this order:
 Python PocketTTS `.yaml` config with `--backend cli` or `export-voice
 --format=model-state`, pass it via `--tts-cli-config-path`. For native Go
 inference, point `--paths-model-path` at a local model `.safetensors` checkpoint
-and `--paths-tokenizer-model` at the matching tokenizer model.
+and `--paths-tokenizer-model` at the matching tokenizer: a `tokenizer.json`
+(Hugging Face tokenizers) or a SentencePiece `tokenizer.model`, picked by the
+file extension; both give the same token ids for the shipped models.
 
 `--language` (`tts.language`, `POCKETTTS_TTS_LANGUAGE`) selects one of the
 embedded upstream model configs: `english_2026-01` (default), `english_2026-09`,
 `english_2026-09_24l`, `english_drifting_26-09` (one-step drifting sampler head),
 `german`, `german_24l`. Unless set explicitly, the model,
 tokenizer and voice manifest paths follow the language:
-`models/<lang>/model.safetensors`, `models/<lang>/tokenizer.model` and
+`models/<lang>/model.safetensors`, `models/<lang>/tokenizer.json` and
 `voices/<lang>/manifest.json`; `english_2026-01` keeps the flat
 `models/tts_b6369a24.safetensors`, `models/tokenizer.model` and
 `voices/manifest.json`. `--model-config <file>` loads a custom upstream model

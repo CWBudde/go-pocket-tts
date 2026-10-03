@@ -60,8 +60,8 @@ func TestLookup_DriftingSamplerHead(t *testing.T) {
 		t.Errorf("Flow.Type = %q, NumTimeConds() = %d; want %q and 0", cfg.FlowLM.Flow.Type, cfg.NumTimeConds(), FlowTypeDrifting)
 	}
 
-	if cfg.FlowLM.LookupTable.Tokenizer != "sentencepiece" {
-		t.Errorf("LookupTable.Tokenizer = %q; want sentencepiece (tokenizer.model until tokenizer.json loads)", cfg.FlowLM.LookupTable.Tokenizer)
+	if cfg.FlowLM.LookupTable.Tokenizer != TokenizerTokenizers {
+		t.Errorf("LookupTable.Tokenizer = %q; want %q", cfg.FlowLM.LookupTable.Tokenizer, TokenizerTokenizers)
 	}
 }
 
@@ -76,9 +76,8 @@ func TestLookup_24LayerVariant(t *testing.T) {
 	}
 }
 
-// Until the Phase 5 tokenizer.json loader exists, the embedded configs point at
-// the SentencePiece .model sibling.
-func TestLookup_EmbeddedTokenizerIsSentencePiece(t *testing.T) {
+// The embedded configs keep upstream's tokenizer.json pins.
+func TestLookup_EmbeddedTokenizerIsJSON(t *testing.T) {
 	for _, name := range Languages() {
 		cfg, err := Lookup(name)
 		if err != nil {
@@ -86,13 +85,13 @@ func TestLookup_EmbeddedTokenizerIsSentencePiece(t *testing.T) {
 		}
 
 		lt := cfg.FlowLM.LookupTable
-		if lt.Tokenizer != TokenizerSentencePiece {
-			t.Errorf("%s: Tokenizer = %q; want %q", name, lt.Tokenizer, TokenizerSentencePiece)
+		if lt.Tokenizer != TokenizerTokenizers {
+			t.Errorf("%s: Tokenizer = %q; want %q", name, lt.Tokenizer, TokenizerTokenizers)
 		}
 
 		path, _, _ := strings.Cut(lt.TokenizerPath, "@")
-		if !strings.HasSuffix(path, "/tokenizer.model") {
-			t.Errorf("%s: TokenizerPath = %q; want a tokenizer.model path", name, lt.TokenizerPath)
+		if !strings.HasSuffix(path, "/tokenizer.json") {
+			t.Errorf("%s: TokenizerPath = %q; want a tokenizer.json path", name, lt.TokenizerPath)
 		}
 	}
 }
@@ -124,7 +123,7 @@ func TestLookup_ReturnsFreshCopy(t *testing.T) {
 }
 
 // Guards against transcription drift: the embedded config equals the verbatim
-// upstream copy in testdata apart from the tokenizer rewrite.
+// upstream copy in testdata.
 func TestLookup_EmbeddedMatchesUpstreamCopy(t *testing.T) {
 	got, err := Lookup("english_2026-01")
 	if err != nil {
@@ -132,9 +131,6 @@ func TestLookup_EmbeddedMatchesUpstreamCopy(t *testing.T) {
 	}
 
 	want := loadTestdata(t, "english_2026-01")
-	want.FlowLM.LookupTable.Tokenizer = TokenizerSentencePiece
-	want.FlowLM.LookupTable.TokenizerPath = strings.Replace(want.FlowLM.LookupTable.TokenizerPath,
-		"/tokenizer.json@", "/tokenizer.model@", 1)
 	want.DefaultVoice = got.DefaultVoice
 	want.VoicesRevision = got.VoicesRevision
 

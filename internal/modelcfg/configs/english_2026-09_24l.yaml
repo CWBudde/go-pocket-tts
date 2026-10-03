@@ -1,6 +1,4 @@
 # Source: kyutai-labs/pocket-tts pocket_tts/config/english_2026-09_24l.yaml @ 41cbc84af539ea78a804ffca5f9c6edc1a22ce44 (reformatted by prettier).
-# Changed: tokenizer_path points at the tokenizer.model sibling of tokenizer.json and tokenizer is
-# sentencepiece instead of tokenizers, until the Go port can load tokenizer.json (PLAN.md Phase 5).
 # english_2026-04_24l after training/configs/robustness_finetune.yaml (sampler head frozen).
 weights_path: hf://kyutai/pocket-tts/languages/english_2026-09_24l/model.safetensors@983151f13aaeab1b13c1e5e3c2c383d49a9edf3f
 weights_path_without_voice_cloning: hf://kyutai/pocket-tts-without-voice-cloning/languages/english_2026-09_24l/model.safetensors@e7205b6ee50e654a5ea19f0e9df2b0813b05e921
@@ -21,8 +19,8 @@ flow_lm:
   lookup_table:
     dim: 1024
     n_bins: 4000
-    tokenizer: sentencepiece
-    tokenizer_path: hf://kyutai/pocket-tts-without-voice-cloning/languages/english_2026-09_24l/tokenizer.model@00eac05ed3d16bdc3f6b5d598874019c34a89214
+    tokenizer: tokenizers
+    tokenizer_path: hf://kyutai/pocket-tts-without-voice-cloning/languages/english_2026-09_24l/tokenizer.json@00eac05ed3d16bdc3f6b5d598874019c34a89214
 mimi:
   dtype: float32
   sample_rate: 24000

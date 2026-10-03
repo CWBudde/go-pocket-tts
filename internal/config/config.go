@@ -136,7 +136,7 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.String("paths-voice-path", defaults.Paths.VoicePath, "Path to voice/profile asset")
 	fs.String("paths-onnx-manifest", defaults.Paths.ONNXManifest, "Path to ONNX model manifest JSON")
 	fs.String("paths-tokenizer-model", defaults.Paths.TokenizerModel,
-		"Path to SentencePiece tokenizer model (follows --language unless set)")
+		"Path to the tokenizer: tokenizer.json or SentencePiece .model, picked by extension (follows --language unless set)")
 	fs.String("paths-voice-manifest", defaults.Paths.VoiceManifest,
 		"Path to the voice manifest JSON (follows --language unless set)")
 	fs.Int("runtime-threads", defaults.Runtime.Threads, "Inference thread count (ONNX intra-op for native-onnx backend)")
@@ -275,7 +275,7 @@ type LanguagePaths struct {
 }
 
 // PathsForLanguage returns the local layout of language:
-// models/<lang>/model.safetensors, models/<lang>/tokenizer.model and
+// models/<lang>/model.safetensors, models/<lang>/tokenizer.json and
 // voices/<lang>/manifest.json. DefaultLanguage keeps the flat layout of
 // earlier releases.
 func PathsForLanguage(language string) LanguagePaths {
@@ -289,7 +289,7 @@ func PathsForLanguage(language string) LanguagePaths {
 
 	return LanguagePaths{
 		ModelPath:      path.Join("models", language, "model.safetensors"),
-		TokenizerModel: path.Join("models", language, "tokenizer.model"),
+		TokenizerModel: path.Join("models", language, "tokenizer.json"),
 		VoiceManifest:  path.Join("voices", language, "manifest.json"),
 	}
 }

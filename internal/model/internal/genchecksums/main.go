@@ -1,13 +1,18 @@
 // Command genchecksums regenerates internal/model/language_checksums.json:
 // the SHA256 of every ungated file a per-language download fetches (model,
-// tokenizer and predefined voices), read from the Hugging Face tree API at
-// the revisions the embedded model configs pin. Model and tokenizer are also
-// recorded at the voices revision (modelcfg.VoicesRevision).
+// tokenizer and predefined voices) at the revisions the embedded model
+// configs pin. LFS files take it from the Hugging Face tree API; small files
+// stored in git (tokenizer.json) have none there, so they are downloaded and
+// hashed, after checking them against their git blob id. Model and tokenizer
+// are also recorded at the voices revision (modelcfg.VoicesRevision).
 //
 // Run it via `go generate ./internal/model/`.
 package main
 
 import (
+	"crypto/sha1" // #nosec G505 -- git blob ids are SHA-1; only used to check a download.
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -24,10 +29,15 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 )
 
+// maxGitFileSize bounds a downloaded non-LFS file (tokenizer.json is ~250 KB).
+const maxGitFileSize = 16 << 20
+
 type treeEntry struct {
 	Type string `json:"type"`
 	Path string `json:"path"`
-	LFS  *struct {
+	// OID is the git blob id (SHA-1) of the file.
+	OID string `json:"oid"`
+	LFS *struct {
 		OID string `json:"oid"`
 	} `json:"lfs"`
 }
@@ -88,8 +98,8 @@ func run(out string) error {
 	return os.WriteFile(out, append(b, '\n'), 0o600)
 }
 
-// addDir lists dir at rev and records the LFS SHA256 of only (when set) or of
-// every file in it.
+// addDir lists dir at rev and records the SHA256 of only (when set) or of
+// every LFS file in it. A non-LFS only is downloaded and hashed.
 func addDir(client *http.Client, sums map[string]string, repo, rev, dir, only string) error {
 	entries, err := listTree(client, repo, rev, dir)
 	if err != nil {
@@ -103,15 +113,21 @@ func addDir(client *http.Client, sums map[string]string, repo, rev, dir, only st
 			continue
 		}
 
-		if e.LFS == nil || e.LFS.OID == "" {
-			if only != "" {
-				return fmt.Errorf("%s/%s@%s is not an LFS file", repo, e.Path, rev)
-			}
+		var sum string
 
+		switch {
+		case e.LFS != nil && e.LFS.OID != "":
+			sum = strings.ToLower(e.LFS.OID)
+		case only != "":
+			sum, err = hashGitFile(client, repo, rev, e)
+			if err != nil {
+				return err
+			}
+		default:
 			continue
 		}
 
-		sums[model.ChecksumKey(repo, e.Path, rev)] = strings.ToLower(e.LFS.OID)
+		sums[model.ChecksumKey(repo, e.Path, rev)] = sum
 		found = true
 	}
 
@@ -122,9 +138,48 @@ func addDir(client *http.Client, sums map[string]string, repo, rev, dir, only st
 	return nil
 }
 
+// hashGitFile downloads a file stored in git (not LFS), checks it against its
+// git blob id and returns its SHA256.
+func hashGitFile(client *http.Client, repo, rev string, e treeEntry) (string, error) {
+	data, err := get(client, fmt.Sprintf("https://huggingface.co/%s/resolve/%s/%s", repo, rev, e.Path), maxGitFileSize)
+	if err != nil {
+		return "", err
+	}
+
+	blob := sha1.New() // #nosec G401 -- git blob id, not a security check.
+	_, _ = fmt.Fprintf(blob, "blob %d\x00", len(data))
+	_, _ = blob.Write(data)
+
+	if got := hex.EncodeToString(blob.Sum(nil)); got != strings.ToLower(e.OID) {
+		return "", fmt.Errorf("%s/%s@%s: git blob id %s, tree says %s", repo, e.Path, rev, got, e.OID)
+	}
+
+	sum := sha256.Sum256(data)
+
+	return hex.EncodeToString(sum[:]), nil
+}
+
 func listTree(client *http.Client, repo, rev, dir string) ([]treeEntry, error) {
 	url := fmt.Sprintf("https://huggingface.co/api/models/%s/tree/%s/%s", repo, rev, dir)
 
+	body, err := get(client, url, maxGitFileSize)
+	if err != nil {
+		return nil, err
+	}
+
+	var entries []treeEntry
+
+	err = json.Unmarshal(body, &entries)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", url, err)
+	}
+
+	return entries, nil
+}
+
+// get fetches url and returns at most limit bytes of its body; a longer body
+// is an error.
+func get(client *http.Client, url string, limit int64) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -143,12 +198,14 @@ func listTree(client *http.Client, repo, rev, dir string) ([]treeEntry, error) {
 		return nil, errors.New(url + ": " + resp.Status + ": " + string(body))
 	}
 
-	var entries []treeEntry
-
-	err = json.NewDecoder(resp.Body).Decode(&entries)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", url, err)
 	}
 
-	return entries, nil
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("%s: larger than %d bytes", url, limit)
+	}
+
+	return body, nil
 }

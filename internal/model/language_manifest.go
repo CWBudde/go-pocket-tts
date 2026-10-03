@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path"
 	"slices"
 	"strings"
 
@@ -73,9 +74,10 @@ func ParseHFRef(ref string) (repo, file, revision string, err error) {
 
 // LanguageManifest returns the model files of language from repo (GatedRepo
 // or VoiceRepo). FlatLayoutLanguage (or "") keeps PinnedManifest; every other
-// language fetches languages/<lang>/{model.safetensors,tokenizer.model} at
+// language fetches languages/<lang>/model.safetensors and the tokenizer at
 // the revisions its embedded model config pins, saved as model.safetensors
-// and tokenizer.model.
+// and under the tokenizer's file name (tokenizer.json for every embedded
+// config).
 func LanguageManifest(language, repo string) (Manifest, error) {
 	if language == "" || language == FlatLayoutLanguage {
 		return PinnedManifest(repo)
@@ -103,7 +105,7 @@ func LanguageManifest(language, repo string) (Manifest, error) {
 	}
 
 	// The tokenizer always comes from the ungated repo, also for gated weights.
-	tokenizer, err := pinnedFile(cfg.FlowLM.LookupTable.TokenizerPath, "tokenizer.model")
+	tokenizer, err := pinnedFile(cfg.FlowLM.LookupTable.TokenizerPath, "")
 	if err != nil {
 		return Manifest{}, fmt.Errorf("%s tokenizer: %w", language, err)
 	}
@@ -112,12 +114,17 @@ func LanguageManifest(language, repo string) (Manifest, error) {
 }
 
 // pinnedFile turns a config reference into a ModelFile with its checksum from
-// language_checksums.json. Gated files have none there (the tree API masks
-// them); their checksum comes from HF metadata at download time.
+// language_checksums.json, saved as localPath (the file's base name when
+// empty). Gated files have none there (the tree API masks them); their
+// checksum comes from HF metadata at download time.
 func pinnedFile(ref, localPath string) (ModelFile, error) {
 	repo, file, revision, err := ParseHFRef(ref)
 	if err != nil {
 		return ModelFile{}, err
+	}
+
+	if localPath == "" {
+		localPath = path.Base(file)
 	}
 
 	sha := languageChecksums[ChecksumKey(repo, file, revision)]
