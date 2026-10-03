@@ -5,14 +5,13 @@ import (
 	"slices"
 	"strings"
 	"testing"
-
-	gosp "github.com/vikesh-raj/go-sentencepiece-encoder/sentencepiece"
 )
 
 // piecesCorpus covers the inputs the sentence splitter cares about: plain
 // text, surrounding/inner whitespace, sentence and clause punctuation,
-// decimals, characters outside the vocab (single and consecutive), and NFKC
-// normalisation.
+// decimals, characters outside the vocab (single and consecutive, byte
+// fallback), and characters NFKC would change but the identity normalizer
+// keeps.
 var piecesCorpus = []string{
 	"Hello world.",
 	"  Hello  world.  ",
@@ -94,11 +93,11 @@ func TestEncodePieces_IDsMatchEncode(t *testing.T) {
 	}
 }
 
-// TestEncodePieces_SurfaceConcat pins the piece surface convention observed
-// from the reference library: the normalised (NFKC, whitespace-folded) input
-// with every whitespace rune replaced by '▁' and a dummy-prefix '▁' prepended
-// unless the input already starts with '▁'. Leading/trailing whitespace is
-// kept, not stripped.
+// TestEncodePieces_SurfaceConcat pins the piece surface convention: the input
+// with every ' ' replaced by '▁' and a dummy-prefix '▁' always prepended (also
+// before a literal '▁'). No other normalization happens (identity
+// normalizer): tabs, newlines and NFKC-decomposable characters stay as they
+// are, and leading/trailing whitespace is kept, not stripped.
 func TestEncodePieces_SurfaceConcat(t *testing.T) {
 	cases := map[string]string{
 		"Hello world.":                     "▁Hello▁world.",
@@ -111,9 +110,9 @@ func TestEncodePieces_SurfaceConcat(t *testing.T) {
 		"a😀b":                              "▁a😀b",
 		"a😀😀b":                             "▁a😀😀b",
 		"😀🎉":                               "▁😀🎉",
-		"x\ty\nz":                          "▁x▁y▁z",
-		"ﬁne":                              "▁fine",
-		"▁x":                               "▁x",
+		"x\ty\nz":                          "▁x\ty\nz",
+		"ﬁne":                              "▁ﬁne",
+		"▁x":                               "▁▁x",
 	}
 
 	for name, tok := range allTokenizers(t) {
@@ -145,14 +144,13 @@ func TestEncodePieces_HelloWorld(t *testing.T) {
 	}
 }
 
-func TestEncodePieces_UnknownKeepsSurface(t *testing.T) {
+// TestEncodePieces_ByteFallbackSurface checks that byte-fallback pieces keep
+// the source text: all bytes of a character but the last have an empty Text,
+// the last one carries the whole character.
+func TestEncodePieces_ByteFallbackSurface(t *testing.T) {
 	cases := map[string][]Piece{
-		// single unknown character
-		"a😀b": {{ID: 267, Text: "▁a"}, {ID: 0, Text: "😀"}, {ID: 512, Text: "b"}},
-		// consecutive unknowns merge into one unk ID but keep the whole run
-		"a😀😀b": {{ID: 267, Text: "▁a"}, {ID: 0, Text: "😀😀"}, {ID: 512, Text: "b"}},
-		"😀🎉":   {{ID: 260, Text: "▁"}, {ID: 0, Text: "😀🎉"}},
-		"6°F":  {{ID: 260, Text: "▁"}, {ID: 543, Text: "6"}, {ID: 0, Text: "°"}, {ID: 1217, Text: "F"}},
+		"a😀b": {{ID: 267, Text: "▁a"}, {ID: 244, Text: ""}, {ID: 163, Text: ""}, {ID: 156, Text: ""}, {ID: 132, Text: "😀"}, {ID: 512, Text: "b"}},
+		"6°F": {{ID: 260, Text: "▁"}, {ID: 543, Text: "6"}, {ID: 198, Text: ""}, {ID: 180, Text: "°"}, {ID: 1217, Text: "F"}},
 	}
 
 	for name, tok := range allTokenizers(t) {
@@ -178,53 +176,6 @@ func TestEncodePieces_Empty(t *testing.T) {
 
 		if got == nil || len(got) != 0 {
 			t.Errorf("%s: EncodePieces(\"\") = %#v, want empty non-nil slice", name, got)
-		}
-	}
-}
-
-// TestEncodePieces_MatchesReferenceLibrary cross-checks the in-package
-// trie/Viterbi port against github.com/vikesh-raj/go-sentencepiece-encoder.
-// IDs must match for every input. Piece texts must match too, except where
-// the library drops the surface of consecutive unknown characters (its
-// sliceToTokens extends a copy of the previous token, so only the first
-// unknown rune of a run survives).
-func TestEncodePieces_MatchesReferenceLibrary(t *testing.T) {
-	path := modelPath(t)
-
-	ref, err := gosp.NewSentencepieceFromFile(path, false)
-	if err != nil {
-		t.Fatalf("load reference library: %v", err)
-	}
-
-	consecutiveUnknown := map[string]bool{"a😀😀b": true, "😀🎉": true}
-
-	for name, tok := range allTokenizers(t) {
-		for _, text := range piecesCorpus {
-			if text == "" {
-				continue
-			}
-
-			pieces, err := tok.EncodePieces(text)
-			if err != nil {
-				t.Fatalf("%s: EncodePieces(%q): %v", name, text, err)
-			}
-
-			refTokens := ref.Tokenize(text)
-			if len(refTokens) != len(pieces) {
-				t.Errorf("%s: %q: %d pieces, reference has %d", name, text, len(pieces), len(refTokens))
-
-				continue
-			}
-
-			for i, rt := range refTokens {
-				if int64(rt.ID) != pieces[i].ID {
-					t.Errorf("%s: %q piece %d: ID %d, reference %d", name, text, i, pieces[i].ID, rt.ID)
-				}
-
-				if !consecutiveUnknown[text] && rt.Text != pieces[i].Text {
-					t.Errorf("%s: %q piece %d: text %q, reference %q", name, text, i, pieces[i].Text, rt.Text)
-				}
-			}
 		}
 	}
 }
