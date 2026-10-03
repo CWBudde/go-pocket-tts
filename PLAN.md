@@ -95,16 +95,29 @@ constants and paths are hard-coded around `tts_b6369a24`.
       `DEFAULT_VOICE_FOR_LANGUAGE` substring match, fallback `alba`) and `VoicesRevision` (`1e08e6a…`) filled.
       A drift test compares the embedded `english_2026-01` with the verbatim upstream copy. The other languages
       are still "later".
-- [ ] Fix config-file and section-style env loading in `internal/config`: `registerAliases` maps each config key
+- [x] Fix config-file and section-style env loading in `internal/config`: `registerAliases` maps each config key
       to its flag name, so with flags bound a config file's `tts.max_steps: 99` loads as 256, and
       `POCKETTTS_TTS_MAX_STEPS` and `POCKETTTS_ORT_LIB` are ignored (only flag-style env like
       `POCKETTTS_MAX_STEPS` works). README documents both. Bind each key to its flag with `BindPFlag`, as
       `tts.sampler_decode_steps` now does. Needed before `POCKETTTS_TTS_LANGUAGE` below can work.
       (2026-10-03) — found during the `SamplerDecodeSteps` rename; reproduced on `main` code paths.
-- [ ] `internal/config/config.go`: add `tts.language` (default `english_2026-01` until Phase 6 switches
+      (2026-10-03) — `registerAliases` replaced by a `keyBindings` table: each key is bound to its flag with
+      `BindPFlag` and to `POCKETTTS_<SECTION>_<KEY>`, then `POCKETTTS_<FLAG>`, then extra names
+      (`POCKETTTS_ORT_LIB`, `ORT_LIBRARY_PATH`, the deprecated lsd names); `--ort-lib` applies unless
+      `--runtime-ort-library-path` is given. `TestLoad_KeySources` covers every key from file, both env styles and
+      its flag (failed for all keys before); a guard test fails on any unbound `Config` field or flag.
+- [x] `internal/config/config.go`: add `tts.language` (default `english_2026-01` until Phase 6 switches
       it; `POCKETTTS_TTS_LANGUAGE`, `--language` persistent flag). Model, tokenizer and voice paths
       come from the language unless set explicitly. Also allow `--model-config <path>` for custom configs
       (moved here from the embed item: this is where the model config first gets a consumer).
+      (2026-10-03) — `--language` / `tts.language` / `POCKETTTS_TTS_LANGUAGE` resolve `Config.Model` via
+      `modelcfg.Lookup`; unless set explicitly (flag, env or file), `paths.model_path`, `paths.tokenizer_model`
+      and the new `paths.voice_manifest` follow `config.PathsForLanguage`: `models/<lang>/model.safetensors`,
+      `models/<lang>/tokenizer.model` and `voices/<lang>/manifest.json`, with the flat layout kept for
+      `english_2026-01`.
+      `--model-config <file>` uses `modelcfg.LoadCustom` (default voice `alba`, like upstream `--config`),
+      rejects an explicit `--language` and requires explicit model and tokenizer paths. `paths.voice_manifest`
+      has no consumers yet; they move to it with the hard-coded `voices/manifest.json` item below.
 - [ ] Change the default `Temperature` from 0.7 to "use `default_temperature` from the model config" (0.3). Keep
       the explicit `--temperature` override.
 - [x] Rename `LSDDecodeSteps` → `SamplerDecodeSteps` (keep the old flag as a hidden deprecated alias, like upstream)

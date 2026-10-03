@@ -3,8 +3,11 @@ package config
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path"
 	"strings"
 
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
@@ -15,6 +18,10 @@ type Config struct {
 	Server   ServerConfig  `mapstructure:"server"`
 	TTS      TTSConfig     `mapstructure:"tts"`
 	LogLevel string        `mapstructure:"log_level"`
+
+	// Model is the model config of TTS.Language, or of TTS.ModelConfigPath
+	// when set. Load resolves it; it is not a config key itself.
+	Model *modelcfg.ModelConfig `mapstructure:"-"`
 }
 
 type PathsConfig struct {
@@ -22,6 +29,7 @@ type PathsConfig struct {
 	VoicePath      string `mapstructure:"voice_path"`
 	ONNXManifest   string `mapstructure:"onnx_manifest"`
 	TokenizerModel string `mapstructure:"tokenizer_model"`
+	VoiceManifest  string `mapstructure:"voice_manifest"`
 }
 
 type RuntimeConfig struct {
@@ -43,20 +51,28 @@ type ServerConfig struct {
 }
 
 type TTSConfig struct {
-	Backend       string  `mapstructure:"backend"`
-	Voice         string  `mapstructure:"voice"`
-	CLIPath       string  `mapstructure:"cli_path"`
-	CLIConfigPath string  `mapstructure:"cli_config_path"`
-	Concurrency   int     `mapstructure:"concurrency"`
-	Quiet         bool    `mapstructure:"quiet"`
-	Temperature   float64 `mapstructure:"temperature"`
-	EOSThreshold  float64 `mapstructure:"eos_threshold"`
-	MaxSteps      int     `mapstructure:"max_steps"`
+	Backend string `mapstructure:"backend"`
+	// Language selects the embedded model config (upstream --language) and,
+	// unless set explicitly, the model, tokenizer and voice manifest paths;
+	// see PathsForLanguage.
+	Language string `mapstructure:"language"`
+	// ModelConfigPath is a custom model config file (upstream --config). It
+	// cannot be combined with an explicit Language and needs explicit model
+	// and tokenizer paths.
+	ModelConfigPath string  `mapstructure:"model_config"`
+	Voice           string  `mapstructure:"voice"`
+	CLIPath         string  `mapstructure:"cli_path"`
+	CLIConfigPath   string  `mapstructure:"cli_config_path"`
+	Concurrency     int     `mapstructure:"concurrency"`
+	Quiet           bool    `mapstructure:"quiet"`
+	Temperature     float64 `mapstructure:"temperature"`
+	EOSThreshold    float64 `mapstructure:"eos_threshold"`
+	MaxSteps        int     `mapstructure:"max_steps"`
 	// SamplerDecodeSteps is the number of sampler integration steps per latent
 	// frame (upstream --sampler-decode-steps, formerly --lsd-decode-steps). The
 	// deprecated key tts.lsd_decode_steps, the env vars
 	// POCKETTTS_TTS_LSD_DECODE_STEPS / POCKETTTS_LSD_STEPS and the hidden
-	// --lsd-steps flag are still accepted; see bindSamplerDecodeSteps and
+	// --lsd-steps flag are still accepted; see keyBindings and
 	// applyDeprecatedSamplerDecodeSteps.
 	SamplerDecodeSteps int `mapstructure:"sampler_decode_steps"`
 }
@@ -78,6 +94,7 @@ func DefaultConfig() Config {
 			VoicePath:      "models/voice.bin",
 			ONNXManifest:   "models/onnx/manifest.json",
 			TokenizerModel: "models/tokenizer.model",
+			VoiceManifest:  "voices/manifest.json",
 		},
 		Runtime: RuntimeConfig{
 			Threads:        4,
@@ -97,6 +114,8 @@ func DefaultConfig() Config {
 		},
 		TTS: TTSConfig{
 			Backend:            BackendNative,
+			Language:           DefaultLanguage,
+			ModelConfigPath:    "",
 			Voice:              "",
 			CLIPath:            "",
 			CLIConfigPath:      "",
@@ -112,10 +131,14 @@ func DefaultConfig() Config {
 }
 
 func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
-	fs.String("paths-model-path", defaults.Paths.ModelPath, "Path to model file (.safetensors for native, .onnx for native-onnx)")
+	fs.String("paths-model-path", defaults.Paths.ModelPath,
+		"Path to model file (.safetensors for native, .onnx for native-onnx; follows --language unless set)")
 	fs.String("paths-voice-path", defaults.Paths.VoicePath, "Path to voice/profile asset")
 	fs.String("paths-onnx-manifest", defaults.Paths.ONNXManifest, "Path to ONNX model manifest JSON")
-	fs.String("paths-tokenizer-model", defaults.Paths.TokenizerModel, "Path to SentencePiece tokenizer model")
+	fs.String("paths-tokenizer-model", defaults.Paths.TokenizerModel,
+		"Path to SentencePiece tokenizer model (follows --language unless set)")
+	fs.String("paths-voice-manifest", defaults.Paths.VoiceManifest,
+		"Path to the voice manifest JSON (follows --language unless set)")
 	fs.Int("runtime-threads", defaults.Runtime.Threads, "Inference thread count (ONNX intra-op for native-onnx backend)")
 	fs.Int("runtime-inter-op-threads", defaults.Runtime.InterOpThreads, "Inter-op thread count (ONNX-only, native-onnx backend)")
 	fs.Int(
@@ -138,6 +161,10 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 		defaults.TTS.Backend,
 		"Synthesis backend (native-safetensors|native-onnx|cli; native is alias for native-safetensors)",
 	)
+	fs.String("language", defaults.TTS.Language,
+		"Model language config ("+strings.Join(modelcfg.Languages(), ", ")+"); incompatible with --model-config")
+	fs.String("model-config", defaults.TTS.ModelConfigPath,
+		"Custom model config .yaml (upstream format); needs --paths-model-path and --paths-tokenizer-model")
 	fs.String("tts-voice", defaults.TTS.Voice, "Voice name or .safetensors file path")
 	fs.String("tts-cli-path", defaults.TTS.CLIPath, "Path to pocket-tts executable")
 	fs.String("tts-cli-config-path", defaults.TTS.CLIConfigPath, "Path to pocket-tts config file")
@@ -168,34 +195,14 @@ func Load(opts LoadOptions) (Config, error) {
 	setDefaults(v, opts.Defaults)
 
 	var flags *pflag.FlagSet
-
 	if opts.Cmd != nil {
 		flags = opts.Cmd.Flags()
-
-		err := v.BindPFlags(flags)
-		if err != nil {
-			return Config{}, fmt.Errorf("bind flags: %w", err)
-		}
 	}
 
-	registerAliases(v)
-
-	err := bindSamplerDecodeSteps(v, flags)
+	err := bindKeys(v, flags)
 	if err != nil {
 		return Config{}, err
 	}
-
-	v.SetEnvPrefix("POCKETTTS")
-
-	replacer := strings.NewReplacer("-", "_", ".", "_", "__", "_")
-	v.SetEnvKeyReplacer(replacer)
-
-	err = v.BindEnv("runtime.ort_library_path", "POCKETTTS_ORT_LIB", "ORT_LIBRARY_PATH")
-	if err != nil {
-		return Config{}, fmt.Errorf("bind ort env vars: %w", err)
-	}
-
-	v.AutomaticEnv()
 
 	//nolint:nestif // Distinguish explicit config-file errors from optional auto-discovery behavior.
 	if opts.ConfigFile != "" {
@@ -218,6 +225,11 @@ func Load(opts LoadOptions) (Config, error) {
 		}
 	}
 
+	err = applyFlagAliases(v, flags)
+	if err != nil {
+		return Config{}, err
+	}
+
 	err = applyDeprecatedSamplerDecodeSteps(v, flags)
 	if err != nil {
 		return Config{}, err
@@ -230,7 +242,136 @@ func Load(opts LoadOptions) (Config, error) {
 		return Config{}, fmt.Errorf("decode config: %w", err)
 	}
 
+	err = resolveModel(v, flags, &cfg)
+	if err != nil {
+		return Config{}, err
+	}
+
 	return cfg, nil
+}
+
+// DefaultLanguage is the model config used without --language. It stays the
+// model of earlier releases until German support switches it (PLAN.md
+// Phase 6).
+const DefaultLanguage = "english_2026-01"
+
+// LanguagePaths are the local files of one language.
+type LanguagePaths struct {
+	ModelPath      string
+	TokenizerModel string
+	VoiceManifest  string
+}
+
+// PathsForLanguage returns the local layout of language:
+// models/<lang>/model.safetensors, models/<lang>/tokenizer.model and
+// voices/<lang>/manifest.json. DefaultLanguage keeps the flat layout of
+// earlier releases.
+func PathsForLanguage(language string) LanguagePaths {
+	if language == DefaultLanguage {
+		return LanguagePaths{
+			ModelPath:      "models/tts_b6369a24.safetensors",
+			TokenizerModel: "models/tokenizer.model",
+			VoiceManifest:  "voices/manifest.json",
+		}
+	}
+
+	return LanguagePaths{
+		ModelPath:      path.Join("models", language, "model.safetensors"),
+		TokenizerModel: path.Join("models", language, "tokenizer.model"),
+		VoiceManifest:  path.Join("voices", language, "manifest.json"),
+	}
+}
+
+// resolveModel loads cfg.Model and fills the language-derived paths the user
+// did not set explicitly. It must run after the config file was read.
+func resolveModel(v *viper.Viper, flags *pflag.FlagSet, cfg *Config) error {
+	explicitModelPath := isExplicit(v, flags, "paths.model_path")
+	explicitTokenizer := isExplicit(v, flags, "paths.tokenizer_model")
+
+	if cfg.TTS.ModelConfigPath != "" {
+		return resolveCustomModel(v, flags, cfg, explicitModelPath, explicitTokenizer)
+	}
+
+	model, err := modelcfg.Lookup(cfg.TTS.Language)
+	if err != nil {
+		return fmt.Errorf("--language: %w", err)
+	}
+
+	cfg.Model = model
+
+	derived := PathsForLanguage(cfg.TTS.Language)
+
+	if !explicitModelPath {
+		cfg.Paths.ModelPath = derived.ModelPath
+	}
+
+	if !explicitTokenizer {
+		cfg.Paths.TokenizerModel = derived.TokenizerModel
+	}
+
+	if !isExplicit(v, flags, "paths.voice_manifest") {
+		cfg.Paths.VoiceManifest = derived.VoiceManifest
+	}
+
+	return nil
+}
+
+// resolveCustomModel handles --model-config. Like upstream, it excludes
+// --language; the paths must be explicit because there is no language to
+// derive them from.
+func resolveCustomModel(v *viper.Viper, flags *pflag.FlagSet, cfg *Config, explicitModelPath, explicitTokenizer bool) error {
+	if isExplicit(v, flags, "tts.language") {
+		return errors.New("--model-config and --language are incompatible; use one of them")
+	}
+
+	var missing []string
+
+	if !explicitModelPath {
+		missing = append(missing, "--paths-model-path")
+	}
+
+	if !explicitTokenizer {
+		missing = append(missing, "--paths-tokenizer-model")
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("--model-config needs explicit %s", strings.Join(missing, " and "))
+	}
+
+	model, err := modelcfg.LoadCustom(cfg.TTS.ModelConfigPath)
+	if err != nil {
+		return fmt.Errorf("--model-config: %w", err)
+	}
+
+	cfg.Model = model
+
+	return nil
+}
+
+// isExplicit reports whether key was set by a flag, an env var or the config
+// file rather than coming from a default.
+func isExplicit(v *viper.Viper, flags *pflag.FlagSet, key string) bool {
+	if v.InConfig(key) {
+		return true
+	}
+
+	for _, b := range keyBindings {
+		if b.key != key {
+			continue
+		}
+
+		if flags != nil && flags.Changed(b.flag) {
+			return true
+		}
+
+		for _, name := range b.envNames() {
+			if os.Getenv(name) != "" {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func setDefaults(v *viper.Viper, c Config) {
@@ -238,6 +379,7 @@ func setDefaults(v *viper.Viper, c Config) {
 	v.SetDefault("paths.voice_path", c.Paths.VoicePath)
 	v.SetDefault("paths.onnx_manifest", c.Paths.ONNXManifest)
 	v.SetDefault("paths.tokenizer_model", c.Paths.TokenizerModel)
+	v.SetDefault("paths.voice_manifest", c.Paths.VoiceManifest)
 	v.SetDefault("runtime.threads", c.Runtime.Threads)
 	v.SetDefault("runtime.inter_op_threads", c.Runtime.InterOpThreads)
 	v.SetDefault("runtime.workers", c.Runtime.Workers)
@@ -251,6 +393,8 @@ func setDefaults(v *viper.Viper, c Config) {
 	v.SetDefault("server.max_text_bytes", c.Server.MaxTextBytes)
 	v.SetDefault("server.request_timeout_secs", c.Server.RequestTimeout)
 	v.SetDefault("tts.backend", c.TTS.Backend)
+	v.SetDefault("tts.language", c.TTS.Language)
+	v.SetDefault("tts.model_config", c.TTS.ModelConfigPath)
 	v.SetDefault("tts.voice", c.TTS.Voice)
 	v.SetDefault("tts.cli_path", c.TTS.CLIPath)
 	v.SetDefault("tts.cli_config_path", c.TTS.CLIConfigPath)
@@ -263,65 +407,123 @@ func setDefaults(v *viper.Viper, c Config) {
 	v.SetDefault("log_level", c.LogLevel)
 }
 
-func registerAliases(v *viper.Viper) {
-	v.RegisterAlias("paths.model_path", "paths-model-path")
-	v.RegisterAlias("paths.voice_path", "paths-voice-path")
-	v.RegisterAlias("paths.onnx_manifest", "paths-onnx-manifest")
-	v.RegisterAlias("paths.tokenizer_model", "paths-tokenizer-model")
-	v.RegisterAlias("runtime.threads", "runtime-threads")
-	v.RegisterAlias("runtime.inter_op_threads", "runtime-inter-op-threads")
-	v.RegisterAlias("runtime.workers", "runtime-workers")
-	v.RegisterAlias("runtime.conv_workers", "conv-workers")
-	v.RegisterAlias("runtime.ort_library_path", "runtime-ort-library-path")
-	v.RegisterAlias("runtime.ort_library_path", "ort-lib")
-	v.RegisterAlias("runtime.ort_version", "runtime-ort-version")
-	v.RegisterAlias("server.listen_addr", "server-listen-addr")
-	v.RegisterAlias("server.grpc_addr", "server-grpc-addr")
-	v.RegisterAlias("server.workers", "workers")
-	v.RegisterAlias("server.shutdown_timeout_secs", "shutdown-timeout")
-	v.RegisterAlias("server.max_text_bytes", "max-text-bytes")
-	v.RegisterAlias("server.request_timeout_secs", "request-timeout")
-	v.RegisterAlias("tts.backend", "backend")
-	v.RegisterAlias("tts.voice", "tts-voice")
-	v.RegisterAlias("tts.cli_path", "tts-cli-path")
-	v.RegisterAlias("tts.cli_config_path", "tts-cli-config-path")
-	v.RegisterAlias("tts.concurrency", "tts-concurrency")
-	v.RegisterAlias("tts.quiet", "tts-quiet")
-	v.RegisterAlias("tts.temperature", "temperature")
-	v.RegisterAlias("tts.eos_threshold", "eos-threshold")
-	v.RegisterAlias("tts.max_steps", "max-steps")
-	v.RegisterAlias("log_level", "log-level")
-}
-
 const (
 	samplerDecodeStepsKey           = "tts.sampler_decode_steps"
 	deprecatedSamplerDecodeStepsKey = "tts.lsd_decode_steps"
+	ortLibraryPathKey               = "runtime.ort_library_path"
 )
 
-// bindSamplerDecodeSteps binds tts.sampler_decode_steps directly to its flag
-// instead of going through registerAliases: an alias from the config key to
-// the flag name would make the config-file value and the
-// POCKETTTS_TTS_SAMPLER_DECODE_STEPS env var unreachable. The flag-style env
-// var (matching the other aliased keys) and the deprecated env vars are bound
-// as fallbacks, new names first.
-func bindSamplerDecodeSteps(v *viper.Viper, flags *pflag.FlagSet) error {
-	if flags != nil {
-		if f := flags.Lookup("sampler-decode-steps"); f != nil {
-			err := v.BindPFlag(samplerDecodeStepsKey, f)
-			if err != nil {
-				return fmt.Errorf("bind sampler-decode-steps flag: %w", err)
+// keyBinding ties a config key to its flag and environment variables. Every
+// key is read from POCKETTTS_<SECTION>_<KEY> first, then from the flag-style
+// POCKETTTS_<FLAG>, then from env in order.
+type keyBinding struct {
+	key  string
+	flag string
+	env  []string
+}
+
+// keyBindings lists every config key. Each key is bound to its flag with
+// BindPFlag; a viper alias from the key to the flag name instead would make
+// config-file values and section-style env vars unreachable.
+var keyBindings = []keyBinding{
+	{key: "paths.model_path", flag: "paths-model-path"},
+	{key: "paths.voice_path", flag: "paths-voice-path"},
+	{key: "paths.onnx_manifest", flag: "paths-onnx-manifest"},
+	{key: "paths.tokenizer_model", flag: "paths-tokenizer-model"},
+	{key: "paths.voice_manifest", flag: "paths-voice-manifest"},
+	{key: "runtime.threads", flag: "runtime-threads"},
+	{key: "runtime.inter_op_threads", flag: "runtime-inter-op-threads"},
+	{key: "runtime.workers", flag: "runtime-workers"},
+	{key: "runtime.conv_workers", flag: "conv-workers"},
+	{key: ortLibraryPathKey, flag: "runtime-ort-library-path", env: []string{"POCKETTTS_ORT_LIB", "ORT_LIBRARY_PATH"}},
+	{key: "runtime.ort_version", flag: "runtime-ort-version"},
+	{key: "server.listen_addr", flag: "server-listen-addr"},
+	{key: "server.grpc_addr", flag: "server-grpc-addr"},
+	{key: "server.workers", flag: "workers"},
+	{key: "server.shutdown_timeout_secs", flag: "shutdown-timeout"},
+	{key: "server.max_text_bytes", flag: "max-text-bytes"},
+	{key: "server.request_timeout_secs", flag: "request-timeout"},
+	{key: "tts.backend", flag: "backend"},
+	{key: "tts.language", flag: "language"},
+	{key: "tts.model_config", flag: "model-config"},
+	{key: "tts.voice", flag: "tts-voice"},
+	{key: "tts.cli_path", flag: "tts-cli-path"},
+	{key: "tts.cli_config_path", flag: "tts-cli-config-path"},
+	{key: "tts.concurrency", flag: "tts-concurrency"},
+	{key: "tts.quiet", flag: "tts-quiet"},
+	{key: "tts.temperature", flag: "temperature"},
+	{key: "tts.eos_threshold", flag: "eos-threshold"},
+	{key: "tts.max_steps", flag: "max-steps"},
+	{
+		key:  samplerDecodeStepsKey,
+		flag: "sampler-decode-steps",
+		env:  []string{"POCKETTTS_TTS_LSD_DECODE_STEPS", "POCKETTTS_LSD_STEPS"},
+	},
+	{key: "log_level", flag: "log-level"},
+}
+
+// flagAliases lists string flags that set the same key as a canonical flag.
+// An alias only applies when the canonical flag was not given; see
+// applyFlagAliases.
+var flagAliases = []struct{ alias, canonical, key string }{
+	{alias: "ort-lib", canonical: "runtime-ort-library-path", key: ortLibraryPathKey},
+}
+
+// envNames returns the env vars of b, highest precedence first.
+func (b keyBinding) envNames() []string {
+	names := []string{envName(b.key)}
+	if flagEnv := envName(b.flag); flagEnv != names[0] {
+		names = append(names, flagEnv)
+	}
+
+	return append(names, b.env...)
+}
+
+func envName(name string) string {
+	return "POCKETTTS_" + strings.ToUpper(strings.NewReplacer(".", "_", "-", "_").Replace(name))
+}
+
+// bindKeys binds every key of keyBindings to its flag (when flags has it) and
+// its env vars.
+func bindKeys(v *viper.Viper, flags *pflag.FlagSet) error {
+	for _, b := range keyBindings {
+		if flags != nil {
+			if f := flags.Lookup(b.flag); f != nil {
+				err := v.BindPFlag(b.key, f)
+				if err != nil {
+					return fmt.Errorf("bind %s flag: %w", b.flag, err)
+				}
 			}
+		}
+
+		err := v.BindEnv(append([]string{b.key}, b.envNames()...)...)
+		if err != nil {
+			return fmt.Errorf("bind %s env vars: %w", b.key, err)
 		}
 	}
 
-	err := v.BindEnv(
-		samplerDecodeStepsKey,
-		"POCKETTTS_SAMPLER_DECODE_STEPS",
-		"POCKETTTS_TTS_LSD_DECODE_STEPS",
-		"POCKETTTS_LSD_STEPS",
-	)
-	if err != nil {
-		return fmt.Errorf("bind sampler decode steps env vars: %w", err)
+	return nil
+}
+
+// applyFlagAliases applies an explicitly given alias flag (e.g. --ort-lib)
+// unless its canonical flag was given too. It must run after the config file
+// was read.
+func applyFlagAliases(v *viper.Viper, flags *pflag.FlagSet) error {
+	if flags == nil {
+		return nil
+	}
+
+	for _, fa := range flagAliases {
+		if !flags.Changed(fa.alias) || flags.Changed(fa.canonical) {
+			continue
+		}
+
+		value, err := flags.GetString(fa.alias)
+		if err != nil {
+			return fmt.Errorf("read %s flag: %w", fa.alias, err)
+		}
+
+		v.Set(fa.key, value)
 	}
 
 	return nil

@@ -280,25 +280,12 @@ tts:
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	// Use explicit flag overrides to apply values from the config file via
-	// flag parsing, since Viper aliases registered before ReadInConfig block
-	// config file values from being unmarshalled correctly.
+	// Flags are bound but not given, as in the CLI: the file must win over
+	// the flag defaults.
 	defaults := DefaultConfig()
-	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	RegisterFlags(fs, defaults)
-
-	err = fs.Parse([]string{
-		"--log-level=error",
-		"--workers=16",
-		"--server-listen-addr=:7777",
-		"--backend=cli",
-	})
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
 
 	cfg, err := Load(LoadOptions{
-		Cmd:        &fakeBinder{fs: fs},
+		Cmd:        newFlagBinder(defaults),
 		ConfigFile: cfgFile,
 		Defaults:   defaults,
 	})
