@@ -85,17 +85,33 @@ constants and paths are hard-coded around `tts_b6369a24`.
     `default_voice` / `voices_revision` are Go-only fields (`yaml:"-"`): upstream keeps them outside the YAML
     (`DEFAULT_VOICE_FOR_LANGUAGE`), so the item-2 registry fills them. Tested against three upstream configs in
     `testdata/`; all 19 upstream configs parse.
-- [ ] Embed the configs we support (`//go:embed configs/*.yaml`), transcribed from upstream `pocket_tts/config/`:
+- [x] Embed the configs we support (`//go:embed configs/*.yaml`), transcribed from upstream `pocket_tts/config/`:
       `english_2026-01` (current), `english_2026-09` (new upstream default `english`), `english_2026-09_24l`,
       `german`, `german_24l`; later `french`, `italian`, `spanish`, `portuguese`, `dutch` and `*_24l`.
       Rewrite the `hf://…/tokenizer.json` paths to the `.model` sibling until the Phase 5 JSON loader exists.
-      Also allow `--model-config <path>` for custom ones.
+      (2026-10-03) — `internal/modelcfg/configs/` embeds the five configs from upstream @41cbc84 with
+      `tokenizer_path` → `tokenizer.model@<rev>` (each verified to exist on HF) and `tokenizer: sentencepiece`;
+      `modelcfg.Languages()` / `modelcfg.Lookup(name)` return fresh copies with `DefaultVoice` (upstream
+      `DEFAULT_VOICE_FOR_LANGUAGE` substring match, fallback `alba`) and `VoicesRevision` (`1e08e6a…`) filled.
+      A drift test compares the embedded `english_2026-01` with the verbatim upstream copy. The other languages
+      are still "later".
+- [ ] Fix config-file and section-style env loading in `internal/config`: `registerAliases` maps each config key
+      to its flag name, so with flags bound a config file's `tts.max_steps: 99` loads as 256, and
+      `POCKETTTS_TTS_MAX_STEPS` and `POCKETTTS_ORT_LIB` are ignored (only flag-style env like
+      `POCKETTTS_MAX_STEPS` works). README documents both. Bind each key to its flag with `BindPFlag`, as
+      `tts.sampler_decode_steps` now does. Needed before `POCKETTTS_TTS_LANGUAGE` below can work.
+      (2026-10-03) — found during the `SamplerDecodeSteps` rename; reproduced on `main` code paths.
 - [ ] `internal/config/config.go`: add `tts.language` (default `english_2026-01` until Phase 6 switches
       it; `POCKETTTS_TTS_LANGUAGE`, `--language` persistent flag). Model, tokenizer and voice paths
-      come from the language unless set explicitly.
+      come from the language unless set explicitly. Also allow `--model-config <path>` for custom configs
+      (moved here from the embed item: this is where the model config first gets a consumer).
 - [ ] Change the default `Temperature` from 0.7 to "use `default_temperature` from the model config" (0.3). Keep
       the explicit `--temperature` override.
-- [ ] Rename `LSDDecodeSteps` → `SamplerDecodeSteps` (keep the old flag as a hidden deprecated alias, like upstream)
+- [x] Rename `LSDDecodeSteps` → `SamplerDecodeSteps` (keep the old flag as a hidden deprecated alias, like upstream)
+      (2026-10-03) — field renamed in `config`, `tts`, `onnx`, `bench/stageprof` and the wasm build; new
+      `--sampler-decode-steps` / `tts.sampler_decode_steps`; `--lsd-steps` is hidden + deprecated and overrides
+      like upstream's `--lsd-decode-steps`; old file key `tts.lsd_decode_steps` and env `POCKETTTS_TTS_LSD_DECODE_STEPS`
+      / `POCKETTTS_LSD_STEPS` still accepted; wasm reads `samplerSteps`, falls back to `lsdSteps`.
 - [ ] `internal/model/manifest.go` + `models/download-manifest.lock.json`: make them per language. Use the upstream layout
       `languages/<lang>/{model.safetensors, tokenizer.model, tokenizer.json, embeddings/*.safetensors}`
       at revision `1e08e6a23401048648a9fdcfde2f89348215c2a7` (ungated repo; gated `kyutai/pocket-tts@3e82814…`
