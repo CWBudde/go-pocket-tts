@@ -230,8 +230,10 @@ All in `internal/tts/runtime_native_safetensors.go`, mirrored in `internal/onnx/
       frames (F = 0 drops the EOS frame); the ONNX loops also skip the flow head on the stopping step.
 - [x] **frames_after_eos default** from `model_recommended_frames_after_eos`, falling back to the
       upstream heuristic.
-      (2026-10-03) — `tts.Service` takes it from `cfg.Model`, else `ChunkMetadata.FramesAfterEOS()`;
-      `TestSynthesize_FramesAfterEOS`. Every embedded config leaves it unset, so output is unchanged today.
+      (2026-10-03) — `modelcfg.ModelConfig.FramesAfterEOS(chunk.FramesAfterEOS())` (nil-safe), used by
+      `tts.Service`, stageprof and WASM (which now loads its checkpoint with the `english_2026-01` config);
+      `TestFramesAfterEOS`, `TestSynthesize_FramesAfterEOS`. Every embedded config leaves it unset, so output is
+      unchanged today.
 - [x] **Per-chunk fade-in (#332→#335):** multiply the first 120 samples (`sample_rate/200`, 5 ms) of each
       chunk's first decoded frame by `linspace(0, 1, 120)` (inclusive endpoints). Do it after `MimiDecode` per
       chunk, not as the optional CLI DSP step. Fix `audio/dsp.go` fade so its ramp reaches 1.0, or keep the two separate.
@@ -364,6 +366,8 @@ Follow-ups:
       changes the graphs anyway).
 - [ ] Re-export per language (`scripts/export_onnx.py --language german`), then publish and update the lock file
 - [ ] Known issue: garbled audio at the beginning of longer inputs
+- [ ] `decodeLatentsToAudio` fades in over `audio.ExpectedSampleRate/200` samples; take the rate from the
+      bundle's Mimi config instead of the 24 kHz constant (the native runtime uses `Mimi().SampleRate()`).
 - [ ] **Decide:** keep ONNX only as the voice-cloning encoder until the native Mimi encoder exists, or deprecate it.
       Upstream changes now have to be applied twice (Go + re-export), which is a strong argument for
       minimising it.
@@ -393,6 +397,9 @@ Note: chunk-level streaming (`/tts/stream`) is already implemented.
 
 - [ ] Memory budgeting for model weights, KV cache and per-request buffers (multi-language registry, 24L)
 - [ ] Im2col tiling for cache-friendliness on large convolutions (res3: 38400×192 im2col = 30 MB, overflows L3)
+- [ ] The native AR loop runs the full flow sampler on the stopping step and drops the frame, because
+      `SampleNextLatentStateful` returns the latent and the EOS flag together (upstream does the same). Split
+      backbone/EOS from flow sampling, as the ONNX loops do, to save `decodeSteps` flow passes per chunk.
 
 ---
 
