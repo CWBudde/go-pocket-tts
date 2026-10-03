@@ -325,7 +325,7 @@ func (l *mimiTransformerLayer) forwardWithScratch(x, ropeCos, ropeSin *tensor.Te
 		}
 	}
 
-	ff = geluErfTensorInPlace(ff)
+	ff = geluTanhTensorInPlace(ff)
 
 	if scratch != nil {
 		ff2Out, ensureErr := scratch.ensure(&scratch.ff2, x.Shape())
@@ -544,6 +544,10 @@ type MimiModel struct {
 	finalConv *conv1dLayer
 }
 
+// LoadMimiModel loads the Mimi decoder path. The model config's
+// mimi.inner_dim (512 for english_2026-01, 32 for every newer config) only
+// shapes the encoder side, mimi.downsample and flow_lm.speaker_proj_weight,
+// which the native port does not load yet; the decoder weights are the same.
 func LoadMimiModel(vb *VarBuilder, cfg MimiConfig) (*MimiModel, error) {
 	if cfg.SampleRate == 0 {
 		cfg = DefaultMimiConfig()

@@ -81,23 +81,25 @@ func siluTensor(x *tensor.Tensor) *tensor.Tensor {
 	return out
 }
 
-func geluErfTensor(x *tensor.Tensor) *tensor.Tensor {
-	out := x.Clone()
+// geluTanhCoeff is √(2/π) of the tanh GELU approximation.
+const geluTanhCoeff = 0.7978845608028654
 
-	d := out.RawData()
-	for i, v := range d {
-		fv := float64(v)
-		d[i] = float32(0.5 * fv * (1 + math.Erf(fv/math.Sqrt2)))
-	}
+// geluTanh is upstream's F.gelu(x, approximate="tanh") (#278), used by every
+// StreamingTransformerLayer (FlowLM backbone and Mimi transformers).
+func geluTanh(v float32) float32 {
+	x := float64(v)
 
-	return out
+	return float32(0.5 * x * (1 + math.Tanh(geluTanhCoeff*(x+0.044715*x*x*x))))
 }
 
-func geluErfTensorInPlace(x *tensor.Tensor) *tensor.Tensor {
+func geluTanhTensor(x *tensor.Tensor) *tensor.Tensor {
+	return geluTanhTensorInPlace(x.Clone())
+}
+
+func geluTanhTensorInPlace(x *tensor.Tensor) *tensor.Tensor {
 	d := x.RawData()
 	for i, v := range d {
-		fv := float64(v)
-		d[i] = float32(0.5 * fv * (1 + math.Erf(fv/math.Sqrt2)))
+		d[i] = geluTanh(v)
 	}
 
 	return x

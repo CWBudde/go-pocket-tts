@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"sync"
 
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
@@ -20,6 +21,17 @@ func DefaultConfig() Config {
 		FlowLM: DefaultFlowLMConfig(),
 		Mimi:   DefaultMimiConfig(),
 	}
+}
+
+// ConfigFor returns DefaultConfig adjusted to the model config mc (nil keeps
+// the defaults). Layer counts and dimensions are detected from the weights.
+func ConfigFor(mc *modelcfg.ModelConfig) Config {
+	cfg := DefaultConfig()
+	if mc != nil {
+		cfg.FlowLM.InsertBOSBeforeVoice = mc.FlowLM.InsertBOSBeforeVoice
+	}
+
+	return cfg
 }
 
 type Model struct {
@@ -119,6 +131,16 @@ func (m *Model) NewFlowStateFromVoiceModelState(voiceState *safetensors.VoiceMod
 	}
 
 	return m.flow.InitStateFromVoiceModelState(voiceState)
+}
+
+// VoicePrompt returns the audio-prompt voice embeddings as the FlowLM consumes
+// them; see FlowLM.VoicePrompt.
+func (m *Model) VoicePrompt(voiceEmb *tensor.Tensor) (*tensor.Tensor, error) {
+	if m == nil || m.flow == nil {
+		return nil, errors.New("native: model flow_lm unavailable")
+	}
+
+	return m.flow.VoicePrompt(voiceEmb)
 }
 
 func (m *Model) PromptFlow(state *FlowLMState, textEmbeddings *tensor.Tensor) error {

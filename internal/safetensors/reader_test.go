@@ -692,3 +692,68 @@ func TestValidateModelKeys_InvalidFile(t *testing.T) {
 		t.Fatal("expected error for invalid file")
 	}
 }
+
+func TestLoadVoiceModelState_Pad(t *testing.T) {
+	stateWithPad := func(pad int64) []byte {
+		return buildSafetensors(t, map[string]struct {
+			dtype string
+			shape []int64
+			data  []byte
+		}{
+			"layer/cache":  {dtype: "F32", shape: []int64{2, 1, 2, 1, 1}, data: float32Bytes([]float32{1, 2, 3, 4})},
+			"layer/offset": {dtype: "I64", shape: []int64{1}, data: int64Bytes([]int64{2})},
+			"layer/pad":    {dtype: "I64", shape: []int64{1}, data: int64Bytes([]int64{pad})},
+		})
+	}
+
+	state, err := LoadVoiceModelState(writeTempSafetensors(t, stateWithPad(0)))
+	if err != nil {
+		t.Fatalf("pad 0: %v", err)
+	}
+
+	if pad := state.Modules["layer"]["pad"]; pad == nil || len(pad.Data) != 1 || pad.Data[0] != 0 {
+		t.Fatalf("pad 0: pad tensor = %+v, want kept as [0]", pad)
+	}
+
+	// Upstream shifts attention positions by pad (left-padded batch rows);
+	// the Go port does not, so such a state must not load silently.
+	_, err = LoadVoiceModelState(writeTempSafetensors(t, stateWithPad(2)))
+	if err == nil || !strings.Contains(err.Error(), "pad") {
+		t.Fatalf("pad 2: err = %v, want a pad error", err)
+	}
+}
+
+// German voices (exported by upstream 3.x) carry a per-layer pad key.
+func TestLoadVoiceModelState_RealGermanVoice(t *testing.T) {
+	path := filepath.Join("..", "..", "voices", "german", "juergen.safetensors")
+
+	_, err := os.Stat(path)
+	if err != nil {
+		t.Skipf("german voice not available: %v", err)
+	}
+
+	kind, err := InspectVoiceFile(path)
+	if err != nil || kind != VoiceFileModelState {
+		t.Fatalf("InspectVoiceFile = %q, %v; want %q", kind, err, VoiceFileModelState)
+	}
+
+	state, err := LoadVoiceModelState(path)
+	if err != nil {
+		t.Fatalf("LoadVoiceModelState: %v", err)
+	}
+
+	if len(state.Modules) != 6 {
+		t.Fatalf("modules = %d, want 6 layers", len(state.Modules))
+	}
+
+	for name, module := range state.Modules {
+		pad, offset := module["pad"], module["offset"]
+		if pad == nil || len(pad.Data) != 1 || pad.Data[0] != 0 {
+			t.Errorf("%s pad = %+v, want [0]", name, pad)
+		}
+
+		if offset == nil || len(offset.Data) != 1 || offset.Data[0] != 124 {
+			t.Errorf("%s offset = %+v, want [124]", name, offset)
+		}
+	}
+}

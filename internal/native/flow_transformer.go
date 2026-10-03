@@ -182,7 +182,7 @@ func (l *flowTransformerLayer) forward(x, ropeCos, ropeSin *tensor.Tensor) (*ten
 		return nil, err
 	}
 
-	ff = geluErfTensor(ff)
+	ff = geluTanhTensor(ff)
 
 	ff, err = l.linear2.Forward(ff)
 	if err != nil {
@@ -380,7 +380,7 @@ func (l *flowTransformerLayer) forwardWithState(
 		return nil, err
 	}
 
-	ff = geluErfTensor(ff)
+	ff = geluTanhTensor(ff)
 
 	ff, err = l.linear2.Forward(ff)
 	if err != nil {

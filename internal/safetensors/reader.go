@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -296,6 +297,13 @@ func loadVoiceModelStateFromStore(store *Store) (*VoiceModelState, error) {
 				Shape: []int64{1},
 				Data:  []float32{float32(firstDim(t.Shape))},
 			}
+		}
+
+		// Upstream 3.x exports a per-layer pad (leading padding positions per
+		// batch row) and shifts attention positions by it when it is > 0. The
+		// Go attention has no such shift, so only unpadded states are valid.
+		if tensorKey == "pad" && slices.ContainsFunc(t.Data, func(v float32) bool { return v != 0 }) {
+			return nil, fmt.Errorf("safetensors: %s: left-padded voice states (pad>0) are not supported", name)
 		}
 
 		module := state.Modules[moduleName]

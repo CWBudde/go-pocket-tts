@@ -102,7 +102,7 @@ func Main() {
 		fatalf("init tokenizer: %v", err)
 	}
 
-	model, err := nativemodel.LoadModelFromSafetensors(cfg.Paths.ModelPath, nativemodel.DefaultConfig())
+	model, err := nativemodel.LoadModelFromSafetensors(cfg.Paths.ModelPath, nativemodel.ConfigFor(cfg.Model))
 	if err != nil {
 		fatalf("load model: %v", err)
 	}
