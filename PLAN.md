@@ -160,7 +160,7 @@ constants and paths are hard-coded around `tts_b6369a24`.
       `voiceManifestAssetPath` const next to the model/tokenizer consts; a language-aware web layout belongs to
       the Phase 6 "Web/WASM: language picker" item.
 
-## Phase 2 — Checkpoint / Numerics Parity
+## Phase 2 — Checkpoint / Numerics Parity — ✅ DONE (2026-10-03)
 
 - [x] **tanh GELU (#278).** Upstream now uses `F.gelu(x, approximate="tanh")` in the shared
       `StreamingTransformerLayer` (`modules/transformer.py`), so both the FlowLM backbone and the Mimi
@@ -192,13 +192,24 @@ constants and paths are hard-coded around `tts_b6369a24`.
       `Model.VoicePrompt` prepends it to `VoiceEmbedding` in `prepareFlowState`. Tested with synthetic weights
       and on the German checkpoint (prompt = 1 + voice + text positions). The ONNX runtime path is unchanged:
       no German graphs exist yet (Phase 9).
-- [ ] **Sampler head generalisation (#329).** `flow.type ∈ {lsd, flow_matching, drifting}`, with
+- [x] **Sampler head generalisation (#329).** `flow.type ∈ {lsd, flow_matching, drifting}`, with
       `num_time_conds` = 2 / 1 / 0. In `native/flow_net.go`, make `time_embed.N` variable-length (detect it from the
       keys present), and only average the time embeddings when there are more than 0. Add `DriftingDecode`
       (`v_t(x_0)`, one step, no time input) and optionally `OTDecode` (`for i: cur += v_t(i/n, cur)/n`). Dispatch on
       `FlowType` in `native/flow_lm.go`. Target model: `english_drifting_26-09` (lower priority than German).
-- [ ] **24-layer variants** need no new modules; layer count auto-detection (`native/flow_transformer.go`) should
+      (2026-10-03) — `loadFlowNet` loads every `time_embed.N` present; `LoadFlowLM` checks the count against
+      `FlowLMConfig.FlowType` (copied by `ConfigFor`), and sampling dispatches to `LSDDecode` / `OTDecode` /
+      `DriftingDecode`. Synthetic 0/1/2-condition flow nets pin the conditioning and both new decoders.
+      `english_drifting_26-09` is now an embedded config (tokenizer.model like `english_2026-09`, checksums for
+      weights + 27 voices); `TestDriftingSamplerHead_RealCheckpoint` loads it (0 time embeddings, lsd config
+      rejected) and decodes 3 frames with `alba`. CLI smoke run: 40 frames for an 11-word sentence (LSD
+      `english_2026-01`: 50). No flow_matching checkpoint exists to test `OTDecode` against.
+- [x] **24-layer variants** need no new modules; layer count auto-detection (`native/flow_transformer.go`) should
       already work. Add a smoke test with a `*_24l` checkpoint (~670 MB, so run it manually or in integration only).
+      (2026-10-03) — confirmed without code changes: `TestGerman24L_RealCheckpoint` (skips unless
+      `models/german_24l/` and `voices/german_24l/juergen.safetensors` are downloaded) finds 24 flow transformer
+      layers and a 24-layer voice state, then decodes 2 frames. CLI smoke run with `german_24l` and `juergen`:
+      46 frames in ~1.8 s.
 - [x] **Voice state `pad` key.** Newly exported states carry `transformer.layers.N.self_attn/pad` (int64 `[B]`).
       The Go loader ignores unknown keys; add a test with a real `voices/german/juergen.safetensors`.
       (2026-10-03) — all 27 German voices have `pad` = 0. Upstream shifts attention positions only for
