@@ -253,6 +253,24 @@ func TestParse_RejectsMultiCharacterReplaceCharactersKey(t *testing.T) {
 	}
 }
 
+// n_bins is the tokenizer vocab size the loader checks against (upstream
+// asserts equality), so a config with no vocab is rejected up front.
+func TestParse_RejectsNonPositiveNBins(t *testing.T) {
+	german := readTestdata(t, "german")
+
+	for _, nBins := range []string{"0", "-1"} {
+		data := strings.Replace(german, "n_bins: 4000", "n_bins: "+nBins, 1)
+		if data == german {
+			t.Fatal("testdata/german.yaml no longer has n_bins: 4000")
+		}
+
+		_, err := Parse([]byte(data))
+		if err == nil || !strings.Contains(err.Error(), "flow_lm.lookup_table.n_bins") {
+			t.Errorf("Parse(n_bins: %s) error = %v; want an error naming flow_lm.lookup_table.n_bins", nBins, err)
+		}
+	}
+}
+
 func TestParse_ExplicitValuesOverrideDefaults(t *testing.T) {
 	data := readTestdata(t, "german") + "\ndefault_temperature: 0.7\ncapitalize_first_letter: false\nmodel_recommended_frames_after_eos: 3\n"
 

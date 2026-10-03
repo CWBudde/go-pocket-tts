@@ -261,9 +261,16 @@ func Parse(data []byte) (*ModelConfig, error) {
 	return &cfg, nil
 }
 
-// Validate checks the enumerated fields.
+// Validate checks the enumerated fields and n_bins.
 func (c *ModelConfig) Validate() error {
 	var errs []error
+
+	// n_bins is the tokenizer vocab size (checked at tokenizer load), so it
+	// must be positive.
+	if c.FlowLM.LookupTable.NBins < 1 {
+		errs = append(errs, fmt.Errorf("flow_lm.lookup_table.n_bins %d: want a positive vocab size",
+			c.FlowLM.LookupTable.NBins))
+	}
 
 	if !slices.Contains([]string{FlowTypeLSD, FlowTypeFlowMatching, FlowTypeDrifting}, c.FlowLM.Flow.Type) {
 		errs = append(errs, fmt.Errorf("flow_lm.flow.type %q: want %q, %q or %q",
