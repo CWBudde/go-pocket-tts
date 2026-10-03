@@ -366,13 +366,17 @@ Minimal path (precomputed voices only; needs Phases 1, 3, 4 and Phase 5 byte fal
 - [ ] `pockettts synth --language german --voice juergen --text "…"` produces intelligible German
       (listening check plus a Python-reference comparison from Phase 8)
 - [ ] German demo text from upstream `default_parameters.py` used as a CLI smoke example
-- [ ] `german` (6L) + `juergen` ends far too early: "Guten Tag, dies ist ein kurzer Test." hits EOS at step 1
+- [x] `german` (6L) + `juergen` ends far too early: "Guten Tag, dies ist ein kurzer Test." hits EOS at step 1
       on `main` (5 frames) and at the step-6 minimum after Phase 3 (9 frames, 0.36 s). `german_24l` +
       `juergen` and English are fine. Find out why (text prep, tokenizer, voice state) before the listening check.
       (Found 2026-10-03 during the Phase 3 smoke run.)
       (2026-10-03) — re-measured after the Phase 4 text prep and Phase 5 tokenizer work: the same sentence now
       stops at EOS step 26 (before the tokenizer change) / 28 (after); EOS varies between runs at temperature 0.3.
       The tokenizer does not change its 12 tokens. Still to judge in the listening check.
+      (2026-10-03) — not the model: `voices/german/manifest.json` was missing, and `synth` silently dropped an
+      unresolvable `--voice` on the native backend, so generation ran without a voice (`german_24l` without a
+      voice also stops at 17 frames). `resolveVoiceForNative` now fails when the manifest is missing or lacks the
+      ID, pointing at `pockettts-tools voice download`. With the manifest: EOS at steps 26–35 (29–38 frames).
 - [ ] `serve --language german`: one language per process (same as upstream `serve`); add `--default-voice`
       (#271: name | local wav/safetensors | URL, resolved at startup, fail fast)
 - [ ] `doctor` validates the selected language's files

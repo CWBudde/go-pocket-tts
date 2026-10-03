@@ -200,7 +200,7 @@ Force CLI compatibility backend:
 Override voice for a single request:
 
 ```bash
-./pockettts synth --text "Hello" --voice mimi --out out.wav
+./pockettts synth --text "Hello" --voice alba --out out.wav
 ```
 
 Write the WAV to stdout:
@@ -401,7 +401,7 @@ tts:
   # Backend: native-safetensors (default), native-onnx, or cli
   backend: "native"
   # Voice name/ID (or a .safetensors path, depending on your PocketTTS setup)
-  voice: "mimi"
+  voice: "alba"
   # Path to the pocket-tts executable (leave empty to use PATH)
   cli_path: ""
   # Optional PocketTTS config path
