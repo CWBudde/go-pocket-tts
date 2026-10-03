@@ -264,31 +264,41 @@ func MatMul(a, b *Tensor) (*Tensor, error) {
 	return out, nil
 }
 
-// Linear applies y = x * W^T + b where weight shape is [out, in].
-func Linear(x, weight, bias *Tensor) (*Tensor, error) {
+// linearDims validates Linear operands and returns the input and output dims.
+func linearDims(x, weight, bias *Tensor) (int64, int64, error) {
 	if x == nil || weight == nil {
-		return nil, errors.New("tensor: linear requires non-nil x and weight")
+		return 0, 0, errors.New("tensor: linear requires non-nil x and weight")
 	}
 
 	if x.Rank() < 1 {
-		return nil, errors.New("tensor: linear requires x rank >= 1")
+		return 0, 0, errors.New("tensor: linear requires x rank >= 1")
 	}
 
 	if weight.Rank() != 2 {
-		return nil, fmt.Errorf("tensor: linear weight must be rank 2, got %d", weight.Rank())
+		return 0, 0, fmt.Errorf("tensor: linear weight must be rank 2, got %d", weight.Rank())
 	}
 
 	in := x.shape[x.Rank()-1]
 
 	out := weight.shape[0]
 	if weight.shape[1] != in {
-		return nil, fmt.Errorf("tensor: linear mismatch: x last dim %d, weight in dim %d", in, weight.shape[1])
+		return 0, 0, fmt.Errorf("tensor: linear mismatch: x last dim %d, weight in dim %d", in, weight.shape[1])
 	}
 
 	if bias != nil {
 		if bias.Rank() != 1 || bias.shape[0] != out {
-			return nil, fmt.Errorf("tensor: linear bias shape %v does not match out dim %d", bias.shape, out)
+			return 0, 0, fmt.Errorf("tensor: linear bias shape %v does not match out dim %d", bias.shape, out)
 		}
+	}
+
+	return in, out, nil
+}
+
+// Linear applies y = x * W^T + b where weight shape is [out, in].
+func Linear(x, weight, bias *Tensor) (*Tensor, error) {
+	in, out, err := linearDims(x, weight, bias)
+	if err != nil {
+		return nil, err
 	}
 
 	batch := len(x.data) / int(in)
