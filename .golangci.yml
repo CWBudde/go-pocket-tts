@@ -17,6 +17,7 @@ linters:
     - exhaustruct_v5 # successor of exhaustruct (golangci-lint >= 2.13)
     - gochecknoglobals # sync.Pools, singletons, config vars are fine
     - godox # allow TODO/FIXME comments
+    - gomodguard # deprecated, replaced by gomodguard_v2 (enabled via default: all)
     - ireturn # allow returning interfaces
     - lll # long lines acceptable in math-heavy code
     - mnd # magic numbers acceptable in math-heavy code
