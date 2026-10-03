@@ -132,10 +132,64 @@ func TestLookup_EmbeddedMatchesUpstreamCopy(t *testing.T) {
 
 	want := loadTestdata(t, "english_2026-01")
 	want.DefaultVoice = got.DefaultVoice
+	want.DefaultText = got.DefaultText
 	want.VoicesRevision = got.VoicesRevision
 
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("embedded english_2026-01 differs from testdata:\n got %+v\nwant %+v", got, want)
+	}
+}
+
+const (
+	englishDefaultText = "Hello world. I am Kyutai's Pocket TTS. I'm fast enough to run on small CPUs. I hope you'll like me."
+	germanDefaultText  = "Hallo Welt. Ich bin Pocket TTS von Kyutai. Ich bin schnell genug, um auch auf kleinen CPUs zu laufen. " +
+		"Ich hoffe, ich gefalle dir."
+)
+
+// Upstream DEFAULT_TEXT_FOR_LANGUAGE, matched by substring like
+// get_default_text_for_language.
+func TestLookup_DefaultText(t *testing.T) {
+	for name, want := range map[string]string{
+		"german":                 germanDefaultText,
+		"german_24l":             germanDefaultText,
+		"english_2026-01":        englishDefaultText,
+		"english_2026-09_24l":    englishDefaultText,
+		"english_drifting_26-09": englishDefaultText,
+	} {
+		cfg, err := Lookup(name)
+		if err != nil {
+			t.Fatalf("Lookup(%q): %v", name, err)
+		}
+
+		if cfg.DefaultText != want {
+			t.Errorf("Lookup(%q).DefaultText = %q; want %q", name, cfg.DefaultText, want)
+		}
+	}
+}
+
+func TestDefaultTextFor_UpstreamLanguages(t *testing.T) {
+	for language, prefix := range map[string]string{
+		"french_24l": "Bonjour le monde.",
+		"portuguese": "Olá mundo.",
+		"italian":    "Ciao mondo.",
+		"spanish":    "Hola mundo.",
+		"dutch":      "Hello world.", // no dutch text upstream: English
+		"":           "Hello world.",
+	} {
+		if got := defaultTextFor(language); !strings.HasPrefix(got, prefix) {
+			t.Errorf("defaultTextFor(%q) = %q; want it to start with %q", language, got, prefix)
+		}
+	}
+}
+
+func TestLoadCustom_UsesEnglishDefaultText(t *testing.T) {
+	cfg, err := LoadCustom("testdata/german.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.DefaultText != englishDefaultText {
+		t.Errorf("DefaultText = %q; want the English default text", cfg.DefaultText)
 	}
 }
 
