@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
@@ -19,6 +20,10 @@ type FlowLMConfig struct {
 	// InsertBOSBeforeVoice prepends flow_lm.bos_before_voice to audio-prompt
 	// voice embeddings (model config flow_lm.insert_bos_before_voice).
 	InsertBOSBeforeVoice bool
+
+	// FlowType selects the sampler head (model config flow_lm.flow.type):
+	// modelcfg.FlowTypeLSD (also ""), FlowTypeFlowMatching or FlowTypeDrifting.
+	FlowType string
 }
 
 func DefaultFlowLMConfig() FlowLMConfig {
@@ -27,7 +32,31 @@ func DefaultFlowLMConfig() FlowLMConfig {
 		NumHeads:  16,
 		MaxPeriod: 10000.0,
 		LDim:      32,
+		FlowType:  modelcfg.FlowTypeLSD,
 	}
+}
+
+// checkFlowTimeConds checks that a flow_net with got time embeddings fits
+// flowType (upstream SimpleMLPAdaLN.from_pydantic_config).
+func checkFlowTimeConds(flowType string, got int) error {
+	var want int
+
+	switch flowType {
+	case "", modelcfg.FlowTypeLSD:
+		want = 2
+	case modelcfg.FlowTypeFlowMatching:
+		want = 1
+	case modelcfg.FlowTypeDrifting:
+		want = 0
+	default:
+		return fmt.Errorf("native: unknown flow type %q", flowType)
+	}
+
+	if got != want {
+		return fmt.Errorf("native: flow type %q needs %d flow_net.time_embed entries, checkpoint has %d", flowType, want, got)
+	}
+
+	return nil
 }
 
 // FlowLM rebuilds the ONNX flow_lm_main + flow_lm_flow modules from safetensors weights.
@@ -78,6 +107,11 @@ func LoadFlowLM(vb *VarBuilder, cfg FlowLMConfig) (*FlowLM, error) {
 	flowNet, err := loadFlowNet(flow.Path("flow_net"))
 	if err != nil {
 		return nil, fmt.Errorf("native: load flow_net: %w", err)
+	}
+
+	err = checkFlowTimeConds(cfg.FlowType, len(flowNet.timeEmbeds))
+	if err != nil {
+		return nil, err
 	}
 
 	embStd, err := flow.Tensor("emb_std", cfg.LDim)
@@ -323,7 +357,7 @@ func (f *FlowLM) SampleNextLatentStateful(state *FlowLMState, sequenceFrame *ten
 		return nil, false, err
 	}
 
-	decoded, err := f.LSDDecode(last, noise, decodeSteps)
+	decoded, err := f.decode(last, noise, decodeSteps)
 	if err != nil {
 		return nil, false, err
 	}
@@ -342,7 +376,7 @@ func (f *FlowLM) FlowDirection(condition, s, t, x *tensor.Tensor) (*tensor.Tenso
 		return nil, errors.New("native: flow_lm flow net unavailable")
 	}
 
-	return f.flowNet.Forward(condition, s, t, x)
+	return f.flowNet.Forward(condition, []*tensor.Tensor{s, t}, x)
 }
 
 // LSDDecode runs Euler integration in flow space.
@@ -390,6 +424,59 @@ func (f *FlowLM) LSDDecode(condition, x0 *tensor.Tensor, steps int) (*tensor.Ten
 	return current, nil
 }
 
+// OTDecode runs Euler integration of an optimal-transport flow (flow_matching
+// heads, one time condition): current += v(i/steps, current)/steps.
+func (f *FlowLM) OTDecode(condition, x0 *tensor.Tensor, steps int) (*tensor.Tensor, error) {
+	if steps <= 0 {
+		return nil, errors.New("native: flow_matching decode steps must be >0")
+	}
+
+	shape := x0.Shape()
+	if len(shape) != 2 {
+		return nil, fmt.Errorf("native: flow_matching decode input x0 must be [B, D], got %v", shape)
+	}
+
+	if f == nil || f.flowNet == nil {
+		return nil, errors.New("native: flow_lm flow net unavailable")
+	}
+
+	current := x0.Clone()
+	curData := current.RawData()
+
+	inv := 1.0 / float32(steps)
+	for i := range steps {
+		t, err := tensor.Full([]int64{shape[0], 1}, float32(i)/float32(steps))
+		if err != nil {
+			return nil, err
+		}
+
+		flow, err := f.flowNet.Forward(condition, []*tensor.Tensor{t}, current)
+		if err != nil {
+			return nil, err
+		}
+
+		for j, v := range flow.RawData() {
+			curData[j] += v * inv
+		}
+	}
+
+	return current, nil
+}
+
+// DriftingDecode runs a drifting head: one forward pass on x0 without time
+// conditions.
+func (f *FlowLM) DriftingDecode(condition, x0 *tensor.Tensor) (*tensor.Tensor, error) {
+	if shape := x0.Shape(); len(shape) != 2 {
+		return nil, fmt.Errorf("native: drifting decode input x0 must be [B, D], got %v", shape)
+	}
+
+	if f == nil || f.flowNet == nil {
+		return nil, errors.New("native: flow_lm flow net unavailable")
+	}
+
+	return f.flowNet.Forward(condition, nil, x0)
+}
+
 // SampleNextLatent mirrors xn sample_next_latent behavior.
 func (f *FlowLM) SampleNextLatent(sequence, textEmbeddings *tensor.Tensor, decodeSteps int, eosThreshold, temperature float32, rng *rand.Rand) (*tensor.Tensor, bool, error) {
 	lastHidden, eos, err := f.FlowMain(sequence, textEmbeddings)
@@ -408,7 +495,7 @@ func (f *FlowLM) SampleNextLatent(sequence, textEmbeddings *tensor.Tensor, decod
 		return nil, false, err
 	}
 
-	decoded, err := f.LSDDecode(lastHidden, noise, decodeSteps)
+	decoded, err := f.decode(lastHidden, noise, decodeSteps)
 	if err != nil {
 		return nil, false, err
 	}
@@ -419,6 +506,21 @@ func (f *FlowLM) SampleNextLatent(sequence, textEmbeddings *tensor.Tensor, decod
 	}
 
 	return next, isEOS, nil
+}
+
+// decode samples a latent from noise x0 with the sampler head of
+// cfg.FlowType. Drifting heads ignore steps.
+func (f *FlowLM) decode(condition, x0 *tensor.Tensor, steps int) (*tensor.Tensor, error) {
+	switch f.cfg.FlowType {
+	case "", modelcfg.FlowTypeLSD:
+		return f.LSDDecode(condition, x0, steps)
+	case modelcfg.FlowTypeFlowMatching:
+		return f.OTDecode(condition, x0, steps)
+	case modelcfg.FlowTypeDrifting:
+		return f.DriftingDecode(condition, x0)
+	default:
+		return nil, fmt.Errorf("native: unknown flow type %q", f.cfg.FlowType)
+	}
 }
 
 // loadBOSBeforeVoice loads flow_lm.bos_before_voice [1, 1, DModel] when

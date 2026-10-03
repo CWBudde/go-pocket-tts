@@ -240,7 +240,9 @@ func (fl *flowFinalLayer) Forward(x, c *tensor.Tensor) (*tensor.Tensor, error) {
 
 // flowNet implements flow_lm_flow equivalent.
 type flowNet struct {
-	timeEmbeds []*timestepEmbedder // 2 embeds for s and t
+	// timeEmbeds has one embedder per time condition (upstream
+	// num_time_conds): 2 for lsd (s and t), 1 for flow_matching, 0 for drifting.
+	timeEmbeds []*timestepEmbedder
 	condEmbed  *Linear
 	inputProj  *Linear
 	resBlocks  []*flowResBlock
@@ -248,14 +250,20 @@ type flowNet struct {
 }
 
 func loadFlowNet(vb *VarBuilder) (*flowNet, error) {
-	t0, err := loadTimestepEmbedder(vb.Path("time_embed", "0"))
-	if err != nil {
-		return nil, err
-	}
+	var timeEmbeds []*timestepEmbedder
 
-	t1, err := loadTimestepEmbedder(vb.Path("time_embed", "1"))
-	if err != nil {
-		return nil, err
+	for i := 0; ; i++ {
+		tePath := vb.Path("time_embed", strconv.Itoa(i))
+		if !tePath.Has("freqs") {
+			break
+		}
+
+		te, err := loadTimestepEmbedder(tePath)
+		if err != nil {
+			return nil, fmt.Errorf("native: load flow time embedding %d: %w", i, err)
+		}
+
+		timeEmbeds = append(timeEmbeds, te)
 	}
 
 	condEmbed, err := loadLinear(vb, "cond_embed", true)
@@ -296,7 +304,7 @@ func loadFlowNet(vb *VarBuilder) (*flowNet, error) {
 	}
 
 	return &flowNet{
-		timeEmbeds: []*timestepEmbedder{t0, t1},
+		timeEmbeds: timeEmbeds,
 		condEmbed:  condEmbed,
 		inputProj:  inputProj,
 		resBlocks:  resBlocks,
@@ -304,42 +312,20 @@ func loadFlowNet(vb *VarBuilder) (*flowNet, error) {
 	}, nil
 }
 
-// Forward computes flow direction for x with condition c and times s/t.
+// Forward computes the flow direction for x with condition c and the time
+// conditions ts (s and t for lsd, t for flow_matching, none for drifting).
 // Shapes:
 //
-//	c: [B, 1024]
-//	s: [B, 1]
-//	t: [B, 1]
-//	x: [B, 32]
-func (fn *flowNet) Forward(c, s, t, x *tensor.Tensor) (*tensor.Tensor, error) {
+//	c:     [B, 1024]
+//	ts[i]: [B, 1]
+//	x:     [B, 32]
+func (fn *flowNet) Forward(c *tensor.Tensor, ts []*tensor.Tensor, x *tensor.Tensor) (*tensor.Tensor, error) {
+	y, err := fn.conditioning(c, ts)
+	if err != nil {
+		return nil, err
+	}
+
 	xProj, err := fn.inputProj.Forward(x)
-	if err != nil {
-		return nil, err
-	}
-
-	t0, err := fn.timeEmbeds[0].Forward(s)
-	if err != nil {
-		return nil, err
-	}
-
-	t1, err := fn.timeEmbeds[1].Forward(t)
-	if err != nil {
-		return nil, err
-	}
-
-	tCombined, err := addSameShape(t0, t1)
-	if err != nil {
-		return nil, err
-	}
-
-	tCombined = scaleTensor(tCombined, 0.5)
-
-	cProj, err := fn.condEmbed.Forward(c)
-	if err != nil {
-		return nil, err
-	}
-
-	y, err := addSameShape(tCombined, cProj)
 	if err != nil {
 		return nil, err
 	}
@@ -353,4 +339,40 @@ func (fn *flowNet) Forward(c, s, t, x *tensor.Tensor) (*tensor.Tensor, error) {
 	}
 
 	return fn.finalLayer.Forward(cur, y)
+}
+
+// conditioning returns cond_embed(c) plus the mean of the time embeddings of
+// ts, one [B, 1] tensor per time condition (none for drifting heads).
+func (fn *flowNet) conditioning(c *tensor.Tensor, ts []*tensor.Tensor) (*tensor.Tensor, error) {
+	if len(ts) != len(fn.timeEmbeds) {
+		return nil, fmt.Errorf("native: flow net takes %d time conditions, got %d", len(fn.timeEmbeds), len(ts))
+	}
+
+	cProj, err := fn.condEmbed.Forward(c)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ts) == 0 {
+		return cProj, nil
+	}
+
+	tSum, err := fn.timeEmbeds[0].Forward(ts[0])
+	if err != nil {
+		return nil, err
+	}
+
+	for i := 1; i < len(ts); i++ {
+		emb, err := fn.timeEmbeds[i].Forward(ts[i])
+		if err != nil {
+			return nil, err
+		}
+
+		tSum, err = addSameShapeInPlace(tSum, emb)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return addSameShape(scaleTensor(tSum, 1/float32(len(ts))), cProj)
 }
