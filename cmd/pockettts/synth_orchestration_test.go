@@ -208,19 +208,17 @@ func TestResolveVoiceForNative(t *testing.T) {
 		}
 	})
 
-	t.Run("missing manifest returns empty", func(t *testing.T) {
+	// A voice that was asked for but cannot be resolved must not silently
+	// fall back to unconditioned generation (it ends almost at once).
+	t.Run("missing manifest is an error", func(t *testing.T) {
 		origWD := mustGetwd(t)
 		tmp := t.TempDir()
 		mustChdir(t, tmp)
 		t.Cleanup(func() { mustChdir(t, origWD) })
 
 		got, err := resolveVoiceForNative("voices/manifest.json", "alice")
-		if err != nil {
-			t.Fatalf("resolveVoiceForNative returned error: %v", err)
-		}
-
-		if got != "" {
-			t.Fatalf("expected empty voice path when manifest missing, got %q", got)
+		if err == nil || !strings.Contains(err.Error(), "voices/manifest.json") {
+			t.Fatalf("resolveVoiceForNative = %q, %v; want an error naming the manifest", got, err)
 		}
 	})
 
@@ -260,12 +258,8 @@ func TestResolveVoiceForNative(t *testing.T) {
 		}
 
 		gotUnknown, err := resolveVoiceForNative("voices/manifest.json", "bob")
-		if err != nil {
-			t.Fatalf("resolve unknown voice failed: %v", err)
-		}
-
-		if gotUnknown != "" {
-			t.Fatalf("expected empty path for unknown ID, got %q", gotUnknown)
+		if err == nil || !strings.Contains(err.Error(), "alice") {
+			t.Fatalf("resolve unknown voice = %q, %v; want an error listing the known voices", gotUnknown, err)
 		}
 	})
 }

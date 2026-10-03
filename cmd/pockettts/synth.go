@@ -433,8 +433,8 @@ func resolveSynthBackend(flagBackend, cfgBackend string) (string, error) {
 
 // resolveVoiceForNative resolves a voice identifier to an absolute .safetensors
 // path for the native backend. Unlike resolveVoiceOrPath (which falls back to
-// returning the raw voice string for the CLI), an unresolved ID here means no
-// voice file — we return an empty string so Synthesize skips voice conditioning.
+// returning the raw voice string for the CLI), an ID that the manifest cannot
+// resolve is an error: generating without the voice ends almost at once.
 func resolveVoiceForNative(manifestPath, voice string) (string, error) {
 	if strings.TrimSpace(voice) == "" {
 		return "", nil
@@ -448,8 +448,8 @@ func resolveVoiceForNative(manifestPath, voice string) (string, error) {
 
 	_, statErr := os.Stat(manifestPath)
 	if os.IsNotExist(statErr) {
-		// Manifest missing — skip voice conditioning.
-		return "", nil
+		return "", fmt.Errorf("--voice %q: voice manifest %s not found; run 'pockettts-tools voice download' "+
+			"(same --language) or pass a .safetensors path", voice, manifestPath)
 	} else if statErr != nil {
 		return "", fmt.Errorf("stat voice manifest: %w", statErr)
 	}
@@ -461,8 +461,12 @@ func resolveVoiceForNative(manifestPath, voice string) (string, error) {
 	}
 
 	if !manifestContainsVoice(vm, voice) {
-		// Not in manifest — skip voice conditioning rather than error.
-		return "", nil
+		ids := make([]string, 0, len(vm.ListVoices()))
+		for _, v := range vm.ListVoices() {
+			ids = append(ids, v.ID)
+		}
+
+		return "", fmt.Errorf("--voice %q is not in %s (voices: %s)", voice, manifestPath, strings.Join(ids, ", "))
 	}
 
 	path, err := vm.ResolvePath(voice)
