@@ -153,27 +153,20 @@ export HF_TOKEN=...  # or use --hf-token
 ./pockettts model download --hf-repo kyutai/pocket-tts
 ```
 
-Other languages download into their own directories (see `--language` below):
-`languages/<lang>/` from Hugging Face, pinned to the revisions in the embedded
-model config and checked against pinned SHA256 checksums, goes to
-`models/<lang>/model.safetensors` and `models/<lang>/tokenizer.json`, and the
-language's predefined voices go next to the voice manifest the runtime reads
-(`--paths-voice-manifest`, by default `voices/<lang>/manifest.json`), which
-lists them:
-
-```bash
-./pockettts model download --language german --hf-repo kyutai/pocket-tts-without-voice-cloning
-./pockettts-tools voice download --language german                 # all predefined voices
-./pockettts-tools voice download --language german --voice juergen # or only some
-```
+`model download` also fetches the language's default voice (`alba` for
+English) next to the voice manifest the runtime reads (`--paths-voice-manifest`).
+`--voice <id>` (repeatable) picks other predefined voices, `--all-voices` fetches
+every one, and `--no-voices` skips them. Other languages download into their own
+directories; see [Languages](#languages).
 
 ### 2) Sanity-check your setup
 
-Checks:
+Checks, for the selected `--language`:
 
 - native runtime preflight checks
-- configured model path exists
-- configured voice path exists (if set)
+- the voice manifest exists, and the default voice and every listed voice file resolve
+- the model exists and has the expected tensors
+- the tokenizer loads and its vocab size matches the model config's `n_bins`
 
 ```bash
 ./pockettts doctor
@@ -197,7 +190,9 @@ Force CLI compatibility backend:
 ./pockettts synth --backend cli --text "Hello from PocketTTS" --out out.wav
 ```
 
-Override voice for a single request:
+Without `--voice`, the native backends use the language's default voice
+(`alba` for English, `juergen` for German), like upstream. Override it for a
+single request:
 
 ```bash
 ./pockettts synth --text "Hello" --voice alba --out out.wav
@@ -208,6 +203,45 @@ Write the WAV to stdout:
 ```bash
 ./pockettts synth --text "Hello" --out - > out.wav
 ```
+
+## Languages
+
+`--language` (`tts.language`, `POCKETTTS_TTS_LANGUAGE`) selects one of the
+embedded upstream model configs. One process serves one language, so start one
+`serve` per language.
+
+| `--language`             | Layers | Sampler  | Default voice |
+| ------------------------ | ------ | -------- | ------------- |
+| `english_2026-01`        | 6      | LSD      | `alba`        |
+| `english_2026-09`        | 6      | LSD      | `alba`        |
+| `english_2026-09_24l`    | 24     | LSD      | `alba`        |
+| `english_drifting_26-09` | 6      | drifting | `alba`        |
+| `german`                 | 6      | LSD      | `juergen`     |
+| `german_24l`             | 24     | LSD      | `juergen`     |
+
+`english_2026-01` is the default and keeps the flat layout from before
+per-language models: `models/tts_b6369a24.safetensors`, `models/tokenizer.model`
+and `voices/manifest.json`. Every other language comes from `languages/<lang>/`
+on Hugging Face, pinned to the revisions in the embedded model config and
+checked against pinned SHA256 checksums, and lives in
+`models/<lang>/{model.safetensors,tokenizer.json}` and `voices/<lang>/` (voice
+files plus `manifest.json`). Each has 27 predefined voices; the English-named
+voices in a language's folder are states for that language's model. Unless set
+explicitly, `--paths-model-path`, `--paths-tokenizer-model` and
+`--paths-voice-manifest` follow the language.
+
+German end to end, with the demo text from upstream `default_parameters.py`:
+
+```bash
+./pockettts model download --language german --hf-repo kyutai/pocket-tts-without-voice-cloning
+./pockettts doctor --language german
+./pockettts synth --language german \
+  --text "Hallo Welt. Ich bin Pocket TTS von Kyutai. Ich bin schnell genug, um auch auf kleinen CPUs zu laufen. Ich hoffe, ich gefalle dir." \
+  --out hallo.wav
+```
+
+`pockettts-tools voice download --language <lang> [--voice <id>…]` fetches
+voices on their own (all of the language by default).
 
 ## Model export + verify (ONNX)
 
@@ -366,16 +400,9 @@ text. They differ only on input that literally spells a special token (`<s>`,
 `</s>`, `<unk>`, `<pad>`) or a byte piece (`<0x41>`): `tokenizer.json` matches
 those as that token, SentencePiece encodes the characters.
 
-`--language` (`tts.language`, `POCKETTTS_TTS_LANGUAGE`) selects one of the
-embedded upstream model configs: `english_2026-01` (default), `english_2026-09`,
-`english_2026-09_24l`, `english_drifting_26-09` (one-step drifting sampler head),
-`german`, `german_24l`. Unless set explicitly, the model,
-tokenizer and voice manifest paths follow the language:
-`models/<lang>/model.safetensors`, `models/<lang>/tokenizer.json` and
-`voices/<lang>/manifest.json`; `english_2026-01` keeps the flat
-`models/tts_b6369a24.safetensors`, `models/tokenizer.model` and
-`voices/manifest.json`. `--model-config <file>` loads a custom upstream model
-config instead; like upstream's `--config` it cannot be combined with
+`--language` selects one of the embedded upstream model configs and the paths
+that follow from it; see [Languages](#languages). `--model-config <file>` loads a
+custom upstream model config instead; like upstream's `--config` it cannot be combined with
 `--language`, and it needs explicit `--paths-model-path` and
 `--paths-tokenizer-model`. `synth`, `bench`, `doctor` and `serve` read voice IDs
 from the voice manifest (`--paths-voice-manifest`). Unless `--temperature` is
