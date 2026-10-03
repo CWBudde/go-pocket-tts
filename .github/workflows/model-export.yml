@@ -115,9 +115,11 @@ jobs:
         uses: astral-sh/setup-uv@v5
 
       - name: Install Python dependencies
+        # pocket-tts is pinned to the upstream version the Go port (and
+        # scripts/export_onnx.py) is synced to; bump with PLAN.md Phase 8.
         run: |
           uv pip install --system \
-            pocket-tts \
+            pocket-tts==2.1.0 \
             onnx \
             onnxruntime \
             --extra-index-url https://download.pytorch.org/whl/cpu \
