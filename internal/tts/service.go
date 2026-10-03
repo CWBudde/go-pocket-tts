@@ -63,7 +63,7 @@ func NewService(cfg config.Config) (*Service, error) {
 			return nil, err
 		}
 
-		model, err := nativemodel.LoadModelFromSafetensors(modelPath, nativemodel.DefaultConfig())
+		model, err := nativemodel.LoadModelFromSafetensors(modelPath, nativemodel.ConfigFor(cfg.Model))
 		if err != nil {
 			return nil, fmt.Errorf("init safetensors-native model: %w", err)
 		}

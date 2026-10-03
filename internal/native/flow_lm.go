@@ -15,6 +15,10 @@ type FlowLMConfig struct {
 	NumHeads  int64
 	MaxPeriod float64
 	LDim      int64
+
+	// InsertBOSBeforeVoice prepends flow_lm.bos_before_voice to audio-prompt
+	// voice embeddings (model config flow_lm.insert_bos_before_voice).
+	InsertBOSBeforeVoice bool
 }
 
 func DefaultFlowLMConfig() FlowLMConfig {
@@ -38,6 +42,8 @@ type FlowLM struct {
 	inputProj *Linear        // flow_lm.input_linear
 	outNorm   *LayerNorm     // flow_lm.out_norm
 	outEOS    *Linear        // flow_lm.out_eos
+
+	bosBeforeVoice *tensor.Tensor // [1, 1, DModel]; nil unless cfg.InsertBOSBeforeVoice
 
 	cfg FlowLMConfig
 }
@@ -89,6 +95,11 @@ func LoadFlowLM(vb *VarBuilder, cfg FlowLMConfig) (*FlowLM, error) {
 		return nil, err
 	}
 
+	bosBeforeVoice, err := loadBOSBeforeVoice(flow, cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	inputProj, err := loadLinear(flow, "input_linear", true)
 	if err != nil {
 		return nil, err
@@ -115,7 +126,34 @@ func LoadFlowLM(vb *VarBuilder, cfg FlowLMConfig) (*FlowLM, error) {
 		outNorm:     outNorm,
 		outEOS:      outEOS,
 		cfg:         cfg,
+
+		bosBeforeVoice: bosBeforeVoice,
 	}, nil
+}
+
+// VoicePrompt returns the audio-prompt voice embeddings [1, T, DModel] as the
+// FlowLM consumes them: with InsertBOSBeforeVoice, flow_lm.bos_before_voice is
+// prepended (upstream tts_model.py, before prompting the audio conditioning).
+// Precomputed voice model states already contain it.
+func (f *FlowLM) VoicePrompt(voiceEmb *tensor.Tensor) (*tensor.Tensor, error) {
+	if f == nil || !f.cfg.InsertBOSBeforeVoice {
+		return voiceEmb, nil
+	}
+
+	if f.bosBeforeVoice == nil {
+		return nil, errors.New("native: flow_lm.bos_before_voice not loaded")
+	}
+
+	return tensor.Concat([]*tensor.Tensor{f.bosBeforeVoice, voiceEmb}, 1)
+}
+
+// Offset returns the number of positions prompted into the state so far.
+func (s *FlowLMState) Offset() int64 {
+	if s == nil || s.transformer == nil || len(s.transformer.layers) == 0 {
+		return 0
+	}
+
+	return s.transformer.layers[0].offset
 }
 
 func (f *FlowLM) InitState() (*FlowLMState, error) {
@@ -381,6 +419,21 @@ func (f *FlowLM) SampleNextLatent(sequence, textEmbeddings *tensor.Tensor, decod
 	}
 
 	return next, isEOS, nil
+}
+
+// loadBOSBeforeVoice loads flow_lm.bos_before_voice [1, 1, DModel] when
+// cfg.InsertBOSBeforeVoice is set, and nil otherwise.
+func loadBOSBeforeVoice(flow *VarBuilder, cfg FlowLMConfig) (*tensor.Tensor, error) {
+	if !cfg.InsertBOSBeforeVoice {
+		return nil, nil //nolint:nilnil // no tensor is the valid result without the flag
+	}
+
+	t, err := flow.Tensor("bos_before_voice", 1, 1, cfg.DModel)
+	if err != nil {
+		return nil, fmt.Errorf("native: insert_bos_before_voice needs flow_lm.bos_before_voice: %w", err)
+	}
+
+	return t, nil
 }
 
 func makeGaussianNoise(batch, dim int64, temperature float32, rng *rand.Rand) (*tensor.Tensor, error) {

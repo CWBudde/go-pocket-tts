@@ -3,9 +3,12 @@ package tts
 import (
 	"context"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 )
@@ -144,4 +147,53 @@ func seq(start float32, n int64) []float32 {
 	}
 
 	return out
+}
+
+func TestPrepareFlowState_BOSBeforeVoice_RealGermanCheckpoint(t *testing.T) {
+	path := filepath.Join("..", "..", "models", "german", "model.safetensors")
+
+	_, err := os.Stat(path)
+	if err != nil {
+		t.Skipf("german checkpoint not available: %v", err)
+	}
+
+	mc, err := modelcfg.Lookup("german")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	voice := &VoiceEmbedding{Data: make([]float32, 2*1024), Shape: []int64{1, 2, 1024}}
+
+	for _, tc := range []struct {
+		name string
+		cfg  nativemodel.Config
+		want int64
+	}{
+		{"insert_bos_before_voice", nativemodel.ConfigFor(mc), 1 + 2 + 3},
+		{"without", nativemodel.DefaultConfig(), 2 + 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := nativemodel.LoadModelFromSafetensors(path, tc.cfg)
+			if err != nil {
+				t.Fatalf("load model: %v", err)
+			}
+			defer m.Close()
+
+			rt := &nativeSafetensorsRuntime{model: m}
+
+			text, err := m.TextEmbeddings([]int64{1, 2, 3})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			state, err := rt.prepareFlowState(text, RuntimeGenerateConfig{VoiceEmbedding: voice})
+			if err != nil {
+				t.Fatalf("prepareFlowState: %v", err)
+			}
+
+			if got := state.Offset(); got != tc.want {
+				t.Fatalf("prompted positions = %d, want %d", got, tc.want)
+			}
+		})
+	}
 }

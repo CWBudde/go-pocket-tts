@@ -149,6 +149,11 @@ func (r *nativeSafetensorsRuntime) prepareFlowState(textEmb *tensor.Tensor, cfg 
 			return nil, fmt.Errorf("generate: build voice tensor: %w", err)
 		}
 
+		voiceEmb, err = r.model.VoicePrompt(voiceEmb)
+		if err != nil {
+			return nil, fmt.Errorf("generate: voice prompt: %w", err)
+		}
+
 		textEmb, err = tensor.Concat([]*tensor.Tensor{voiceEmb, textEmb}, 1)
 		if err != nil {
 			return nil, fmt.Errorf("generate: prepend voice embedding: %w", err)
