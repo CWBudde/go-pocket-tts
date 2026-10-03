@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
 	"github.com/cwbudde/go-pocket-tts/internal/genloop"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
@@ -139,7 +140,10 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 		"duration_ms", time.Since(overallStart).Milliseconds(),
 	)
 
-	return append([]float32(nil), audio3D.RawData()...), nil
+	pcm := append([]float32(nil), audio3D.RawData()...)
+	audio.ChunkFadeIn(pcm, int(r.model.Mimi().SampleRate()))
+
+	return pcm, nil
 }
 
 func (r *nativeSafetensorsRuntime) Close() {

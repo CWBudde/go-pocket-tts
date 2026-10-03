@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cwbudde/go-pocket-tts/internal/genloop"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
@@ -265,5 +266,52 @@ func TestRunARLoop_CancelStopsWithinOneStep(t *testing.T) {
 	// At most the step that was already running when ctx was cancelled.
 	if *calls > cancelAt+1 {
 		t.Errorf("sampler calls = %d after cancelling at %d", *calls, cancelAt)
+	}
+}
+
+func TestGenerateAudio_FadesInChunkStart_RealCheckpoint(t *testing.T) {
+	modelPath, _ := requireNativeSafetensorsAssetsForUnit(t)
+
+	m, err := nativemodel.LoadModelFromSafetensors(modelPath, nativemodel.DefaultConfig())
+	if err != nil {
+		t.Fatalf("load model: %v", err)
+	}
+	defer m.Close()
+
+	// Seven zero latents with EOS on the last: 6 frames are kept.
+	sample, _ := fakeSampler(t, genloop.MinFramesBeforeEOS, nil)
+	rt := &nativeSafetensorsRuntime{model: m, sample: sample}
+
+	pcm, err := rt.GenerateAudio(context.Background(), []int64{1, 2, 3}, RuntimeGenerateConfig{MaxSteps: 20})
+	if err != nil {
+		t.Fatalf("GenerateAudio: %v", err)
+	}
+
+	frames := make([]*tensor.Tensor, genloop.MinFramesBeforeEOS)
+	for i := range frames {
+		frames[i] = mustTensor(t, make([]float32, nativeLatentDim), []int64{1, 1, nativeLatentDim})
+	}
+
+	ref, err := rt.decodeLatents(frames)
+	if err != nil {
+		t.Fatalf("decodeLatents: %v", err)
+	}
+
+	want := ref.RawData()
+	if len(pcm) != len(want) {
+		t.Fatalf("pcm has %d samples, want %d", len(pcm), len(want))
+	}
+
+	n := int(m.Mimi().SampleRate() / 200)
+
+	for i := range want {
+		w := want[i]
+		if i < n {
+			w *= float32(i) / float32(n-1)
+		}
+
+		if pcm[i] != w {
+			t.Fatalf("pcm[%d] = %v, want %v (decoded %v, fade over %d samples)", i, pcm[i], w, want[i], n)
+		}
 	}
 }

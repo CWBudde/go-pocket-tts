@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
 	"github.com/cwbudde/go-pocket-tts/internal/genloop"
 )
 
@@ -168,7 +169,8 @@ func (e *Engine) generateAudioStateless(ctx context.Context, tokens []int64, cfg
 	return e.decodeLatentsToAudio(ctx, latentFrames)
 }
 
-// decodeLatentsToAudio stacks latent frames and runs LatentToMimi + MimiDecode.
+// decodeLatentsToAudio stacks latent frames, runs LatentToMimi + MimiDecode
+// and fades the chunk in (audio.ChunkFadeIn).
 func (e *Engine) decodeLatentsToAudio(ctx context.Context, latentFrames []*Tensor) ([]float32, error) {
 	latent, err := StackLatentFrames(latentFrames)
 	if err != nil {
@@ -184,6 +186,8 @@ func (e *Engine) decodeLatentsToAudio(ctx context.Context, latentFrames []*Tenso
 	if err != nil {
 		return nil, fmt.Errorf("generate: %w", err)
 	}
+
+	audio.ChunkFadeIn(pcm, audio.ExpectedSampleRate)
 
 	return pcm, nil
 }

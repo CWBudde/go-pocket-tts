@@ -594,3 +594,28 @@ func TestGenerateAudio_NaNHiddenStateProducesSilence(t *testing.T) {
 	// Log what we got so future readers can see the failure mode.
 	t.Logf("NaN pipeline: hasNaN=%v rms=%.6f (expected corrupt/silent output)", hasNaN, rms)
 }
+
+func TestGenerateAudio_FadesInChunkStart(t *testing.T) {
+	// The fake Mimi decoder emits a constant 0.1; upstream fades the first
+	// 5 ms (24000/200 = 120 samples) of every chunk in with linspace(0, 1, 120).
+	e := fakeGenerateEngine(t, 3)
+
+	pcm, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, GenerateConfig{
+		EOSThreshold:       -4.0,
+		MaxSteps:           256,
+		SamplerDecodeSteps: 1,
+	})
+	if err != nil {
+		t.Fatalf("GenerateAudio: %v", err)
+	}
+
+	const n = 120
+	if pcm[0] != 0 || pcm[n-1] != 0.1 || pcm[n] != 0.1 || pcm[len(pcm)-1] != 0.1 {
+		t.Fatalf("samples at 0, %d, %d and the end = %v, %v, %v, %v; want 0, 0.1, 0.1, 0.1",
+			n-1, n, pcm[0], pcm[n-1], pcm[n], pcm[len(pcm)-1])
+	}
+
+	if want := float32(0.1) * (float32(60) / float32(n-1)); pcm[60] != want {
+		t.Errorf("pcm[60] = %v, want %v", pcm[60], want)
+	}
+}
