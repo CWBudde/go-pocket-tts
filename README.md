@@ -376,7 +376,14 @@ tts:
   quiet: true
 ```
 
-### Useful environment variables
+### Environment variables
+
+Every config key can be set as `POCKETTTS_<SECTION>_<KEY>`, e.g.
+`POCKETTTS_TTS_MAX_STEPS` for `tts.max_steps`. The flag-style name
+`POCKETTTS_<FLAG>` (e.g. `POCKETTTS_MAX_STEPS` for `--max-steps`) is accepted
+too; when both are set, the section-style name wins.
+
+Useful ones:
 
 - `POCKETTTS_TTS_CLI_PATH` (points to `pocket-tts`)
 - `POCKETTTS_BACKEND` (`native` or `cli`)
