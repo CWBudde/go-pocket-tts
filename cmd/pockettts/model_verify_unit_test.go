@@ -1,11 +1,13 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 )
 
 func TestVerifyNativeSafetensors_MissingModel(t *testing.T) {
@@ -15,6 +17,32 @@ func TestVerifyNativeSafetensors_MissingModel(t *testing.T) {
 	err := verifyNativeSafetensors(cfg)
 	if err == nil || !strings.Contains(err.Error(), "model file not found") {
 		t.Fatalf("expected missing model error, got: %v", err)
+	}
+}
+
+// The smoke load must use the selected model config: the drifting checkpoint
+// has no time embeddings and fails to load as the default lsd head.
+func TestVerifyNativeSafetensors_DriftingCheckpoint(t *testing.T) {
+	modelPath := filepath.Join("..", "..", "models", "english_drifting_26-09", "model.safetensors")
+
+	_, err := os.Stat(modelPath)
+	if err != nil {
+		t.Skipf("drifting checkpoint not downloaded: %v", err)
+	}
+
+	mc, err := modelcfg.Lookup("english_drifting_26-09")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Model = mc
+	cfg.Paths.ModelPath = modelPath
+	cfg.Paths.TokenizerModel = filepath.Join("..", "..", "models", "english_drifting_26-09", "tokenizer.model")
+
+	err = verifyNativeSafetensors(cfg)
+	if err != nil {
+		t.Fatalf("verifyNativeSafetensors: %v", err)
 	}
 }
 

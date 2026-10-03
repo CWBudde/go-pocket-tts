@@ -83,7 +83,7 @@ func verifyNativeSafetensors(cfg config.Config) error {
 	}
 
 	// 3. Smoke load the model.
-	m, err := nativemodel.LoadModelFromSafetensors(modelPath, nativemodel.DefaultConfig())
+	m, err := nativemodel.LoadModelFromSafetensors(modelPath, nativemodel.ConfigFor(cfg.Model))
 	if err != nil {
 		return fmt.Errorf("smoke load failed: %w", err)
 	}

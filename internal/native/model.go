@@ -29,6 +29,7 @@ func ConfigFor(mc *modelcfg.ModelConfig) Config {
 	cfg := DefaultConfig()
 	if mc != nil {
 		cfg.FlowLM.InsertBOSBeforeVoice = mc.FlowLM.InsertBOSBeforeVoice
+		cfg.FlowLM.FlowType = mc.FlowLM.Flow.Type
 	}
 
 	return cfg
