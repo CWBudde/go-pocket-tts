@@ -109,10 +109,10 @@ func tokenizeText(_ js.Value, args []js.Value) any {
 	}
 
 	engineMu.RLock()
-	tok := engine.tokenizer
+	currentEngine := engine
 	engineMu.RUnlock()
 
-	if tok == nil {
+	if currentEngine == nil || currentEngine.tokenizer == nil {
 		return errResult("tokenizer not ready; call loadModel first")
 	}
 
@@ -121,7 +121,7 @@ func tokenizeText(_ js.Value, args []js.Value) any {
 		return errResult(err.Error())
 	}
 
-	chunks, err := text.PrepareChunks(normalized, tok, maxTokensPerChunk)
+	chunks, err := text.PrepareChunks(normalized, currentEngine.tokenizer, maxTokensPerChunk, text.OptionsFor(currentEngine.model))
 	if err != nil {
 		return errResult(err.Error())
 	}
@@ -348,7 +348,7 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 		return nil, err
 	}
 
-	chunks, err := text.PrepareChunks(normalized, currentEngine.tokenizer, maxTokensPerChunk)
+	chunks, err := text.PrepareChunks(normalized, currentEngine.tokenizer, maxTokensPerChunk, text.OptionsFor(currentEngine.model))
 	if err != nil {
 		return nil, err
 	}

@@ -123,7 +123,7 @@ func (s *Service) Synthesize(input string, voicePath string) ([]float32, error) 
 // SynthesizeCtx is like Synthesize but accepts a context for cancellation and
 // deadline propagation from the HTTP handler or CLI.
 func (s *Service) SynthesizeCtx(ctx context.Context, input string, voicePath string) ([]float32, error) {
-	chunks, err := text.PrepareChunks(input, s.tokenizer, maxTokensPerChunk)
+	chunks, err := text.PrepareChunks(input, s.tokenizer, maxTokensPerChunk, text.OptionsFor(s.model))
 	if err != nil {
 		return nil, fmt.Errorf("no tokens produced from input: %w", err)
 	}
@@ -165,7 +165,7 @@ func (s *Service) SynthesizeCtx(ctx context.Context, input string, voicePath str
 func (s *Service) SynthesizeStream(ctx context.Context, input string, voicePath string, out chan<- PCMChunk) error {
 	defer close(out)
 
-	chunks, err := text.PrepareChunks(input, s.tokenizer, maxTokensPerChunk)
+	chunks, err := text.PrepareChunks(input, s.tokenizer, maxTokensPerChunk, text.OptionsFor(s.model))
 	if err != nil {
 		return fmt.Errorf("no tokens produced from input: %w", err)
 	}

@@ -643,6 +643,54 @@ func requireNativeSafetensorsAssetsForUnit(t testing.TB) (modelPath, tokPath str
 	return modelPath, tokPath
 }
 
+// recordingTokenizer records the texts it encodes.
+type recordingTokenizer struct{ texts *[]string }
+
+func (r recordingTokenizer) Encode(text string) ([]int64, error) {
+	*r.texts = append(*r.texts, text)
+
+	return wordCountTokenizer{}.Encode(text)
+}
+
+func TestSynthesize_TextOptionsFromModelConfig(t *testing.T) {
+	german := &modelcfg.ModelConfig{
+		RemoveSemicolons:          true,
+		AppendTerminalPunctuation: true,
+		CapitalizeFirstLetter:     true,
+		ReplaceCharacters:         map[string]string{"„": "", "“": ""},
+	}
+
+	for _, tc := range []struct {
+		name  string
+		model *modelcfg.ModelConfig
+		in    string
+		want  string
+	}{
+		{"no config: english_2026-01 padding", nil, "hello world", "        Hello world."},
+		{"german config", german, "„hallo“; welt", "Hallo, welt."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var texts []string
+
+			svc := &Service{
+				runtime:   &captureRuntime{},
+				tokenizer: recordingTokenizer{texts: &texts},
+				model:     tc.model,
+			}
+
+			_, err := svc.Synthesize(tc.in, "")
+			if err != nil {
+				t.Fatalf("Synthesize: %v", err)
+			}
+
+			// The last encode is the prepared chunk.
+			if len(texts) == 0 || texts[len(texts)-1] != tc.want {
+				t.Errorf("encoded texts = %q; want the last to be %q", texts, tc.want)
+			}
+		})
+	}
+}
+
 func TestSynthesize_FramesAfterEOS(t *testing.T) {
 	two := 2
 
