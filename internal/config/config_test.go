@@ -425,8 +425,8 @@ func TestLoad_EnvOverride_TokenizerModel(t *testing.T) {
 
 func TestDefaultConfig_GenerationFields(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.TTS.Temperature != 0.7 {
-		t.Errorf("TTS.Temperature = %v; want 0.7", cfg.TTS.Temperature)
+	if cfg.TTS.Temperature != 0.3 {
+		t.Errorf("TTS.Temperature = %v; want 0.3", cfg.TTS.Temperature)
 	}
 
 	if cfg.TTS.EOSThreshold != -4.0 {
@@ -451,7 +451,7 @@ func TestRegisterFlags_GenerationFlags(t *testing.T) {
 		flag string
 		want string
 	}{
-		{"temperature", "0.7"},
+		{"temperature", "0.3"},
 		{"eos-threshold", "-4"},
 		{"max-steps", "256"},
 		{"sampler-decode-steps", "1"},

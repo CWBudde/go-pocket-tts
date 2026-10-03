@@ -370,7 +370,10 @@ tokenizer and voice manifest paths follow the language:
 `voices/manifest.json`. `--model-config <file>` loads a custom upstream model
 config instead; like upstream's `--config` it cannot be combined with
 `--language`, and it needs explicit `--paths-model-path` and
-`--paths-tokenizer-model`.
+`--paths-tokenizer-model`. `synth`, `bench`, `doctor` and `serve` read voice IDs
+from the voice manifest (`--paths-voice-manifest`). Unless `--temperature` is
+set, generation uses the model config's `default_temperature` (0.3 for every
+shipped config).
 
 `pockettts synth --text -` explicitly reads text from stdin. Omitting `--text`
 continues to read stdin as well.

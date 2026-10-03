@@ -118,8 +118,11 @@ constants and paths are hard-coded around `tts_b6369a24`.
       `--model-config <file>` uses `modelcfg.LoadCustom` (default voice `alba`, like upstream `--config`),
       rejects an explicit `--language` and requires explicit model and tokenizer paths. `paths.voice_manifest`
       has no consumers yet; they move to it with the hard-coded `voices/manifest.json` item below.
-- [ ] Change the default `Temperature` from 0.7 to "use `default_temperature` from the model config" (0.3). Keep
+- [x] Change the default `Temperature` from 0.7 to "use `default_temperature` from the model config" (0.3). Keep
       the explicit `--temperature` override.
+      (2026-10-03) — `config.Load` sets `tts.temperature` from `Config.Model.DefaultTemperature` unless it is
+      set explicitly (flag, either env style or file), also for `--model-config`. `DefaultConfig()` (used by
+      the wasm build) is 0.3, and a test pins it to `english_2026-01`. The web slider default is 0.3 too.
 - [x] Rename `LSDDecodeSteps` → `SamplerDecodeSteps` (keep the old flag as a hidden deprecated alias, like upstream)
       (2026-10-03) — field renamed in `config`, `tts`, `onnx`, `bench/stageprof` and the wasm build; new
       `--sampler-decode-steps` / `tts.sampler_decode_steps`; `--lsd-steps` is hidden + deprecated and overrides
@@ -150,8 +153,12 @@ constants and paths are hard-coded around `tts_b6369a24`.
       (`legacyVariants`). `voice_encode` no longer guesses `tts_b6369a24.safetensors`; the CLI passes
       `paths.model_path`. Remaining `b6369a24` uses are the `english_2026-01` flat model path, the export
       script's legacy alias, the web asset path (Phase 6 language picker) and test fixtures.
-- [ ] Remove the remaining hard-coded `voices/manifest.json`: `cmd/pockettts/synth.go`, `cmd/pockettts/doctor.go`,
+- [x] Remove the remaining hard-coded `voices/manifest.json`: `cmd/pockettts/synth.go`, `cmd/pockettts/doctor.go`,
       `internal/server/server.go`, `web/main.js`
+      (2026-10-03) — `synth`, `bench`, `doctor` and `serve` (`runtimeDeps`) read `cfg.Paths.VoiceManifest`, so
+      `--paths-voice-manifest` and `--language` now pick the voices. `web/main.js` only moves the path into a
+      `voiceManifestAssetPath` const next to the model/tokenizer consts; a language-aware web layout belongs to
+      the Phase 6 "Web/WASM: language picker" item.
 
 ## Phase 2 — Checkpoint / Numerics Parity
 
