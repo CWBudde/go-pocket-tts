@@ -207,7 +207,7 @@ func runOnce(ctx context.Context, rt tts.Runtime, tok textpkg.Tokenizer, cfg con
 
 	pprof.Do(ctx, pprof.Labels("stage", "prepare"), func(context.Context) {
 		start := time.Now()
-		chunks, prepErr = textpkg.PrepareChunks(input, tok, maxTokensPerChunk)
+		chunks, prepErr = textpkg.PrepareChunks(input, tok, maxTokensPerChunk, textpkg.OptionsFor(cfg.Model))
 		out.prepare = time.Since(start)
 	})
 

@@ -11,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -271,6 +273,13 @@ func (c *ModelConfig) Validate() error {
 	if !slices.Contains([]string{TokenizerSentencePiece, TokenizerTokenizers}, c.FlowLM.LookupTable.Tokenizer) {
 		errs = append(errs, fmt.Errorf("flow_lm.lookup_table.tokenizer %q: want %q or %q",
 			c.FlowLM.LookupTable.Tokenizer, TokenizerSentencePiece, TokenizerTokenizers))
+	}
+
+	// Upstream str.maketrans only accepts single-character keys.
+	for _, from := range slices.Sorted(maps.Keys(c.ReplaceCharacters)) {
+		if utf8.RuneCountInString(from) != 1 {
+			errs = append(errs, fmt.Errorf("replace_characters key %q: want exactly one character", from))
+		}
 	}
 
 	return errors.Join(errs...)

@@ -239,6 +239,20 @@ func TestParse_RejectsInvalidTokenizer(t *testing.T) {
 	}
 }
 
+// Upstream builds the table with str.maketrans, which raises on keys that are
+// not a single character.
+func TestParse_RejectsMultiCharacterReplaceCharactersKey(t *testing.T) {
+	data := strings.Replace(readTestdata(t, "german"), "  \"(\": \"\"\n", "  \"((\": \"\"\n", 1)
+	if data == readTestdata(t, "german") {
+		t.Fatal("testdata/german.yaml no longer has the \"(\" replace_characters entry")
+	}
+
+	_, err := Parse([]byte(data))
+	if err == nil || !strings.Contains(err.Error(), "replace_characters") {
+		t.Fatalf("Parse() error = %v; want an error naming replace_characters", err)
+	}
+}
+
 func TestParse_ExplicitValuesOverrideDefaults(t *testing.T) {
 	data := readTestdata(t, "german") + "\ndefault_temperature: 0.7\ncapitalize_first_letter: false\nmodel_recommended_frames_after_eos: 3\n"
 

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
 )
 
 type parityTokenizer struct{}
@@ -16,6 +18,18 @@ func (p parityTokenizer) Encode(text string) ([]int64, error) {
 	out := make([]int64, len(words))
 	for i := range words {
 		out[i] = int64(i + 1)
+	}
+
+	return out, nil
+}
+
+// EncodePieces returns one "▁"+word piece per word with the ids of Encode.
+func (p parityTokenizer) EncodePieces(text string) ([]tokenizer.Piece, error) {
+	words := strings.Fields(text)
+
+	out := make([]tokenizer.Piece, len(words))
+	for i, w := range words {
+		out[i] = tokenizer.Piece{ID: int64(i + 1), Text: "▁" + w}
 	}
 
 	return out, nil

@@ -250,21 +250,58 @@ All in `internal/tts/runtime_native_safetensors.go`, mirrored in `internal/onnx/
 `internal/text/prepare.go` + `internal/text/chunk.go`; callers are `internal/tts/service.go`, `internal/tts/parity.go` and
 `internal/bench/stageprof/stageprof.go`.
 
-- [ ] Introduce `text.Options` built from `ModelConfig`:
-  - [ ] `PadShortInputs`: today it's always on; it should only be on for `english_2026-01` (8-space pad for fewer than 5 words)
-  - [ ] `CapitalizeFirst` (#307): today it's always on
-  - [ ] `RemoveSemicolons`: `;` → `,` (french, german)
-  - [ ] `ReplaceCharacters` (#325): translate/delete, collapse whitespace, then
+- [x] Introduce `text.Options` built from `ModelConfig`:
+      (2026-10-03) — `text.Options` / `text.OptionsFor(*modelcfg.ModelConfig)` (nil → `DefaultOptions()` =
+      `english_2026-01`), passed to `PrepareText`/`PrepareChunks` by `tts.Service`, parity, stageprof and WASM.
+      `PrepareText` follows upstream `prepare_text_prompt` step by step and returns the word count for the
+      frames_after_eos guess (after replacement, before the terminal fix-up). `PrepareChunks` prepares the whole
+      text once before splitting, like `split_into_best_sentences`. `TestOptionsFor`,
+      `TestSynthesize_TextOptionsFromModelConfig`.
+  - [x] `PadShortInputs`: today it's always on; it should only be on for `english_2026-01` (8-space pad for fewer than 5 words)
+        (2026-10-03) — `TestPrepareText_PadShortInputs`; german has it off (`TestOptionsFor`).
+  - [x] `CapitalizeFirst` (#307): today it's always on
+        (2026-10-03) — `TestPrepareText_CapitalizeFirst` (upstream `salAm` case).
+  - [x] `RemoveSemicolons`: `;` → `,` (french, german)
+        (2026-10-03) — `TestPrepareText_RemoveSemicolons`.
+  - [x] `ReplaceCharacters` (#325): translate/delete, collapse whitespace, then
         `([.!?…])\s*[,;:]` → `$1`. If the text ends up empty, return an error (upstream raises `ValueError`).
         German/French/… set: delete `" “ ” „ « » ( ) [ ]`, map `’ ‘` → `'`. Spanish also deletes `¡ ¿`. French also maps `:` → `,`.
-  - [ ] `AppendTerminalPunctuation` (#296, #288): terminal set `.!?…`. A trailing weak mark `, ; : - – —` is
+        (2026-10-03) — empty result → `text.ErrEmptyText`; `modelcfg.Parse` rejects keys that are not one character
+        (like `str.maketrans`). `TestPrepareText_ReplaceCharacters` (upstream cases),
+        `TestPrepareChunks_ReplaceCharactersBeforeSplitting`, `TestParse_RejectsMultiCharacterReplaceCharactersKey`.
+  - [x] `AppendTerminalPunctuation` (#296, #288): terminal set `.!?…`. A trailing weak mark `, ; : - – —` is
         replaced by `.`. Closers `" ' ” ’ ) ] »` stay after the inserted period. Port the 14-case table from
         upstream `tests/test_split_sentences.py`.
-- [ ] **Decimal points do not split sentences (#217):** no boundary when the prefix ends with digit + `.` and
+        (2026-10-03) — `ensureTerminalPunctuation`; `TestPrepareText_TerminalPunctuation` (the 14 cases),
+        `TestPrepareText_TerminalPunctuationDisabled`.
+- [ ] Whitespace: upstream does a single `"  "` → `" "` pass (three spaces stay two), Go collapses every run.
+      Only matters for input with 3+ spaces in a row; check together with the Phase 5 tokenizer work.
+      (Found 2026-10-03.)
+- [ ] Capitalization uses Go `unicode.ToUpper` on the first rune; upstream uses Python `str.upper()`, which can
+      expand (`ß` → `SS`). No shipped language starts a sentence that way; note only. (Found 2026-10-03.)
+- [x] **Decimal points do not split sentences (#217):** no boundary when the prefix ends with digit + `.` and
       the suffix starts with a digit (`Version 2.0 is out. Pi is 3.14.` → 1 chunk).
-- [ ] Re-check chunking against upstream `text_chunking.py`: upstream splits on token boundaries
+      (2026-10-03) — `isDecimalPeriodBoundary` in the ported splitter, including upstream's quirk that
+      `Version 2. 3 apples.` stays one sentence. `TestSplitIntoBestSentences_UpstreamGolden` cases
+      `decimals_not_split`, `multiple_decimals`, `decimal_then_boundary`, `period_after_decimal`, `decimal_quirk`
+      (all five fail with the decimal check switched off). Smoke run (`alba`): "The temperature is 98.6 degrees.
+      Version 2.0 is out." encodes to 23 tokens instead of 25 (`98. 6`, `2. 0` before).
+- [x] Re-check chunking against upstream `text_chunking.py`: upstream splits on token boundaries
       (`.!…?`, then `,;:` sub-splits for long sentences), while Go splits on characters. Decide whether to port the
       token-based splitter exactly or document the difference. Prefer porting it for fixture parity.
+      (2026-10-03) — ported 1:1 to `internal/text/split.go` (`findBoundaryIndices`, `segmentsFromBoundaries`,
+      `,;:` sub-split, greedy grouping by summed segment token counts, oversize warning); `PrepareChunks` prepares
+      each chunk again like `generate_audio_stream`. Instead of `decode(ids)` the tokenizer exposes
+      `EncodePieces` (id + source surface) and `spanText` emulates sentencepiece decode, so unknown characters
+      survive until byte fallback exists. `testdata/split_upstream.json`: 17 cases (upstream
+      `test_split_sentences.py` texts plus extras) generated by upstream Python with sentencepiece on
+      `models/tokenizer.model`; `TestSplitIntoBestSentences_UpstreamGolden` matches all of them (skips without the
+      model). Model-free tests in `split_test.go` (`texttest.Tokenizer`). `ChunkBySentence` (CLI `--chunk`) still
+      splits on characters.
+- [ ] Splitter goldens only cover ASCII-ish English. Add `…`, `ﬁ`/`½` and German cases once Phase 5 removes NFKC
+      and adds byte fallback: today NFKC turns `…` into `...`, which Go treats as sentence-end tokens while upstream
+      sees byte pieces, and German digits are `<unk>`. Python `str.isdigit()` also accepts `²` etc., Go
+      `unicode.IsDigit` does not (decimal rule only). (Found 2026-10-03.)
 - [ ] German numbers: upstream does no number expansion, and the German vocab has no digits, so they become byte
       tokens. Keep parity first, then consider optional German number/abbreviation normalisation as a
       Go-only extra behind a flag.
@@ -281,6 +318,10 @@ All in `internal/tts/runtime_native_safetensors.go`, mirrored in `internal/onnx/
       `test_tokenizer_backends.py`).
 - [ ] Probably replace the third-party encoder with our own Unigram Viterbi (vocab + scores + byte fallback,
       ~200 LOC). That gives full control and drops the NFKC dependency.
+      (2026-10-03) — partial: native now uses the in-repo trie + Viterbi (`sentencepiece_trie.go`, formerly
+      wasm-only), because the library loses the surface of consecutive unknown runes in `Tokenize`; ids match the
+      library on ~944 lines × 4 shipped tokenizers. Still NFKC, still no byte fallback. Any new encoder must keep
+      `EncodePieces` (byte-fallback pieces need surfaces that concatenate to the original bytes).
 - [ ] **`tokenizer.json` loader (#317).** Parse `model.vocab` (`[piece, score]` pairs), `unk_id` and
       `byte_fallback`, and reuse the same Viterbi. Pick the loader by file extension in `internal/tts/service.go` and
       `cmd/pockettts-wasm/main_wasm.go`. This is needed for models that may be JSON-only (dutch, re-tokenized

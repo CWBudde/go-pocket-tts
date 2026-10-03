@@ -3,21 +3,22 @@ package text
 import (
 	"strings"
 	"testing"
+
+	"github.com/cwbudde/go-pocket-tts/internal/text/texttest"
+	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
 )
 
-// stubTokenizer is a minimal Tokenizer for testing that counts words as tokens.
+// stubTokenizer is a model-free Tokenizer for testing: one token per word,
+// with punctuation split into tokens of its own like SentencePiece does, so
+// the token-based sentence splitter finds the sentence ends.
 type stubTokenizer struct{}
 
 func (s *stubTokenizer) Encode(text string) ([]int64, error) {
-	// Split naively on spaces; each non-empty word = 1 token.
-	words := splitWords(text)
+	return texttest.Tokenizer{}.Encode(text)
+}
 
-	ids := make([]int64, len(words))
-	for i := range ids {
-		ids[i] = int64(i + 1)
-	}
-
-	return ids, nil
+func (s *stubTokenizer) EncodePieces(text string) ([]tokenizer.Piece, error) {
+	return texttest.Tokenizer{}.EncodePieces(text)
 }
 
 // ---------------------------------------------------------------------------
@@ -26,7 +27,7 @@ func (s *stubTokenizer) Encode(text string) ([]int64, error) {
 
 func TestPrepareText_CapitalizesFirstLetter(t *testing.T) {
 	// "hello world." has 2 words → padded with 8 spaces; first non-space should be 'H'.
-	got := PrepareText("hello world.")
+	got := mustPrepare(t, "hello world.", DefaultOptions())
 
 	trimmed := strings.TrimLeft(got, " ")
 	if len(trimmed) == 0 || trimmed[0] != 'H' {
@@ -35,7 +36,7 @@ func TestPrepareText_CapitalizesFirstLetter(t *testing.T) {
 }
 
 func TestPrepareText_AlreadyCapitalized(t *testing.T) {
-	got := PrepareText("Hello world.")
+	got := mustPrepare(t, "Hello world.", DefaultOptions())
 
 	trimmed := strings.TrimLeft(got, " ")
 	if len(trimmed) == 0 || trimmed[0] != 'H' {
@@ -44,7 +45,7 @@ func TestPrepareText_AlreadyCapitalized(t *testing.T) {
 }
 
 func TestPrepareText_AddsPeriodWhenMissing(t *testing.T) {
-	got := PrepareText("hello world")
+	got := mustPrepare(t, "hello world", DefaultOptions())
 	if len(got) == 0 || got[len(got)-1] != '.' {
 		t.Errorf("PrepareText(%q) = %q, want trailing period", "hello world", got)
 	}
@@ -60,7 +61,7 @@ func TestPrepareText_DoesNotAddPeriodWhenPunctPresent(t *testing.T) {
 		{"Hello world?", '?'},
 	}
 	for _, c := range cases {
-		got := PrepareText(c.input)
+		got := mustPrepare(t, c.input, DefaultOptions())
 		if got[len(got)-1] != c.lastPunct {
 			t.Errorf("PrepareText(%q) = %q, last char = %q, want %q", c.input, got, got[len(got)-1], c.lastPunct)
 		}
@@ -69,7 +70,7 @@ func TestPrepareText_DoesNotAddPeriodWhenPunctPresent(t *testing.T) {
 
 func TestPrepareText_PadsShortInput(t *testing.T) {
 	// "hi" is 1 word (< 5) → padded with 8 leading spaces.
-	got := PrepareText("hi")
+	got := mustPrepare(t, "hi", DefaultOptions())
 	if len(got) < 8 || got[:8] != "        " {
 		t.Errorf("PrepareText(%q) = %q, want 8 leading spaces for short input", "hi", got)
 	}
@@ -77,14 +78,14 @@ func TestPrepareText_PadsShortInput(t *testing.T) {
 
 func TestPrepareText_DoesNotPadFiveWordInput(t *testing.T) {
 	// Exactly 5 words → no leading space padding.
-	got := PrepareText("one two three four five")
+	got := mustPrepare(t, "one two three four five", DefaultOptions())
 	if len(got) > 0 && got[0] == ' ' {
 		t.Errorf("PrepareText(%q) = %q, should not start with space for 5-word input", "one two three four five", got)
 	}
 }
 
 func TestPrepareText_NormalizesNewlines(t *testing.T) {
-	got := PrepareText("hello\nworld")
+	got := mustPrepare(t, "hello\nworld", DefaultOptions())
 	if strings.ContainsRune(got, '\n') {
 		t.Errorf("PrepareText(%q) = %q, newlines should be replaced with spaces", "hello\nworld", got)
 	}
@@ -93,7 +94,7 @@ func TestPrepareText_NormalizesNewlines(t *testing.T) {
 func TestPrepareText_CollapsesDoubleSpaces(t *testing.T) {
 	// After collapsing "hello  world" → "hello world", then PrepareText processes it.
 	// The leading padding (8 spaces) is fine; no double-space should appear *within* the content.
-	got := PrepareText("hello  world")
+	got := mustPrepare(t, "hello  world", DefaultOptions())
 	// Strip the leading 8-space pad (if present) before checking.
 	inner := strings.TrimLeft(got, " ")
 	if strings.Contains(inner, "  ") {
@@ -103,7 +104,7 @@ func TestPrepareText_CollapsesDoubleSpaces(t *testing.T) {
 
 func TestPrepareText_ExactlyFourWords_IsPadded(t *testing.T) {
 	// 4 words < 5 → padding applied.
-	got := PrepareText("one two three four.")
+	got := mustPrepare(t, "one two three four.", DefaultOptions())
 	if len(got) < 8 || got[:8] != "        " {
 		t.Errorf("PrepareText(%q) = %q, want 8 leading spaces for 4-word input", "one two three four.", got)
 	}
@@ -176,7 +177,7 @@ func TestChunkMetadata_FramesAfterEOS_LongInput(t *testing.T) {
 func TestPrepareChunks_SingleChunkShortText(t *testing.T) {
 	tok := &stubTokenizer{}
 
-	chunks, err := PrepareChunks("hello world.", tok, 50)
+	chunks, err := PrepareChunks("hello world.", tok, 50, DefaultOptions())
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
@@ -217,7 +218,7 @@ func TestPrepareChunks_P1UpstreamCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			chunks, err := PrepareChunks(tt.input, tok, 50)
+			chunks, err := PrepareChunks(tt.input, tok, 50, DefaultOptions())
 			if err != nil {
 				t.Fatalf("PrepareChunks: %v", err)
 			}
@@ -240,7 +241,7 @@ func TestPrepareChunks_P1UpstreamCases(t *testing.T) {
 func TestPrepareChunks_MetadataPopulated(t *testing.T) {
 	tok := &stubTokenizer{}
 
-	chunks, err := PrepareChunks("hello world.", tok, 50)
+	chunks, err := PrepareChunks("hello world.", tok, 50, DefaultOptions())
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
@@ -262,7 +263,7 @@ func TestPrepareChunks_MetadataPopulated(t *testing.T) {
 func TestPrepareChunks_ReturnsTokenIDs(t *testing.T) {
 	tok := &stubTokenizer{}
 
-	chunks, err := PrepareChunks("hello world.", tok, 50)
+	chunks, err := PrepareChunks("hello world.", tok, 50, DefaultOptions())
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
@@ -278,7 +279,7 @@ func TestPrepareChunks_SplitsLongText(t *testing.T) {
 	// they get padding words. Force split with maxTokens=3.
 	tok := &stubTokenizer{}
 
-	chunks, err := PrepareChunks("First sentence. Second sentence.", tok, 3)
+	chunks, err := PrepareChunks("First sentence. Second sentence.", tok, 3, DefaultOptions())
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
@@ -291,7 +292,7 @@ func TestPrepareChunks_SplitsLongText(t *testing.T) {
 func TestPrepareChunks_EmptyTextError(t *testing.T) {
 	tok := &stubTokenizer{}
 
-	_, err := PrepareChunks("", tok, 50)
+	_, err := PrepareChunks("", tok, 50, DefaultOptions())
 	if err == nil {
 		t.Error("PrepareChunks(\"\") should return error")
 	}
@@ -300,7 +301,7 @@ func TestPrepareChunks_EmptyTextError(t *testing.T) {
 func TestPrepareChunks_WhitespaceOnlyError(t *testing.T) {
 	tok := &stubTokenizer{}
 
-	_, err := PrepareChunks("   \n\t  ", tok, 50)
+	_, err := PrepareChunks("   \n\t  ", tok, 50, DefaultOptions())
 	if err == nil {
 		t.Error("PrepareChunks(whitespace) should return error")
 	}
@@ -313,7 +314,7 @@ func TestPrepareChunks_WhitespaceOnlyError(t *testing.T) {
 func TestPrepareText_CollapseTripleSpaces(t *testing.T) {
 	// Go collapses all runs of multiple spaces (unlike Python which only does
 	// a single replace("  ", " ") pass). Verify Go fully collapses ≥ 3 spaces.
-	got := PrepareText("hello   world   test")
+	got := mustPrepare(t, "hello   world   test", DefaultOptions())
 
 	inner := strings.TrimLeft(got, " ")
 	if strings.Contains(inner, "  ") {
@@ -322,7 +323,7 @@ func TestPrepareText_CollapseTripleSpaces(t *testing.T) {
 }
 
 func TestPrepareText_MixedNewlinesAndSpaces(t *testing.T) {
-	got := PrepareText("hello\r\nworld\n\ntest")
+	got := mustPrepare(t, "hello\r\nworld\n\ntest", DefaultOptions())
 
 	inner := strings.TrimLeft(got, " ")
 	if strings.ContainsAny(inner, "\r\n") {
@@ -336,7 +337,7 @@ func TestPrepareText_MixedNewlinesAndSpaces(t *testing.T) {
 
 func TestPrepareText_DigitFirstChar(t *testing.T) {
 	// First char is a digit — ToUpper is a no-op, should not crash.
-	got := PrepareText("3 cats")
+	got := mustPrepare(t, "3 cats", DefaultOptions())
 
 	inner := strings.TrimLeft(got, " ")
 	if inner[0] != '3' {
@@ -346,7 +347,7 @@ func TestPrepareText_DigitFirstChar(t *testing.T) {
 
 func TestPrepareText_PunctuationFirstChar(t *testing.T) {
 	// Non-letter, non-digit first char.
-	got := PrepareText("...hello world test one two")
+	got := mustPrepare(t, "...hello world test one two", DefaultOptions())
 	if got[0] == ' ' {
 		t.Errorf("PrepareText starting with ... should not be padded (5+ words)")
 	}
@@ -436,7 +437,7 @@ func TestPrepareChunks_NumWordsFromRawText(t *testing.T) {
 	// PrepareText output. Verify that short-text padding does not inflate NumWords.
 	tok := &stubTokenizer{}
 
-	chunks, err := PrepareChunks("Hi.", tok, 50)
+	chunks, err := PrepareChunks("Hi.", tok, 50, DefaultOptions())
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
@@ -454,7 +455,7 @@ func TestPrepareChunks_NumWordsFromRawText(t *testing.T) {
 func TestPrepareChunks_NumWordsMultiSentence(t *testing.T) {
 	tok := &stubTokenizer{}
 
-	chunks, err := PrepareChunks("First sentence. Second sentence.", tok, 50)
+	chunks, err := PrepareChunks("First sentence. Second sentence.", tok, 50, DefaultOptions())
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
@@ -474,7 +475,7 @@ func TestPrepareChunks_ChunkTextIsPrepared(t *testing.T) {
 	// raw sentences, not raw text.
 	tok := &stubTokenizer{}
 
-	chunks, err := PrepareChunks("hello world", tok, 50)
+	chunks, err := PrepareChunks("hello world", tok, 50, DefaultOptions())
 	if err != nil {
 		t.Fatalf("PrepareChunks error: %v", err)
 	}
@@ -499,7 +500,7 @@ func TestPrepareChunks_FramesAfterEOS_MatchesWordCount(t *testing.T) {
 	tok := &stubTokenizer{}
 
 	// Short text: "Hi." → 1 word ≤ 4 → FramesAfterEOS = 5
-	chunks, err := PrepareChunks("Hi.", tok, 50)
+	chunks, err := PrepareChunks("Hi.", tok, 50, DefaultOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -509,7 +510,7 @@ func TestPrepareChunks_FramesAfterEOS_MatchesWordCount(t *testing.T) {
 	}
 
 	// Long text: "One two three four five." → 5 words > 4 → FramesAfterEOS = 3
-	chunks, err = PrepareChunks("One two three four five.", tok, 50)
+	chunks, err = PrepareChunks("One two three four five.", tok, 50, DefaultOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -519,7 +520,7 @@ func TestPrepareChunks_FramesAfterEOS_MatchesWordCount(t *testing.T) {
 	}
 
 	// Exactly 4 words: "One two three four." → 4 words ≤ 4 → FramesAfterEOS = 5
-	chunks, err = PrepareChunks("One two three four.", tok, 50)
+	chunks, err = PrepareChunks("One two three four.", tok, 50, DefaultOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,7 +535,7 @@ func TestPrepareChunks_TokenCountMatchesPreparedText(t *testing.T) {
 	// final prepared chunk Text (not some intermediate representation).
 	tok := &stubTokenizer{}
 
-	chunks, err := PrepareChunks("Hello world.", tok, 50)
+	chunks, err := PrepareChunks("Hello world.", tok, 50, DefaultOptions())
 	if err != nil {
 		t.Fatal(err)
 	}

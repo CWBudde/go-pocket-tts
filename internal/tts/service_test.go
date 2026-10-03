@@ -14,6 +14,7 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/text/texttest"
 	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
 )
 
@@ -230,17 +231,26 @@ func (f fakeTokenizer) Encode(_ string) ([]int64, error) {
 	return []int64{1, 2, 3}, nil
 }
 
+// EncodePieces returns the ids of Encode; the first piece carries the whole text.
+func (f fakeTokenizer) EncodePieces(text string) ([]tokenizer.Piece, error) {
+	return []tokenizer.Piece{
+		{ID: 1, Text: "▁" + strings.ReplaceAll(text, " ", "▁")},
+		{ID: 2},
+		{ID: 3},
+	}, nil
+}
+
+// wordCountTokenizer emits one token per word, with punctuation split into
+// tokens of its own like SentencePiece does, so the token-based sentence
+// splitter finds the sentence ends.
 type wordCountTokenizer struct{}
 
 func (w wordCountTokenizer) Encode(text string) ([]int64, error) {
-	words := strings.Fields(text)
+	return texttest.Tokenizer{}.Encode(text)
+}
 
-	out := make([]int64, len(words))
-	for i := range words {
-		out[i] = int64(i + 1)
-	}
-
-	return out, nil
+func (w wordCountTokenizer) EncodePieces(text string) ([]tokenizer.Piece, error) {
+	return texttest.Tokenizer{}.EncodePieces(text)
 }
 
 type captureRuntime struct {
@@ -641,6 +651,58 @@ func requireNativeSafetensorsAssetsForUnit(t testing.TB) (modelPath, tokPath str
 	}
 
 	return modelPath, tokPath
+}
+
+// recordingTokenizer records the texts it encodes.
+type recordingTokenizer struct{ texts *[]string }
+
+func (r recordingTokenizer) Encode(text string) ([]int64, error) {
+	*r.texts = append(*r.texts, text)
+
+	return wordCountTokenizer{}.Encode(text)
+}
+
+func (r recordingTokenizer) EncodePieces(text string) ([]tokenizer.Piece, error) {
+	return wordCountTokenizer{}.EncodePieces(text)
+}
+
+func TestSynthesize_TextOptionsFromModelConfig(t *testing.T) {
+	german := &modelcfg.ModelConfig{
+		RemoveSemicolons:          true,
+		AppendTerminalPunctuation: true,
+		CapitalizeFirstLetter:     true,
+		ReplaceCharacters:         map[string]string{"„": "", "“": ""},
+	}
+
+	for _, tc := range []struct {
+		name  string
+		model *modelcfg.ModelConfig
+		in    string
+		want  string
+	}{
+		{"no config: english_2026-01 padding", nil, "hello world", "        Hello world."},
+		{"german config", german, "„hallo“; welt", "Hallo, welt."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var texts []string
+
+			svc := &Service{
+				runtime:   &captureRuntime{},
+				tokenizer: recordingTokenizer{texts: &texts},
+				model:     tc.model,
+			}
+
+			_, err := svc.Synthesize(tc.in, "")
+			if err != nil {
+				t.Fatalf("Synthesize: %v", err)
+			}
+
+			// The last encode is the prepared chunk.
+			if len(texts) == 0 || texts[len(texts)-1] != tc.want {
+				t.Errorf("encoded texts = %q; want the last to be %q", texts, tc.want)
+			}
+		})
+	}
 }
 
 func TestSynthesize_FramesAfterEOS(t *testing.T) {

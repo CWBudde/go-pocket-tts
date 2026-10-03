@@ -95,7 +95,7 @@ func RunParityCase(factory ServiceFactory, backends []string, input, voicePath s
 			continue
 		}
 
-		chunks, err := textpkg.PrepareChunks(input, svc.tokenizer, maxTokensPerChunk)
+		chunks, err := textpkg.PrepareChunks(input, svc.tokenizer, maxTokensPerChunk, textpkg.OptionsFor(svc.model))
 		if err != nil {
 			svc.Close()
 

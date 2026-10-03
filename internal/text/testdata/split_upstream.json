@@ -1,0 +1,145 @@
+{
+  "upstream": "kyutai-labs/pocket-tts@41cbc84 pocket_tts/models/text_chunking.py",
+  "tokenizer_sha256": "d461765ae179566678c93091c5fa6f2984c31bbe990bf1aa62d92c64d91bc3f6",
+  "options": "pad_with_spaces_for_short_inputs=False, remove_semicolons=False, other defaults",
+  "cases": [
+    {
+      "name": "short_text_single_chunk",
+      "text": "Hello world.",
+      "max_tokens": 50,
+      "chunks": ["Hello world."]
+    },
+    {
+      "name": "multiple_sentences_split",
+      "text": "First sentence here. Second sentence here. Third sentence here. Fourth sentence here.",
+      "max_tokens": 10,
+      "chunks": [
+        "First sentence here.",
+        "Second sentence here.",
+        "Third sentence here.",
+        "Fourth sentence here."
+      ]
+    },
+    {
+      "name": "long_sentence_with_commas",
+      "text": "It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness, it was the epoch of belief, it was the epoch of incredulity, it was the season of Light, it was the season of Darkness, it was the spring of hope, it was the winter of despair",
+      "max_tokens": 50,
+      "chunks": [
+        "It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness, it was the epoch of belief,",
+        "it was the epoch of incredulity, it was the season of Light, it was the season of Darkness, it was the spring of hope, it was the winter of despair."
+      ]
+    },
+    {
+      "name": "long_sentence_with_commas_max20",
+      "text": "It was the best of times, it was the worst of times, it was the age of wisdom, it was the age of foolishness, it was the epoch of belief, it was the epoch of incredulity",
+      "max_tokens": 20,
+      "chunks": [
+        "It was the best of times, it was the worst of times,",
+        "it was the age of wisdom, it was the age of foolishness,",
+        "it was the epoch of belief,",
+        "it was the epoch of incredulity."
+      ]
+    },
+    {
+      "name": "mixed_sentences_and_commas",
+      "text": "Short sentence. This is a very long sentence with many clauses, separated by commas, that goes on and on, and on some more, without any periods at all, until it finally reaches a period. Another short one.",
+      "max_tokens": 20,
+      "chunks": [
+        "Short sentence. This is a very long sentence with many clauses,",
+        "separated by commas, that goes on and on, and on some more,",
+        "without any periods at all, until it finally reaches a period.",
+        "Another short one."
+      ]
+    },
+    {
+      "name": "no_commas_no_periods",
+      "text": "one two three four five six seven eight nine ten eleven twelve",
+      "max_tokens": 5,
+      "chunks": [
+        "One two three four five six seven eight nine ten eleven twelve."
+      ]
+    },
+    {
+      "name": "semicolons_and_colons",
+      "text": "First clause here; second clause here; third clause here; fourth clause here; fifth clause here; sixth clause here",
+      "max_tokens": 15,
+      "chunks": [
+        "First clause here; second clause here;",
+        "third clause here; fourth clause here;",
+        "fifth clause here; sixth clause here."
+      ]
+    },
+    {
+      "name": "short_sentence_with_comma",
+      "text": "Hello, world.",
+      "max_tokens": 50,
+      "chunks": ["Hello, world."]
+    },
+    {
+      "name": "decimals_not_split",
+      "text": "The average human body temperature is 98.6°F, which is a common decimal used in medicine.",
+      "max_tokens": 50,
+      "chunks": [
+        "The average human body temperature is 98.6°F, which is a common decimal used in medicine."
+      ]
+    },
+    {
+      "name": "multiple_decimals",
+      "text": "Pi is 3.14 and e is 2.718.",
+      "max_tokens": 50,
+      "chunks": ["Pi is 3.14 and e is 2.718."]
+    },
+    {
+      "name": "decimal_then_boundary",
+      "text": "The average human body temperature is 98.6°F, which is a common decimal used in medicine. Pi is 3.14 and e is 2.718.",
+      "max_tokens": 20,
+      "chunks": [
+        "The average human body temperature is 98.6°F,",
+        "which is a common decimal used in medicine.",
+        "Pi is 3.14 and e is 2.718."
+      ]
+    },
+    {
+      "name": "period_after_decimal",
+      "text": "Version 2.0 is out. Pi is 3.14.",
+      "max_tokens": 50,
+      "chunks": ["Version 2.0 is out. Pi is 3.14."]
+    },
+    {
+      "name": "oversized_clause",
+      "text": "word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19",
+      "max_tokens": 5,
+      "chunks": [
+        "Word0 word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12 word13 word14 word15 word16 word17 word18 word19."
+      ]
+    },
+    {
+      "name": "abbreviation",
+      "text": "Dr. Smith said hello. He left at noon.",
+      "max_tokens": 5,
+      "chunks": ["Dr.", "Smith said hello.", "He left at noon."]
+    },
+    {
+      "name": "decimal_quirk",
+      "text": "Version 2. 3 apples are left.",
+      "max_tokens": 5,
+      "chunks": ["Version 2. 3 apples are left."]
+    },
+    {
+      "name": "exclaim_question",
+      "text": "Wait! Are you sure? Yes. Absolutely sure!",
+      "max_tokens": 4,
+      "chunks": ["Wait!", "Are you sure?", "Yes.", "Absolutely sure!"]
+    },
+    {
+      "name": "paragraph_50",
+      "text": "The quick brown fox jumps over the lazy dog. It was a bright cold day in April, and the clocks were striking thirteen. Call me Ishmael. Some years ago, never mind how long precisely, having little or no money in my purse, and nothing particular to interest me on shore, I thought I would sail about a little and see the watery part of the world.",
+      "max_tokens": 50,
+      "chunks": [
+        "The quick brown fox jumps over the lazy dog. It was a bright cold day in April, and the clocks were striking thirteen. Call me Ishmael. Some years ago,",
+        "never mind how long precisely, having little or no money in my purse, and nothing particular to interest me on shore,",
+        "I thought I would sail about a little and see the watery part of the world."
+      ]
+    }
+  ]
+}
