@@ -8,12 +8,17 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
 )
 
 // Tokenizer is the minimal interface required by PrepareChunks.
 // It is satisfied by tokenizer.Tokenizer from the tokenizer package.
 type Tokenizer interface {
 	Encode(text string) ([]int64, error)
+	// EncodePieces returns the tokens of text with their surfaces; the IDs
+	// are identical to Encode(text). The splitter decodes token spans from it.
+	EncodePieces(text string) ([]tokenizer.Piece, error)
 }
 
 // ChunkMetadata holds a preprocessed text chunk and its generation parameters.
@@ -165,32 +170,27 @@ func ensureTerminalPunctuation(s string) string {
 	}
 }
 
-// PrepareChunks tokenizes and splits text into ≤maxTokens chunks, applying
-// all reference preprocessing steps. Each returned ChunkMetadata includes the
-// processed text, token IDs, word count, and generation parameters.
+// PrepareChunks splits text into chunks of at most maxTokens tokens like
+// upstream split_into_best_sentences (see splitIntoBestSentences) and, like
+// upstream generate_audio_stream, prepares and tokenizes every chunk again.
+// Each returned ChunkMetadata holds the prepared chunk text, its token IDs and
+// its word count.
 func PrepareChunks(input string, tok Tokenizer, maxTokens int, opts Options) ([]ChunkMetadata, error) {
 	if strings.TrimSpace(input) == "" {
 		return nil, errors.New("input text is empty")
 	}
 
-	// Split into sentences first, then apply PrepareText per chunk.
-	// We group sentences greedily into ≤maxTokens buckets.
-	sentences, err := prepareSentences(input, opts)
+	texts, err := splitIntoBestSentences(tok, input, maxTokens, opts)
 	if err != nil {
 		return nil, err
 	}
 
-	var chunks []ChunkMetadata
-	var pending []string // sentences accumulated into current chunk
+	chunks := make([]ChunkMetadata, 0, len(texts))
 
-	flush := func() error {
-		if len(pending) == 0 {
-			return nil
-		}
-
-		prepared, ids, words, err := encodePrepared(tok, strings.Join(pending, " "), opts)
+	for _, chunk := range texts {
+		prepared, ids, words, err := encodePrepared(tok, chunk, opts)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		chunks = append(chunks, ChunkMetadata{
@@ -199,38 +199,6 @@ func PrepareChunks(input string, tok Tokenizer, maxTokens int, opts Options) ([]
 			NumTokens: len(ids),
 			NumWords:  words,
 		})
-		pending = pending[:0]
-
-		return nil
-	}
-
-	for _, sent := range sentences {
-		// Count tokens that would result if we add this sentence to pending.
-		var pendingTokens int
-
-		if len(pending) > 0 {
-			_, tentativeIDs, _, err := encodePrepared(tok, strings.Join(append(pending, sent), " "), opts)
-			if err != nil {
-				return nil, err
-			}
-
-			pendingTokens = len(tentativeIDs)
-		}
-
-		if len(pending) > 0 && pendingTokens > maxTokens {
-			// Current sentence would exceed budget — flush and start fresh.
-			err := flush()
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		pending = append(pending, sent)
-	}
-
-	err = flush()
-	if err != nil {
-		return nil, err
 	}
 
 	return chunks, nil
@@ -249,24 +217,6 @@ func encodePrepared(tok Tokenizer, s string, opts Options) (string, []int64, int
 	}
 
 	return prepared, ids, words, nil
-}
-
-// prepareSentences prepares the whole text once (dropping the pad), like
-// upstream split_into_best_sentences, and splits it into sentences.
-func prepareSentences(input string, opts Options) ([]string, error) {
-	whole, _, err := PrepareText(input, opts)
-	if err != nil {
-		return nil, err
-	}
-
-	whole = strings.TrimSpace(whole)
-
-	sentences := splitSentences(whole)
-	if len(sentences) == 0 {
-		sentences = []string{whole}
-	}
-
-	return sentences, nil
 }
 
 // splitWords splits text into non-empty word tokens on whitespace boundaries.

@@ -3,21 +3,22 @@ package text
 import (
 	"strings"
 	"testing"
+
+	"github.com/cwbudde/go-pocket-tts/internal/text/texttest"
+	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
 )
 
-// stubTokenizer is a minimal Tokenizer for testing that counts words as tokens.
+// stubTokenizer is a model-free Tokenizer for testing: one token per word,
+// with punctuation split into tokens of its own like SentencePiece does, so
+// the token-based sentence splitter finds the sentence ends.
 type stubTokenizer struct{}
 
 func (s *stubTokenizer) Encode(text string) ([]int64, error) {
-	// Split naively on spaces; each non-empty word = 1 token.
-	words := splitWords(text)
+	return texttest.Tokenizer{}.Encode(text)
+}
 
-	ids := make([]int64, len(words))
-	for i := range ids {
-		ids[i] = int64(i + 1)
-	}
-
-	return ids, nil
+func (s *stubTokenizer) EncodePieces(text string) ([]tokenizer.Piece, error) {
+	return texttest.Tokenizer{}.EncodePieces(text)
 }
 
 // ---------------------------------------------------------------------------
