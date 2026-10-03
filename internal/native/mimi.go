@@ -325,7 +325,7 @@ func (l *mimiTransformerLayer) forwardWithScratch(x, ropeCos, ropeSin *tensor.Te
 		}
 	}
 
-	ff = geluErfTensorInPlace(ff)
+	ff = geluTanhTensorInPlace(ff)
 
 	if scratch != nil {
 		ff2Out, ensureErr := scratch.ensure(&scratch.ff2, x.Shape())
