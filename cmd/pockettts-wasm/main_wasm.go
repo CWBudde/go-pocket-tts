@@ -143,7 +143,9 @@ func tokenizeText(_ js.Value, args []js.Value) any {
 // loadModelAsync is the JS-facing wrapper. It expects:
 //
 //	args[0] – Uint8Array: safetensors model bytes
-//	args[1] – Uint8Array: SentencePiece tokenizer model bytes
+//	args[1] – Uint8Array: tokenizer bytes, either a SentencePiece model
+//	          (tokenizer.model) or a Hugging Face tokenizer.json; the format
+//	          is sniffed from the bytes
 //	args[2] – Function (optional): progress callback
 func loadModelAsync(_ js.Value, args []js.Value) any {
 	promiseCtor := js.Global().Get("Promise")
@@ -191,10 +193,11 @@ func loadModelAsync(_ js.Value, args []js.Value) any {
 }
 
 func loadModel(modelSafetensors, tokenizerBytes []byte, progress *progressReporter) (map[string]any, error) {
-	progress.Emit("tokenizer", 5, 100, "loading sentencepiece tokenizer")
-	tok, err := tokenizer.NewSentencePieceTokenizerFromBytes(tokenizerBytes)
+	progress.Emit("tokenizer", 5, 100, "loading tokenizer")
+
+	tok, err := tokenizer.LoadBytes(tokenizerBytes)
 	if err != nil {
-		return nil, fmt.Errorf("load sentencepiece tokenizer: %w", err)
+		return nil, fmt.Errorf("load tokenizer: %w", err)
 	}
 
 	progress.Emit("load", 20, 100, "opening safetensors checkpoint")

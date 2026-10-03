@@ -168,6 +168,19 @@ func TestNewService_MissingTokenizerModel(t *testing.T) {
 	}
 }
 
+// A missing tokenizer (e.g. a language downloaded before tokenizer.json
+// became the default) names the command that fetches it.
+func TestNewService_MissingTokenizerSuggestsDownload(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.TTS.Language = "german"
+	cfg.Paths.TokenizerModel = filepath.Join(t.TempDir(), "tokenizer.json")
+
+	_, err := NewService(cfg)
+	if err == nil || !strings.Contains(err.Error(), "pockettts model download --language german") {
+		t.Fatalf("NewService error = %v; want a hint to run pockettts model download --language german", err)
+	}
+}
+
 func TestNewService_NativeSafetensors_NoORTRequired(t *testing.T) {
 	modelPath, tokPath := requireNativeSafetensorsAssetsForUnit(t)
 

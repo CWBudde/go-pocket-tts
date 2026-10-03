@@ -41,7 +41,7 @@ func TestLoad_Language_DerivesPaths(t *testing.T) {
 
 	want := PathsConfig{
 		ModelPath:      "models/german/model.safetensors",
-		TokenizerModel: "models/german/tokenizer.model",
+		TokenizerModel: "models/german/tokenizer.json",
 		VoiceManifest:  "voices/german/manifest.json",
 	}
 
@@ -78,7 +78,7 @@ func TestLoad_Language_ExplicitPathsWin(t *testing.T) {
 
 			checkLanguagePaths(t, cfg, PathsConfig{
 				ModelPath:      "/m.safetensors",
-				TokenizerModel: "models/german/tokenizer.model",
+				TokenizerModel: "models/german/tokenizer.json",
 				VoiceManifest:  "voices/german/manifest.json",
 			})
 		})

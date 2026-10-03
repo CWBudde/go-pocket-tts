@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"strings"
@@ -32,11 +33,28 @@ type Service struct {
 	model *modelcfg.ModelConfig
 }
 
-// NewService initializes the TTS service with the configured native runtime.
-func NewService(cfg config.Config) (*Service, error) {
-	tok, err := tokenizer.NewSentencePieceTokenizer(cfg.Paths.TokenizerModel)
+// loadTokenizer loads cfg.Paths.TokenizerModel; the file decides the backend
+// (tokenizer.json or tokenizer.model). A missing file names the command that
+// downloads it.
+func loadTokenizer(cfg config.Config) (tokenizer.Tokenizer, error) {
+	tok, err := tokenizer.Load(cfg.Paths.TokenizerModel)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("init tokenizer: %w (run `pockettts model download --language %s` or set --paths-tokenizer-model)",
+			err, cfg.TTS.Language)
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("init tokenizer: %w", err)
+	}
+
+	return tok, nil
+}
+
+// NewService initializes the TTS service with the configured native runtime.
+func NewService(cfg config.Config) (*Service, error) {
+	tok, err := loadTokenizer(cfg)
+	if err != nil {
+		return nil, err
 	}
 
 	backend, err := config.NormalizeBackend(cfg.TTS.Backend)

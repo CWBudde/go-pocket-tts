@@ -106,10 +106,10 @@ func TestLanguageManifest_GermanUngated(t *testing.T) {
 			},
 			{
 				Repo:      VoiceRepo,
-				Filename:  "languages/german/tokenizer.model",
+				Filename:  "languages/german/tokenizer.json",
 				Revision:  germanTokenizerRev,
-				SHA256:    "b3d6fb751a0bbc0b18df78687a03c11e4f2fbb0fa4b8f85e83064cd9d80ee34b",
-				LocalPath: "tokenizer.model",
+				SHA256:    "2d77849811e3d1b6ae80e5b11b203f57e1847901104d8a0573b34f46f8dddb53",
+				LocalPath: "tokenizer.json",
 			},
 		},
 	}
@@ -172,7 +172,7 @@ func TestLanguageManifest_AllLanguagesPinned(t *testing.T) {
 			}
 		}
 
-		if !slices.Equal(locals, []string{"model.safetensors", "tokenizer.model"}) {
+		if !slices.Equal(locals, []string{"model.safetensors", "tokenizer.json"}) {
 			t.Errorf("%s: local files = %v", language, locals)
 		}
 
@@ -319,7 +319,7 @@ func swapLanguageChecksums(t *testing.T, sums map[string]string) {
 
 func TestDownload_LanguageLayout(t *testing.T) {
 	modelPath := "languages/german/model.safetensors"
-	tokenizerPath := "languages/german/tokenizer.model"
+	tokenizerPath := "languages/german/tokenizer.json"
 
 	// The fake server answers each file with its own URL path, so the
 	// checksums below are those of the paths requested.
@@ -358,7 +358,7 @@ func TestDownload_LanguageLayout(t *testing.T) {
 		t.Errorf("requests = %v; want %v", requested, want)
 	}
 
-	for name, body := range map[string]string{"model.safetensors": weightsURL, "tokenizer.model": tokenizerURL} {
+	for name, body := range map[string]string{"model.safetensors": weightsURL, "tokenizer.json": tokenizerURL} {
 		b, err := os.ReadFile(filepath.Join(outDir, name))
 		if err != nil || string(b) != body {
 			t.Errorf("%s = %q, %v; want %q", name, b, err, body)
@@ -373,7 +373,7 @@ func TestDownload_LanguageLayout(t *testing.T) {
 
 func TestDownload_LanguageGatedUsesPerFileRepo(t *testing.T) {
 	modelPath := "languages/german/model.safetensors"
-	tokenizerPath := "languages/german/tokenizer.model"
+	tokenizerPath := "languages/german/tokenizer.json"
 	weightsURL := "/" + GatedRepo + "/resolve/" + germanGatedRev + "/" + modelPath
 	tokenizerURL := "/" + VoiceRepo + "/resolve/" + germanTokenizerRev + "/" + tokenizerPath
 

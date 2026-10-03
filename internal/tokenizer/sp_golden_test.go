@@ -1,11 +1,7 @@
 package tokenizer
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -63,23 +59,7 @@ func loadSPGolden(t *testing.T) spGolden {
 func goldenModelTokenizers(t *testing.T, gt spGoldenTokenizer) map[string]Tokenizer {
 	t.Helper()
 
-	// Golden model paths are relative to the repo root; tests run in
-	// internal/tokenizer.
-	path := filepath.Join("..", "..", filepath.FromSlash(gt.Model))
-
-	data, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		t.Skipf("%s not found; skipping golden comparison", gt.Model)
-	}
-
-	if err != nil {
-		t.Fatalf("read %s: %v", gt.Model, err)
-	}
-
-	sum := sha256.Sum256(data)
-	if got := hex.EncodeToString(sum[:]); got != gt.Sha256 {
-		t.Skipf("%s has sha256 %s, goldens were generated from %s", gt.Model, got, gt.Sha256)
-	}
+	path, data := readGoldenModel(t, gt.Model, gt.Sha256)
 
 	fromPath, err := NewSentencePieceTokenizer(path)
 	if err != nil {

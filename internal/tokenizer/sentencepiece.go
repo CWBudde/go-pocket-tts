@@ -6,10 +6,11 @@ import (
 	"os"
 )
 
-// ErrEmptyPath is returned when NewSentencePieceTokenizer is called with an empty path.
+// ErrEmptyPath is returned when a tokenizer is loaded from an empty path.
 var ErrEmptyPath = errors.New("tokenizer model path must not be empty")
 
-// SentencePieceTokenizer implements Tokenizer using a pure-Go UNIGRAM SentencePiece model.
+// SentencePieceTokenizer implements Tokenizer using a pure-Go UNIGRAM model,
+// loaded from a SentencePiece model or a Hugging Face tokenizer.json.
 type SentencePieceTokenizer struct {
 	model *spModel
 }

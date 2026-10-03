@@ -318,7 +318,8 @@ All in `internal/tts/runtime_native_safetensors.go`, mirrored in `internal/onnx/
 
 ## Phase 5 — Tokenizer
 
-`internal/tokenizer/sentencepiece_trie.go` (own Unigram encoder) + `sentencepiece_proto.go` (ModelProto reader).
+`internal/tokenizer/sentencepiece_trie.go` (own Unigram encoder) + `sentencepiece_proto.go` (ModelProto reader) +
+`hf_json.go` (tokenizer.json reader).
 
 - [x] **Byte fallback.** Every shipped tokenizer is Unigram with `byte_fallback: true` (256 `<0xXX>` pieces).
       Today unknown characters become `<unk>` (id 0). For German this hits all digits, `Ä Ö Ü`, `€` and `„ “`.
@@ -343,13 +344,37 @@ All in `internal/tts/runtime_native_safetensors.go`, mirrored in `internal/onnx/
       tokenizers; the old encoder differed on 1462 (english) / 1718 (german) of those lines, plain English prose
       was unchanged. Synthetic-model tests and `FuzzSentencePieceModel` cover loading and Viterbi without the
       models. WASM shrinks from 17.7 MB to 9.4 MB.
-- [ ] **`tokenizer.json` loader (#317).** Parse `model.vocab` (`[piece, score]` pairs), `unk_id` and
+- [x] **`tokenizer.json` loader (#317).** Parse `model.vocab` (`[piece, score]` pairs), `unk_id` and
       `byte_fallback`, and reuse the same Viterbi. Pick the loader by file extension in `internal/tts/service.go` and
       `cmd/pockettts-wasm/main_wasm.go`. This is needed for models that may be JSON-only (dutch, re-tokenized
       french `@8843db7`; verify on HF). German still ships `tokenizer.model`, which is identical to the json.
-- [ ] Download `languages/<lang>/tokenizer.json` with the per-language manifest once the loader exists. It is not
+      (2026-10-03) — verified on HF: every language (english*, german, french, dutch, italian, spanish, portuguese)
+      ships both files from the same upload commit, so none is JSON-only; built anyway for upstream parity
+      (upstream's configs pin `tokenizers` + `tokenizer.json`, its default backend). `hf_json.go` ports tokenizers
+      0.23.2 onto the shared `spModel` Viterbi: special added tokens cut out of the raw input leftmost-longest,
+      Prepend("▁") + Metaspace per segment, every vocab entry (incl. `<0xXX>`) in the trie, `fuse_unk`; anything
+      else is rejected at load. `tokenizer.Load` picks the backend by extension (`tts.Service`, stageprof),
+      `LoadBytes` sniffs `{` (WASM). `testdata/hf_golden.json` (82 cases × english/german, Python tokenizers):
+      `TestEncode_MatchesHFGolden` (fails with special-token extraction off). On the 1829-line corpus the json
+      loader equals Python tokenizers for all 7 languages; json ≠ `.model` only on lines with a literal `<unk>`
+      and on 2 italian Markdown-table lines where Python tokenizers and sentencepiece disagree themselves.
+- [x] Download `languages/<lang>/tokenizer.json` with the per-language manifest once the loader exists. It is not
       an LFS file, so the HF tree API has no SHA256 for it; `internal/model/internal/genchecksums` has to hash
       the file itself. (Found 2026-10-03 while making the download manifest per language.)
+      (2026-10-03) — `genchecksums` downloads non-LFS files, checks their git blob id against the tree and records
+      the SHA256 (german `2d778498…`, english_2026-09 `f498428e…`, equal to `shasum -a 256` of independent
+      downloads). The 6 embedded configs are back to upstream's `tokenizer: tokenizers` + `tokenizer.json` pins
+      ("Changed:" headers gone); `LanguageManifest` saves the tokenizer under its base name and
+      `config.PathsForLanguage` defaults to `models/<lang>/tokenizer.json` (flat `english_2026-01` keeps
+      `models/tokenizer.model`). `model download --language german` fetched and verified `tokenizer.json`; `synth`
+      on it gives the same 20 tokens as the `.model`. A missing tokenizer now names `pockettts model download`.
+- [ ] Assert `n_bins` == tokenizer vocab size at load, like upstream `JsonTokenizer`/`SentencePieceTokenizer`.
+      (Found 2026-10-03.)
+- [ ] `web/main.js` still fetches `./models/tokenizer.model`; switch the asset to `tokenizer.json` once the web
+      app gets a language picker (Phase 6; `LoadBytes` already accepts both). (Found 2026-10-03.)
+- [ ] With the json backend, user text containing literal `<s>`, `</s>`, `<unk>` or `<pad>` encodes them as
+      special tokens (upstream does the same), and upstream's splitter decodes literal `<0xXX>` text via the
+      tokenizers ByteFallback decoder, which Go's `spanText` does not emulate. Edge case only; note. (Found 2026-10-03.)
 
 ## Phase 6 — German Support (end-to-end)
 
