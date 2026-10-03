@@ -113,3 +113,32 @@ func TestLatentToMimiAndDecode_RealGermanCheckpoint(t *testing.T) {
 		t.Fatal("decoded audio is all zeros")
 	}
 }
+
+func TestFlowStateFromVoiceModelState_RealGermanVoice(t *testing.T) {
+	voicePath := filepath.Join("..", "..", "voices", "german", "juergen.safetensors")
+
+	_, err := os.Stat(voicePath)
+	if err != nil {
+		t.Skipf("german voice not available: %v", err)
+	}
+
+	m, err := LoadModelFromSafetensors(requireGermanCheckpoint(t), DefaultConfig())
+	if err != nil {
+		t.Fatalf("load model: %v", err)
+	}
+	defer m.Close()
+
+	voice, err := safetensors.LoadVoiceModelState(voicePath)
+	if err != nil {
+		t.Fatalf("load voice: %v", err)
+	}
+
+	state, err := m.NewFlowStateFromVoiceModelState(voice)
+	if err != nil {
+		t.Fatalf("NewFlowStateFromVoiceModelState: %v", err)
+	}
+
+	if got := state.Offset(); got != 124 {
+		t.Fatalf("state offset = %d, want 124", got)
+	}
+}
