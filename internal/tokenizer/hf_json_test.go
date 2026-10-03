@@ -416,7 +416,7 @@ func TestJSONModel_LoadErrors(t *testing.T) {
 func TestLoadBytes_SniffsFormat(t *testing.T) {
 	jsonData := append([]byte(" \n\t\r"), marshalJSONModel(t, jsonBase())...)
 
-	tok, err := LoadBytes(jsonData)
+	tok, err := LoadBytes(jsonData, 0)
 	if err != nil {
 		t.Fatalf("LoadBytes(json): %v", err)
 	}
@@ -428,7 +428,7 @@ func TestLoadBytes_SniffsFormat(t *testing.T) {
 
 	protoData := testModel{pieces: basePieces()}.encode()
 
-	tok, err = LoadBytes(protoData)
+	tok, err = LoadBytes(protoData, 0)
 	if err != nil {
 		t.Fatalf("LoadBytes(proto): %v", err)
 	}
@@ -440,7 +440,7 @@ func TestLoadBytes_SniffsFormat(t *testing.T) {
 		t.Errorf("LoadBytes(proto) = %v, want %v", got, want)
 	}
 
-	_, err = LoadBytes(nil)
+	_, err = LoadBytes(nil, 0)
 	if !errors.Is(err, errEmptyModelData) {
 		t.Errorf("LoadBytes(nil): got %v, want errEmptyModelData", err)
 	}
@@ -475,7 +475,7 @@ func TestLoad_PicksBackendByExtension(t *testing.T) {
 	protoPath := filepath.Join(dir, "tok.model")
 	writeTestFile(t, protoPath, testModel{pieces: basePieces()}.encode())
 
-	tok, err := Load(jsonPath)
+	tok, err := Load(jsonPath, 0)
 	if err != nil {
 		t.Fatalf("Load(%s): %v", jsonPath, err)
 	}
@@ -484,7 +484,7 @@ func TestLoad_PicksBackendByExtension(t *testing.T) {
 		t.Errorf("Load(json).Encode(<s>) = %v, want [1]", ids)
 	}
 
-	tok, err = Load(protoPath)
+	tok, err = Load(protoPath, 0)
 	if err != nil {
 		t.Fatalf("Load(%s): %v", protoPath, err)
 	}
@@ -497,13 +497,13 @@ func TestLoad_PicksBackendByExtension(t *testing.T) {
 	misnamed := filepath.Join(dir, "proto.json")
 	writeTestFile(t, misnamed, testModel{pieces: basePieces()}.encode())
 
-	_, err = Load(misnamed)
+	_, err = Load(misnamed, 0)
 	if err == nil {
 		t.Error("Load(proto bytes named .json): expected an error")
 	}
 
 	for name, load := range map[string]func(string) error{
-		"Load":             func(p string) error { _, err := Load(p); return err },
+		"Load":             func(p string) error { _, err := Load(p, 0); return err },
 		"NewJSONTokenizer": func(p string) error { _, err := NewJSONTokenizer(p); return err },
 	} {
 		err := load("")

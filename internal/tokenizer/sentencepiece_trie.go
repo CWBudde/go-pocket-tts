@@ -71,6 +71,10 @@ type spModel struct {
 	unkID    int32
 	unkScore float64
 
+	// vocabSize is the number of vocab entries, every type and duplicates
+	// included (sentencepiece vocab_size(), tokenizers get_vocab_size()).
+	vocabSize int
+
 	// byteIDs maps a byte to the id of its <0xXX> piece; only set with
 	// byteFallback.
 	byteFallback bool
@@ -142,6 +146,7 @@ func (m *spModel) buildVocab(pieces []spPieceProto) error {
 	minScore, maxScore := float32(math.MaxFloat32), spFltMin
 	byteByName := make(map[string]int32)
 	unknowns := 0
+	m.vocabSize = len(pieces)
 
 	for _, p := range pieces {
 		if p.typ == spNormal {

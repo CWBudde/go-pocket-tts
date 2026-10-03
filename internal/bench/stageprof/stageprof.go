@@ -97,7 +97,9 @@ func Main() {
 	tw := effectiveWorkers(cfg)
 	tensor.SetWorkers(tw)
 
-	tok, err := tokenizer.Load(cfg.Paths.TokenizerModel)
+	// DefaultConfig carries no model config (cfg.Model is nil), so there is
+	// no n_bins to check the tokenizer against.
+	tok, err := tokenizer.Load(cfg.Paths.TokenizerModel, 0)
 	if err != nil {
 		fatalf("init tokenizer: %v", err)
 	}

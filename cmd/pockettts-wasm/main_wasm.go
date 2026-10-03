@@ -193,9 +193,14 @@ func loadModelAsync(_ js.Value, args []js.Value) any {
 }
 
 func loadModel(modelSafetensors, tokenizerBytes []byte, progress *progressReporter) (map[string]any, error) {
+	mc, err := modelcfg.Lookup(config.DefaultLanguage)
+	if err != nil {
+		return nil, fmt.Errorf("model config: %w", err)
+	}
+
 	progress.Emit("tokenizer", 5, 100, "loading tokenizer")
 
-	tok, err := tokenizer.LoadBytes(tokenizerBytes)
+	tok, err := tokenizer.LoadBytes(tokenizerBytes, mc.FlowLM.LookupTable.NBins)
 	if err != nil {
 		return nil, fmt.Errorf("load tokenizer: %w", err)
 	}
@@ -204,12 +209,6 @@ func loadModel(modelSafetensors, tokenizerBytes []byte, progress *progressReport
 	store, err := safetensors.OpenStoreFromBytes(modelSafetensors, safetensors.StoreOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("open model safetensors: %w", err)
-	}
-
-	mc, err := modelcfg.Lookup(config.DefaultLanguage)
-	if err != nil {
-		store.Close()
-		return nil, fmt.Errorf("model config: %w", err)
 	}
 
 	progress.Emit("load", 50, 100, "building native model")

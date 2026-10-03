@@ -368,8 +368,14 @@ All in `internal/tts/runtime_native_safetensors.go`, mirrored in `internal/onnx/
       `config.PathsForLanguage` defaults to `models/<lang>/tokenizer.json` (flat `english_2026-01` keeps
       `models/tokenizer.model`). `model download --language german` fetched and verified `tokenizer.json`; `synth`
       on it gives the same 20 tokens as the `.model`. A missing tokenizer now names `pockettts model download`.
-- [ ] Assert `n_bins` == tokenizer vocab size at load, like upstream `JsonTokenizer`/`SentencePieceTokenizer`.
+- [x] Assert `n_bins` == tokenizer vocab size at load, like upstream `JsonTokenizer`/`SentencePieceTokenizer`.
       (Found 2026-10-03.)
+      (2026-10-03) — `tokenizer.Load(path, nBins)` / `LoadBytes(data, nBins)` fail with `ErrVocabSize` on a
+      mismatch (`nBins <= 0` skips); `VocabSize()` counts every vocab entry, duplicates included, like
+      sentencepiece `vocab_size()` and tokenizers 0.23.2 `get_vocab_size()` (checked in Python). `tts.Service`
+      and WASM pass the model config's `n_bins`; stageprof passes 0 (`DefaultConfig` has no model config).
+      `TestLoad_VocabSize` (synthetic, both formats and loaders), `TestVocabSize_RealModels` (english + german
+      `.model`/`.json` = 4000), `TestLoadTokenizer_VocabSizeMatchesNBins`.
 - [ ] `web/main.js` still fetches `./models/tokenizer.model`; switch the asset to `tokenizer.json` once the web
       app gets a language picker (Phase 6; `LoadBytes` already accepts both). (Found 2026-10-03.)
 - [ ] With the json backend, user text containing literal `<s>`, `</s>`, `<unk>` or `<pad>` encodes them as

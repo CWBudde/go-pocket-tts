@@ -97,12 +97,12 @@ func hfGoldenTokenizers(t *testing.T, gt hfGoldenTokenizer) map[string]Tokenizer
 		t.Fatalf("NewJSONTokenizerFromBytes(%s): %v", gt.Model, err)
 	}
 
-	loaded, err := Load(path)
+	loaded, err := Load(path, 0)
 	if err != nil {
 		t.Fatalf("Load(%s): %v", gt.Model, err)
 	}
 
-	loadedBytes, err := LoadBytes(data)
+	loadedBytes, err := LoadBytes(data, 0)
 	if err != nil {
 		t.Fatalf("LoadBytes(%s): %v", gt.Model, err)
 	}
@@ -231,12 +231,12 @@ func TestJSONMatchesSentencePiece(t *testing.T) {
 				}
 			}
 
-			proto, err := Load(pair[0])
+			proto, err := Load(pair[0], 0)
 			if err != nil {
 				t.Fatalf("Load(%s): %v", pair[0], err)
 			}
 
-			hf, err := Load(pair[1])
+			hf, err := Load(pair[1], 0)
 			if err != nil {
 				t.Fatalf("Load(%s): %v", pair[1], err)
 			}
