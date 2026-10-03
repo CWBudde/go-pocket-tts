@@ -65,7 +65,7 @@ The local `models/tts_b6369a24.safetensors` (checksum OK), `models/tokenizer.mod
 - [x] Replace the deprecated `gomodguard` linter with `gomodguard_v2` in `.golangci.yml` (golangci-lint 2.12+ warns)
       (2026-10-03) — `gomodguard` disabled; `gomodguard_v2` stays on via `default: all`; no deprecation warning left.
 
-## Phase 1 — Model Config Layer (prerequisite for everything multi-language)
+## Phase 1 — Model Config Layer (prerequisite for everything multi-language) — ✅ DONE (2026-10-03)
 
 Upstream selects a model with `--language <name>` → `pocket_tts/config/<name>.yaml`. Go has no equivalent;
 constants and paths are hard-coded around `tts_b6369a24`.
@@ -162,20 +162,36 @@ constants and paths are hard-coded around `tts_b6369a24`.
 
 ## Phase 2 — Checkpoint / Numerics Parity
 
-- [ ] **tanh GELU (#278).** Upstream now uses `F.gelu(x, approximate="tanh")` in the shared
+- [x] **tanh GELU (#278).** Upstream now uses `F.gelu(x, approximate="tanh")` in the shared
       `StreamingTransformerLayer` (`modules/transformer.py`), so both the FlowLM backbone and the Mimi
       encoder/decoder transformers use it. Add `geluTanh` (`0.5·x·(1+tanh(√(2/π)·(x+0.044715x³)))`) next to the
       erf versions in `internal/native/tensor_util.go` and switch the call sites in `native/flow_transformer.go`
       and `native/mimi.go`. Confirm the flow-net MLP (`modules/mlp.py`) is unchanged. This also applies to
       `english_2026-01` (upstream runs it with tanh GELU now). Benchmark it: tanh is cheaper than erf.
-- [ ] **Mimi `inner_dim: 32`.** Every config except `english_2026-01` uses it. Verify the decode path
+      (2026-10-03) — `geluTanhTensor` / `geluTanhTensorInPlace` replace the erf helpers at all three call sites
+      (FlowLM transformer prefill + step, Mimi transformer); `TestGELUTanhTensor_ReferenceValues` pins 8 values
+      of the tanh formula and checks they differ from erf. Flow-net MLP verified unchanged (SiLU only; the
+      2dff8a2 → 41cbc84 diff is typing plus the `num_time_conds` item below). `BenchmarkGELU` over 1M floats:
+      tanh 4.8 ms vs erf 6.9 ms. Native output now differs from ONNX bundles exported with 2.1.0 (Phase 9
+      re-export).
+- [x] **Mimi `inner_dim: 32`.** Every config except `english_2026-01` uses it. Verify the decode path
       (`latent_to_mimi` / quantizer output projection / upsample) loads and runs with the new shapes. The
       header check suggests only the encoder's downsample changes (512 → 32), but confirm it on a real German
       checkpoint (`flow_lm.speaker_proj_weight` is `[1024,32]`).
-- [ ] **`insert_bos_before_voice`.** If set, prepend `flow_lm.bos_before_voice` (`[1,1,1024]`) before the
+      (2026-10-03) — confirmed: against `tts_b6369a24` only `mimi.downsample.conv.conv.weight` (`[32,512,32]`)
+      and `flow_lm.speaker_proj_weight` (`[1024,32]`) change; neither is loaded by the native decoder
+      (encoder side, Phase 7). `TestGermanCheckpoint_InnerDimOnlyChangesEncoderSide` and
+      `TestLatentToMimiAndDecode_RealGermanCheckpoint` (`[1,3,32]` → `[1,512,3]` → `[1,1,5760]`, finite) run
+      when `models/german/model.safetensors` is present.
+- [x] **`insert_bos_before_voice`.** If set, prepend `flow_lm.bos_before_voice` (`[1,1,1024]`) before the
       voice-prompt embedding (`tts_model.py` ~L1035). This only affects the audio-embedding voice path
       (`VoiceEmbedding` concat in `internal/tts/runtime_native_safetensors.go`); precomputed model states
       already include it.
+      (2026-10-03) — `native.ConfigFor(modelcfg)` copies the flag into `FlowLMConfig.InsertBOSBeforeVoice`
+      (`tts.NewService`, `stageprof`); `LoadFlowLM` then requires `flow_lm.bos_before_voice` and
+      `Model.VoicePrompt` prepends it to `VoiceEmbedding` in `prepareFlowState`. Tested with synthetic weights
+      and on the German checkpoint (prompt = 1 + voice + text positions). The ONNX runtime path is unchanged:
+      no German graphs exist yet (Phase 9).
 - [ ] **Sampler head generalisation (#329).** `flow.type ∈ {lsd, flow_matching, drifting}`, with
       `num_time_conds` = 2 / 1 / 0. In `native/flow_net.go`, make `time_embed.N` variable-length (detect it from the
       keys present), and only average the time embeddings when there are more than 0. Add `DriftingDecode`
@@ -183,8 +199,12 @@ constants and paths are hard-coded around `tts_b6369a24`.
       `FlowType` in `native/flow_lm.go`. Target model: `english_drifting_26-09` (lower priority than German).
 - [ ] **24-layer variants** need no new modules; layer count auto-detection (`native/flow_transformer.go`) should
       already work. Add a smoke test with a `*_24l` checkpoint (~670 MB, so run it manually or in integration only).
-- [ ] **Voice state `pad` key.** Newly exported states carry `transformer.layers.N.self_attn/pad` (int64 `[B]`).
+- [x] **Voice state `pad` key.** Newly exported states carry `transformer.layers.N.self_attn/pad` (int64 `[B]`).
       The Go loader ignores unknown keys; add a test with a real `voices/german/juergen.safetensors`.
+      (2026-10-03) — all 27 German voices have `pad` = 0. Upstream shifts attention positions only for
+      `pad > 0`, which the Go attention cannot do, so `LoadVoiceModelState` now rejects non-zero pads and keeps
+      zero ones. `TestLoadVoiceModelState_RealGermanVoice` (6 layers, pad 0, offset 124) and
+      `TestFlowStateFromVoiceModelState_RealGermanVoice` run when the voice is present.
 
 ## Phase 3 — Generation Loop Parity
 
