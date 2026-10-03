@@ -27,8 +27,9 @@ const state = {
   action: "Starting...",
 };
 
+// Matches the model config's default_temperature (english_2026-01: 0.3).
 const modelConfig = {
-  temperature: 0.7,
+  temperature: 0.3,
 };
 
 const modelAssetPath = "./models/tts_b6369a24.safetensors";

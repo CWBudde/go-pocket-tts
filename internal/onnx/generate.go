@@ -9,7 +9,7 @@ import (
 
 // GenerateConfig holds parameters for the autoregressive generation loop.
 type GenerateConfig struct {
-	Temperature        float64 // noise scale for flow sampling (default 0.7)
+	Temperature        float64 // noise scale for flow sampling (config default: the model's default_temperature)
 	EOSThreshold       float64 // raw logit threshold for EOS detection (default -4.0)
 	MaxSteps           int     // maximum AR steps before forced stop (default 256)
 	SamplerDecodeSteps int     // sampler integration steps per frame (default 1)
