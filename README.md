@@ -343,6 +343,18 @@ Python PocketTTS `.yaml` config with `--backend cli` or `export-voice
 inference, point `--paths-model-path` at a local model `.safetensors` checkpoint
 and `--paths-tokenizer-model` at the matching tokenizer model.
 
+`--language` (`tts.language`, `POCKETTTS_TTS_LANGUAGE`) selects one of the
+embedded upstream model configs: `english_2026-01` (default), `english_2026-09`,
+`english_2026-09_24l`, `german`, `german_24l`. Unless set explicitly, the model,
+tokenizer and voice manifest paths follow the language:
+`models/<lang>/model.safetensors`, `models/<lang>/tokenizer.model` and
+`voices/<lang>/manifest.json`; `english_2026-01` keeps the flat
+`models/tts_b6369a24.safetensors`, `models/tokenizer.model` and
+`voices/manifest.json`. `--model-config <file>` loads a custom upstream model
+config instead; like upstream's `--config` it cannot be combined with
+`--language`, and it needs explicit `--paths-model-path` and
+`--paths-tokenizer-model`.
+
 `pockettts synth --text -` explicitly reads text from stdin. Omitting `--text`
 continues to read stdin as well.
 

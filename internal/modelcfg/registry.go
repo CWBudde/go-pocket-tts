@@ -72,6 +72,21 @@ func Lookup(language string) (*ModelConfig, error) {
 	return cfg, nil
 }
 
+// LoadCustom reads a model config file that is not one of the embedded
+// languages (upstream: --config). Like upstream, its default voice is the
+// fallback voice, which any model can clone.
+func LoadCustom(path string) (*ModelConfig, error) {
+	cfg, err := Load(path)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg.DefaultVoice = defaultVoiceFallback
+	cfg.VoicesRevision = VoicesRevision
+
+	return cfg, nil
+}
+
 // defaultVoiceFor matches language by substring like upstream
 // get_default_voice_for_language, so "german_24l" maps to the german voice.
 func defaultVoiceFor(language string) string {

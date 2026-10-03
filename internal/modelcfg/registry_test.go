@@ -126,3 +126,28 @@ func TestLookup_EmbeddedMatchesUpstreamCopy(t *testing.T) {
 		t.Errorf("embedded english_2026-01 differs from testdata:\n got %+v\nwant %+v", got, want)
 	}
 }
+
+// Upstream: with a config or checkpoint instead of a language, the default
+// voice is alba.
+func TestLoadCustom_UsesFallbackVoice(t *testing.T) {
+	cfg, err := LoadCustom("testdata/german.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.DefaultVoice != "alba" || cfg.VoicesRevision != VoicesRevision {
+		t.Errorf("DefaultVoice = %q, VoicesRevision = %q; want alba and %q",
+			cfg.DefaultVoice, cfg.VoicesRevision, VoicesRevision)
+	}
+
+	if !cfg.FlowLM.InsertBOSBeforeVoice {
+		t.Error("LoadCustom did not return the german config")
+	}
+}
+
+func TestLoadCustom_MissingFile(t *testing.T) {
+	_, err := LoadCustom("testdata/nope.yaml")
+	if err == nil {
+		t.Fatal("LoadCustom on a missing file succeeded; want an error")
+	}
+}

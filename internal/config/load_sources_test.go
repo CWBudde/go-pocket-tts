@@ -27,6 +27,7 @@ var keySources = []keySource{
 	{"paths.voice_path", "paths-voice-path", "/x/voice.bin", func(c Config) any { return c.Paths.VoicePath }},
 	{"paths.onnx_manifest", "paths-onnx-manifest", "/x/manifest.json", func(c Config) any { return c.Paths.ONNXManifest }},
 	{"paths.tokenizer_model", "paths-tokenizer-model", "/x/tok.model", func(c Config) any { return c.Paths.TokenizerModel }},
+	{"paths.voice_manifest", "paths-voice-manifest", "/x/voices.json", func(c Config) any { return c.Paths.VoiceManifest }},
 	{"runtime.threads", "runtime-threads", "7", func(c Config) any { return c.Runtime.Threads }},
 	{"runtime.inter_op_threads", "runtime-inter-op-threads", "3", func(c Config) any { return c.Runtime.InterOpThreads }},
 	{"runtime.workers", "runtime-workers", "5", func(c Config) any { return c.Runtime.Workers }},
@@ -48,6 +49,7 @@ var keySources = []keySource{
 	{"tts.temperature", "temperature", "0.5", func(c Config) any { return c.TTS.Temperature }},
 	{"tts.eos_threshold", "eos-threshold", "-2.5", func(c Config) any { return c.TTS.EOSThreshold }},
 	{"tts.max_steps", "max-steps", "99", func(c Config) any { return c.TTS.MaxSteps }},
+	{"tts.language", "language", "german", func(c Config) any { return c.TTS.Language }},
 	{"tts.sampler_decode_steps", "sampler-decode-steps", "4", func(c Config) any { return c.TTS.SamplerDecodeSteps }},
 	{"log_level", "log-level", "debug", func(c Config) any { return c.LogLevel }},
 }
@@ -89,6 +91,17 @@ type loadInput struct {
 func loadWith(t *testing.T, in loadInput) Config {
 	t.Helper()
 
+	cfg, err := tryLoad(t, in)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	return cfg
+}
+
+func tryLoad(t *testing.T, in loadInput) (Config, error) {
+	t.Helper()
+
 	for k, v := range in.env {
 		t.Setenv(k, v)
 	}
@@ -118,12 +131,7 @@ func loadWith(t *testing.T, in loadInput) Config {
 		}
 	}
 
-	cfg, err := Load(opts)
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-
-	return cfg
+	return Load(opts)
 }
 
 // TestLoad_KeySources checks that every config key is reachable from the
