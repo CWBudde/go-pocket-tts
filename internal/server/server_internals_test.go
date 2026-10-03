@@ -6,10 +6,12 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/cwbudde/go-pocket-tts/internal/tts"
 )
 
@@ -332,7 +334,7 @@ func TestNativeSynthesizer_ResolvesManifestVoiceIDs(t *testing.T) {
 
 	for voice, want := range map[string]string{
 		"alice":                voiceFile,
-		"":                     "",
+		"":                     "", // no model config, so no default voice
 		"/abs/bob.safetensors": "/abs/bob.safetensors",
 		"not-in-manifest":      "not-in-manifest",
 	} {
@@ -348,5 +350,61 @@ func TestNativeSynthesizer_ResolvesManifestVoiceIDs(t *testing.T) {
 	got, err := none.voicePath("alice")
 	if err != nil || got != "alice" {
 		t.Errorf("voicePath without manifest = %q, %v; want alice", got, err)
+	}
+}
+
+// A request without a voice uses the model config's default voice, like
+// upstream serve (get_default_voice_for_language); without one the native
+// model stops almost at once.
+func TestNativeSynthesizer_DefaultVoice(t *testing.T) {
+	dir := t.TempDir()
+	voiceFile := filepath.Join(dir, "juergen.safetensors")
+
+	err := os.WriteFile(voiceFile, []byte("voice-data"), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	manifestPath := filepath.Join(dir, "manifest.json")
+
+	err = os.WriteFile(manifestPath,
+		[]byte(`{"voices":[{"id":"juergen","path":"juergen.safetensors","license":"CC-BY-4.0"}]}`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	newSynth := func(t *testing.T, manifest, defaultVoice string) *nativeSynthesizer {
+		t.Helper()
+
+		cfg := config.DefaultConfig()
+		cfg.Paths.VoiceManifest = manifest
+		cfg.Model = &modelcfg.ModelConfig{DefaultVoice: defaultVoice}
+
+		synth, _, _, _, err := New(cfg, &tts.Service{}).runtimeDeps(config.BackendNative)
+		if err != nil {
+			t.Fatalf("runtimeDeps(native) error = %v", err)
+		}
+
+		ns, ok := synth.(*nativeSynthesizer)
+		if !ok {
+			t.Fatalf("synth = %T; want *nativeSynthesizer", synth)
+		}
+
+		return ns
+	}
+
+	got, err := newSynth(t, manifestPath, "juergen").voicePath("")
+	if err != nil || got != voiceFile {
+		t.Errorf("voicePath(no voice) = %q, %v; want the default voice %q", got, err, voiceFile)
+	}
+
+	for name, ns := range map[string]*nativeSynthesizer{
+		"not in manifest":  newSynth(t, manifestPath, "alba"),
+		"missing manifest": newSynth(t, filepath.Join(dir, "absent.json"), "juergen"),
+	} {
+		got, err := ns.voicePath("")
+		if err == nil || !strings.Contains(err.Error(), "default voice") {
+			t.Errorf("%s: voicePath(no voice) = %q, %v; want an error naming the default voice", name, got, err)
+		}
 	}
 }

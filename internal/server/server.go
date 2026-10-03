@@ -552,7 +552,11 @@ func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, Str
 
 		// /voices lists manifest IDs; the synthesizer maps them to files.
 		vm, _ := voices.(*tts.VoiceManager)
-		ns := &nativeSynthesizer{svc: svc, voices: vm}
+		ns := &nativeSynthesizer{svc: svc, voices: vm, manifest: s.cfg.Paths.VoiceManifest}
+
+		if s.cfg.Model != nil {
+			ns.defaultVoice = s.cfg.Model.DefaultVoice
+		}
 
 		return ns, voices, workers, ns, nil
 	case config.BackendCLI:
@@ -599,8 +603,10 @@ func (s staticVoiceLister) ListVoices() []tts.Voice {
 }
 
 type nativeSynthesizer struct {
-	svc    *tts.Service
-	voices *tts.VoiceManager // nil when the voice manifest is unreadable
+	svc          *tts.Service
+	voices       *tts.VoiceManager // nil when the voice manifest is unreadable
+	manifest     string            // voice manifest path, for errors
+	defaultVoice string            // model config's default voice for requests without one
 }
 
 func (n *nativeSynthesizer) Synthesize(ctx context.Context, text, voice string) ([]byte, error) {
@@ -628,8 +634,25 @@ func (n *nativeSynthesizer) SynthesizeStream(ctx context.Context, text, voice st
 
 // voicePath maps a voice ID from the manifest, as listed by /voices, to its
 // file; tts.Service only accepts file paths. Other values, such as a direct
-// .safetensors path, pass through unchanged.
+// .safetensors path, pass through unchanged. No voice means the model
+// config's default voice (upstream get_default_voice_for_language), which
+// must be in the manifest: generating without a voice ends almost at once.
 func (n *nativeSynthesizer) voicePath(voice string) (string, error) {
+	if strings.TrimSpace(voice) == "" && n.defaultVoice != "" {
+		if n.voices == nil {
+			return "", fmt.Errorf("default voice %q: voice manifest %s not readable; run 'pockettts model download' "+
+				"(same --language)", n.defaultVoice, n.manifest)
+		}
+
+		path, err := n.voices.ResolvePath(n.defaultVoice)
+		if err != nil {
+			return "", fmt.Errorf("default voice %q (voice manifest %s): %w; run 'pockettts model download' "+
+				"(same --language)", n.defaultVoice, n.manifest, err)
+		}
+
+		return path, nil
+	}
+
 	if n.voices == nil {
 		return voice, nil
 	}
