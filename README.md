@@ -244,10 +244,10 @@ model state: transformer KV-cache tensors plus offsets such as
 
 Compatibility summary:
 
-| Format | Created by | Native Go backend | ONNX backend |
-| ------ | ---------- | ----------------- | ------------ |
-| Upstream model state | `--format=model-state` or upstream `pocket-tts export-voice` | Accepted directly as prompted FlowLM state | Not supported |
-| Legacy `audio_prompt` | earlier Go tooling or default `--format=legacy-embedding` | Accepted and re-encoded into native state | Accepted as voice embedding |
+| Format                | Created by                                                   | Native Go backend                          | ONNX backend                |
+| --------------------- | ------------------------------------------------------------ | ------------------------------------------ | --------------------------- |
+| Upstream model state  | `--format=model-state` or upstream `pocket-tts export-voice` | Accepted directly as prompted FlowLM state | Not supported               |
+| Legacy `audio_prompt` | earlier Go tooling or default `--format=legacy-embedding`    | Accepted and re-encoded into native state  | Accepted as voice embedding |
 
 See [voices/README.md](voices/README.md) for format and licensing guidance.
 
