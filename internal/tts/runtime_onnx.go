@@ -22,11 +22,11 @@ func (r *onnxRuntime) GenerateAudio(ctx context.Context, tokens []int64, cfg Run
 	}
 
 	genCfg := onnx.GenerateConfig{
-		Temperature:    cfg.Temperature,
-		EOSThreshold:   cfg.EOSThreshold,
-		MaxSteps:       effectiveConfiguredMaxSteps(cfg),
-		LSDDecodeSteps: cfg.LSDDecodeSteps,
-		FramesAfterEOS: cfg.FramesAfterEOS,
+		Temperature:        cfg.Temperature,
+		EOSThreshold:       cfg.EOSThreshold,
+		MaxSteps:           effectiveConfiguredMaxSteps(cfg),
+		SamplerDecodeSteps: cfg.SamplerDecodeSteps,
+		FramesAfterEOS:     cfg.FramesAfterEOS,
 	}
 	if cfg.VoiceEmbedding != nil {
 		voiceTensor, err := onnx.NewTensor(cfg.VoiceEmbedding.Data, cfg.VoiceEmbedding.Shape)

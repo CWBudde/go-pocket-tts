@@ -19,7 +19,7 @@ type RuntimeGenerateConfig struct {
 	EOSThreshold       float64
 	MaxSteps           int
 	EstimatedMaxSteps  int
-	LSDDecodeSteps     int
+	SamplerDecodeSteps int
 	FramesAfterEOS     int
 	MimiStepsPerLatent int
 	MimiSequenceLength int

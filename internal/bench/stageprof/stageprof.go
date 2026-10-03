@@ -233,7 +233,7 @@ func runOnce(ctx context.Context, rt tts.Runtime, tok textpkg.Tokenizer, cfg con
 				EOSThreshold:       cfg.TTS.EOSThreshold,
 				MaxSteps:           cfg.TTS.MaxSteps,
 				EstimatedMaxSteps:  estimatedMaxSteps,
-				LSDDecodeSteps:     cfg.TTS.LSDDecodeSteps,
+				SamplerDecodeSteps: cfg.TTS.SamplerDecodeSteps,
 				FramesAfterEOS:     chunk.FramesAfterEOS(),
 				MimiStepsPerLatent: mimiStepsPerLatent,
 				MimiSequenceLength: estimatedMaxSteps * mimiStepsPerLatent,

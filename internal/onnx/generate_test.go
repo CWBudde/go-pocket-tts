@@ -108,7 +108,7 @@ func fakeStatefulEngine(t *testing.T, eosAfterSteps int) *Engine {
 
 func TestGenerateAudio_StatefulPath_ProducesNonEmptyPCM(t *testing.T) {
 	e := fakeStatefulEngine(t, 3)
-	cfg := GenerateConfig{Temperature: 0.0, EOSThreshold: -4.0, MaxSteps: 256, LSDDecodeSteps: 1}
+	cfg := GenerateConfig{Temperature: 0.0, EOSThreshold: -4.0, MaxSteps: 256, SamplerDecodeSteps: 1}
 
 	pcm, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, cfg)
 	if err != nil {
@@ -123,7 +123,7 @@ func TestGenerateAudio_StatefulPath_ProducesNonEmptyPCM(t *testing.T) {
 func TestGenerateAudio_FallbackToStateless_WhenNoPrefillGraph(t *testing.T) {
 	// fakeGenerateEngine only has flow_lm_main (no flow_lm_prefill) → stateless fallback.
 	e := fakeGenerateEngine(t, 3)
-	cfg := GenerateConfig{Temperature: 0.0, EOSThreshold: -4.0, MaxSteps: 256, LSDDecodeSteps: 1}
+	cfg := GenerateConfig{Temperature: 0.0, EOSThreshold: -4.0, MaxSteps: 256, SamplerDecodeSteps: 1}
 
 	pcm, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, cfg)
 	if err != nil {
@@ -234,10 +234,10 @@ func TestGenerateAudio_ProducesNonEmptyPCM(t *testing.T) {
 	e := fakeGenerateEngine(t, 3) // EOS fires on step 3
 
 	cfg := GenerateConfig{
-		Temperature:    0.0, // deterministic
-		EOSThreshold:   -4.0,
-		MaxSteps:       256,
-		LSDDecodeSteps: 1,
+		Temperature:        0.0, // deterministic
+		EOSThreshold:       -4.0,
+		MaxSteps:           256,
+		SamplerDecodeSteps: 1,
 	}
 
 	tokens := []int64{1, 2, 3, 4, 5}
@@ -305,10 +305,10 @@ func TestGenerateAudio_RespectsMaxSteps(t *testing.T) {
 	})
 
 	cfg := GenerateConfig{
-		Temperature:    0.0,
-		EOSThreshold:   -4.0,
-		MaxSteps:       10,
-		LSDDecodeSteps: 1,
+		Temperature:        0.0,
+		EOSThreshold:       -4.0,
+		MaxSteps:           10,
+		SamplerDecodeSteps: 1,
 	}
 
 	_, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, cfg)
@@ -382,11 +382,11 @@ func TestGenerateAudio_EOSCountdown(t *testing.T) {
 	})
 
 	cfg := GenerateConfig{
-		Temperature:    0.0,
-		EOSThreshold:   -4.0,
-		MaxSteps:       256,
-		LSDDecodeSteps: 1,
-		FramesAfterEOS: 3,
+		Temperature:        0.0,
+		EOSThreshold:       -4.0,
+		MaxSteps:           256,
+		SamplerDecodeSteps: 1,
+		FramesAfterEOS:     3,
 	}
 
 	_, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, cfg)
@@ -438,7 +438,7 @@ func TestGenerateAudio_PropagatesFlowLMError(t *testing.T) {
 			},
 		},
 	})
-	cfg := GenerateConfig{MaxSteps: 10, EOSThreshold: -4.0, LSDDecodeSteps: 1}
+	cfg := GenerateConfig{MaxSteps: 10, EOSThreshold: -4.0, SamplerDecodeSteps: 1}
 
 	_, err := e.GenerateAudio(context.Background(), []int64{1, 2}, cfg)
 	if err == nil {
@@ -533,10 +533,10 @@ func TestGenerateAudio_NaNHiddenStateProducesSilence(t *testing.T) {
 	})
 
 	cfg := GenerateConfig{
-		Temperature:    0.0,
-		EOSThreshold:   -4.0,
-		MaxSteps:       5, // limit steps; NaN EOS never fires
-		LSDDecodeSteps: 1,
+		Temperature:        0.0,
+		EOSThreshold:       -4.0,
+		MaxSteps:           5, // limit steps; NaN EOS never fires
+		SamplerDecodeSteps: 1,
 	}
 
 	pcm, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, cfg)

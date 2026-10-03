@@ -56,10 +56,10 @@ func TestGenerateAudioIntegration_ProducesPlausibleAudio(t *testing.T) {
 	}
 
 	cfg := GenerateConfig{
-		Temperature:    0.7,
-		EOSThreshold:   -4.0,
-		MaxSteps:       256,
-		LSDDecodeSteps: 1,
+		Temperature:        0.7,
+		EOSThreshold:       -4.0,
+		MaxSteps:           256,
+		SamplerDecodeSteps: 1,
 	}
 
 	pcm, err := engine.GenerateAudio(context.Background(), tokenIDs, cfg)
@@ -203,10 +203,10 @@ func TestGenerateAudioIntegration_VoiceConditioningDiffersFromUnvoiced(t *testin
 	}
 
 	baseCfg := GenerateConfig{
-		Temperature:    0.0, // deterministic: same seed → same output without voice
-		EOSThreshold:   -4.0,
-		MaxSteps:       64,
-		LSDDecodeSteps: 1,
+		Temperature:        0.0, // deterministic: same seed → same output without voice
+		EOSThreshold:       -4.0,
+		MaxSteps:           64,
+		SamplerDecodeSteps: 1,
 	}
 
 	// Generate without voice conditioning.
@@ -316,10 +316,10 @@ func TestGenerateAudioIntegration_StatefulPath_ProducesPlausibleAudio(t *testing
 	t.Logf("tokenized %q → %d tokens", inputText, len(tokenIDs))
 
 	cfg := GenerateConfig{
-		Temperature:    0.7,
-		EOSThreshold:   -4.0,
-		MaxSteps:       256,
-		LSDDecodeSteps: 1,
+		Temperature:        0.7,
+		EOSThreshold:       -4.0,
+		MaxSteps:           256,
+		SamplerDecodeSteps: 1,
 	}
 
 	pcm, err := engine.GenerateAudio(context.Background(), tokenIDs, cfg)

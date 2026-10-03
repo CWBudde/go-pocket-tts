@@ -43,16 +43,22 @@ type ServerConfig struct {
 }
 
 type TTSConfig struct {
-	Backend        string  `mapstructure:"backend"`
-	Voice          string  `mapstructure:"voice"`
-	CLIPath        string  `mapstructure:"cli_path"`
-	CLIConfigPath  string  `mapstructure:"cli_config_path"`
-	Concurrency    int     `mapstructure:"concurrency"`
-	Quiet          bool    `mapstructure:"quiet"`
-	Temperature    float64 `mapstructure:"temperature"`
-	EOSThreshold   float64 `mapstructure:"eos_threshold"`
-	MaxSteps       int     `mapstructure:"max_steps"`
-	LSDDecodeSteps int     `mapstructure:"lsd_decode_steps"`
+	Backend       string  `mapstructure:"backend"`
+	Voice         string  `mapstructure:"voice"`
+	CLIPath       string  `mapstructure:"cli_path"`
+	CLIConfigPath string  `mapstructure:"cli_config_path"`
+	Concurrency   int     `mapstructure:"concurrency"`
+	Quiet         bool    `mapstructure:"quiet"`
+	Temperature   float64 `mapstructure:"temperature"`
+	EOSThreshold  float64 `mapstructure:"eos_threshold"`
+	MaxSteps      int     `mapstructure:"max_steps"`
+	// SamplerDecodeSteps is the number of sampler integration steps per latent
+	// frame (upstream --sampler-decode-steps, formerly --lsd-decode-steps). The
+	// deprecated key tts.lsd_decode_steps, the env vars
+	// POCKETTTS_TTS_LSD_DECODE_STEPS / POCKETTTS_LSD_STEPS and the hidden
+	// --lsd-steps flag are still accepted; see bindSamplerDecodeSteps and
+	// applyDeprecatedSamplerDecodeSteps.
+	SamplerDecodeSteps int `mapstructure:"sampler_decode_steps"`
 }
 
 type LoadOptions struct {
@@ -90,16 +96,16 @@ func DefaultConfig() Config {
 			RequestTimeout:  60,
 		},
 		TTS: TTSConfig{
-			Backend:        BackendNative,
-			Voice:          "",
-			CLIPath:        "",
-			CLIConfigPath:  "",
-			Concurrency:    1,
-			Quiet:          true,
-			Temperature:    0.7,
-			EOSThreshold:   -4.0,
-			MaxSteps:       256,
-			LSDDecodeSteps: 1,
+			Backend:            BackendNative,
+			Voice:              "",
+			CLIPath:            "",
+			CLIConfigPath:      "",
+			Concurrency:        1,
+			Quiet:              true,
+			Temperature:        0.7,
+			EOSThreshold:       -4.0,
+			MaxSteps:           256,
+			SamplerDecodeSteps: 1,
 		},
 		LogLevel: "info",
 	}
@@ -140,8 +146,20 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.Float64("temperature", defaults.TTS.Temperature, "Noise temperature for flow sampling")
 	fs.Float64("eos-threshold", defaults.TTS.EOSThreshold, "Raw logit threshold for EOS detection")
 	fs.Int("max-steps", defaults.TTS.MaxSteps, "Maximum autoregressive generation steps")
-	fs.Int("lsd-steps", defaults.TTS.LSDDecodeSteps, "Euler integration steps per latent frame")
+	fs.Int("sampler-decode-steps", defaults.TTS.SamplerDecodeSteps, "Sampler integration steps per latent frame")
+	registerDeprecatedIntFlag(fs, "lsd-steps", defaults.TTS.SamplerDecodeSteps, "sampler-decode-steps")
 	fs.String("log-level", defaults.LogLevel, "Log level (debug|info|warn|error)")
+}
+
+// registerDeprecatedIntFlag registers name as a hidden, deprecated alias of
+// replacement. pflag prints a deprecation notice when the flag is used; the
+// value itself is applied in Load.
+func registerDeprecatedIntFlag(fs *pflag.FlagSet, name string, value int, replacement string) {
+	fs.Int(name, value, "Deprecated: use --"+replacement)
+
+	// MarkDeprecated also hides the flag from usage output. It only fails for
+	// an unknown flag or an empty message, neither of which can happen here.
+	_ = fs.MarkDeprecated(name, "use --"+replacement)
 }
 
 func Load(opts LoadOptions) (Config, error) {
@@ -149,8 +167,12 @@ func Load(opts LoadOptions) (Config, error) {
 
 	setDefaults(v, opts.Defaults)
 
+	var flags *pflag.FlagSet
+
 	if opts.Cmd != nil {
-		err := v.BindPFlags(opts.Cmd.Flags())
+		flags = opts.Cmd.Flags()
+
+		err := v.BindPFlags(flags)
 		if err != nil {
 			return Config{}, fmt.Errorf("bind flags: %w", err)
 		}
@@ -158,12 +180,17 @@ func Load(opts LoadOptions) (Config, error) {
 
 	registerAliases(v)
 
+	err := bindSamplerDecodeSteps(v, flags)
+	if err != nil {
+		return Config{}, err
+	}
+
 	v.SetEnvPrefix("POCKETTTS")
 
 	replacer := strings.NewReplacer("-", "_", ".", "_", "__", "_")
 	v.SetEnvKeyReplacer(replacer)
 
-	err := v.BindEnv("runtime.ort_library_path", "POCKETTTS_ORT_LIB", "ORT_LIBRARY_PATH")
+	err = v.BindEnv("runtime.ort_library_path", "POCKETTTS_ORT_LIB", "ORT_LIBRARY_PATH")
 	if err != nil {
 		return Config{}, fmt.Errorf("bind ort env vars: %w", err)
 	}
@@ -189,6 +216,11 @@ func Load(opts LoadOptions) (Config, error) {
 				return Config{}, fmt.Errorf("read config file: %w", err)
 			}
 		}
+	}
+
+	err = applyDeprecatedSamplerDecodeSteps(v, flags)
+	if err != nil {
+		return Config{}, err
 	}
 
 	var cfg Config
@@ -227,7 +259,7 @@ func setDefaults(v *viper.Viper, c Config) {
 	v.SetDefault("tts.temperature", c.TTS.Temperature)
 	v.SetDefault("tts.eos_threshold", c.TTS.EOSThreshold)
 	v.SetDefault("tts.max_steps", c.TTS.MaxSteps)
-	v.SetDefault("tts.lsd_decode_steps", c.TTS.LSDDecodeSteps)
+	v.SetDefault(samplerDecodeStepsKey, c.TTS.SamplerDecodeSteps)
 	v.SetDefault("log_level", c.LogLevel)
 }
 
@@ -258,6 +290,65 @@ func registerAliases(v *viper.Viper) {
 	v.RegisterAlias("tts.temperature", "temperature")
 	v.RegisterAlias("tts.eos_threshold", "eos-threshold")
 	v.RegisterAlias("tts.max_steps", "max-steps")
-	v.RegisterAlias("tts.lsd_decode_steps", "lsd-steps")
 	v.RegisterAlias("log_level", "log-level")
+}
+
+const (
+	samplerDecodeStepsKey           = "tts.sampler_decode_steps"
+	deprecatedSamplerDecodeStepsKey = "tts.lsd_decode_steps"
+)
+
+// bindSamplerDecodeSteps binds tts.sampler_decode_steps directly to its flag
+// instead of going through registerAliases: an alias from the config key to
+// the flag name would make the config-file value and the
+// POCKETTTS_TTS_SAMPLER_DECODE_STEPS env var unreachable. The flag-style env
+// var (matching the other aliased keys) and the deprecated env vars are bound
+// as fallbacks, new names first.
+func bindSamplerDecodeSteps(v *viper.Viper, flags *pflag.FlagSet) error {
+	if flags != nil {
+		if f := flags.Lookup("sampler-decode-steps"); f != nil {
+			err := v.BindPFlag(samplerDecodeStepsKey, f)
+			if err != nil {
+				return fmt.Errorf("bind sampler-decode-steps flag: %w", err)
+			}
+		}
+	}
+
+	err := v.BindEnv(
+		samplerDecodeStepsKey,
+		"POCKETTTS_SAMPLER_DECODE_STEPS",
+		"POCKETTTS_TTS_LSD_DECODE_STEPS",
+		"POCKETTTS_LSD_STEPS",
+	)
+	if err != nil {
+		return fmt.Errorf("bind sampler decode steps env vars: %w", err)
+	}
+
+	return nil
+}
+
+// applyDeprecatedSamplerDecodeSteps maps the deprecated lsd names onto
+// tts.sampler_decode_steps. It must run after the config file was read.
+//
+//   - An explicit --lsd-steps overrides everything, like upstream's
+//     --lsd-decode-steps overrides --sampler-decode-steps.
+//   - A tts.lsd_decode_steps config-file key only replaces the default, so
+//     the new key, env vars and flags still take precedence over it.
+func applyDeprecatedSamplerDecodeSteps(v *viper.Viper, flags *pflag.FlagSet) error {
+	if flags != nil && flags.Changed("lsd-steps") {
+		steps, err := flags.GetInt("lsd-steps")
+		if err != nil {
+			return fmt.Errorf("read deprecated lsd-steps flag: %w", err)
+		}
+
+		v.Set(samplerDecodeStepsKey, steps)
+
+		return nil
+	}
+
+	if v.InConfig(deprecatedSamplerDecodeStepsKey) {
+		v.SetDefault(samplerDecodeStepsKey, v.Get(deprecatedSamplerDecodeStepsKey))
+	}
+
+	return nil
 }

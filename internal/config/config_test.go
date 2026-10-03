@@ -1,8 +1,10 @@
 package config
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/pflag"
@@ -448,8 +450,8 @@ func TestDefaultConfig_GenerationFields(t *testing.T) {
 		t.Errorf("TTS.MaxSteps = %d; want 256", cfg.TTS.MaxSteps)
 	}
 
-	if cfg.TTS.LSDDecodeSteps != 1 {
-		t.Errorf("TTS.LSDDecodeSteps = %d; want 1", cfg.TTS.LSDDecodeSteps)
+	if cfg.TTS.SamplerDecodeSteps != 1 {
+		t.Errorf("TTS.SamplerDecodeSteps = %d; want 1", cfg.TTS.SamplerDecodeSteps)
 	}
 }
 
@@ -465,7 +467,7 @@ func TestRegisterFlags_GenerationFlags(t *testing.T) {
 		{"temperature", "0.7"},
 		{"eos-threshold", "-4"},
 		{"max-steps", "256"},
-		{"lsd-steps", "1"},
+		{"sampler-decode-steps", "1"},
 	}
 	for _, c := range checks {
 		f := fs.Lookup(c.flag)
@@ -489,7 +491,7 @@ func TestLoad_FlagOverride_GenerationFields(t *testing.T) {
 		"--temperature=0.5",
 		"--eos-threshold=-2.0",
 		"--max-steps=128",
-		"--lsd-steps=3",
+		"--sampler-decode-steps=3",
 	})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -512,8 +514,8 @@ func TestLoad_FlagOverride_GenerationFields(t *testing.T) {
 		t.Errorf("TTS.MaxSteps = %d; want 128", cfg.TTS.MaxSteps)
 	}
 
-	if cfg.TTS.LSDDecodeSteps != 3 {
-		t.Errorf("TTS.LSDDecodeSteps = %d; want 3", cfg.TTS.LSDDecodeSteps)
+	if cfg.TTS.SamplerDecodeSteps != 3 {
+		t.Errorf("TTS.SamplerDecodeSteps = %d; want 3", cfg.TTS.SamplerDecodeSteps)
 	}
 }
 
@@ -531,4 +533,136 @@ func TestLoad_NilCmd(t *testing.T) {
 	// Returned Config must be a zero-value-safe struct (no panic on access).
 	_ = cfg.Paths.ModelPath
 	_ = cfg.Server.Workers
+}
+
+// --- Sampler decode steps (renamed from LSD decode steps) ---
+
+func TestRegisterFlags_LSDStepsIsHiddenDeprecatedAlias(t *testing.T) {
+	defaults := DefaultConfig()
+	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+	RegisterFlags(fs, defaults)
+
+	f := fs.Lookup("lsd-steps")
+	if f == nil {
+		t.Fatal(`deprecated flag "lsd-steps" must stay registered`)
+	}
+
+	if !f.Hidden {
+		t.Error(`flag "lsd-steps" must be hidden`)
+	}
+
+	if !strings.Contains(f.Deprecated, "--sampler-decode-steps") {
+		t.Errorf("flag %q Deprecated = %q; want a hint to --sampler-decode-steps", f.Name, f.Deprecated)
+	}
+
+	if f.DefValue != "1" {
+		t.Errorf("flag %q default = %q; want %q", f.Name, f.DefValue, "1")
+	}
+
+	if strings.Contains(fs.FlagUsages(), "lsd-steps") {
+		t.Error(`usage output must not list the deprecated "lsd-steps" flag`)
+	}
+}
+
+// TestLoad_SamplerDecodeSteps_Sources covers every source of
+// tts.sampler_decode_steps, including the deprecated lsd names, and their
+// precedence: flags > env > config file > defaults. Within one source the new
+// name wins over the deprecated one, except for flags, where an explicit
+// --lsd-steps overrides --sampler-decode-steps like upstream's CLI does.
+func TestLoad_SamplerDecodeSteps_Sources(t *testing.T) {
+	tests := []struct {
+		name  string
+		args  []string
+		env   map[string]string
+		file  string
+		noCmd bool
+		want  int
+	}{
+		{name: "default", want: 1},
+		{name: "default without flags", noCmd: true, want: 1},
+		{name: "new flag", args: []string{"--sampler-decode-steps=3"}, want: 3},
+		{name: "deprecated flag", args: []string{"--lsd-steps=4"}, want: 4},
+		{
+			name: "deprecated flag overrides new flag",
+			args: []string{"--sampler-decode-steps=3", "--lsd-steps=4"},
+			want: 4,
+		},
+		{name: "new env", env: map[string]string{"POCKETTTS_TTS_SAMPLER_DECODE_STEPS": "5"}, want: 5},
+		{name: "new env without flags", env: map[string]string{"POCKETTTS_TTS_SAMPLER_DECODE_STEPS": "5"}, noCmd: true, want: 5},
+		{name: "new flag-style env", env: map[string]string{"POCKETTTS_SAMPLER_DECODE_STEPS": "5"}, want: 5},
+		{name: "deprecated env", env: map[string]string{"POCKETTTS_TTS_LSD_DECODE_STEPS": "6"}, want: 6},
+		{name: "deprecated flag-style env", env: map[string]string{"POCKETTTS_LSD_STEPS": "6"}, want: 6},
+		{
+			name: "new env beats deprecated env",
+			env: map[string]string{
+				"POCKETTTS_TTS_SAMPLER_DECODE_STEPS": "5",
+				"POCKETTTS_TTS_LSD_DECODE_STEPS":     "6",
+			},
+			want: 5,
+		},
+		{name: "new file key", file: "tts:\n  sampler_decode_steps: 7\n", want: 7},
+		{name: "new file key without flags", file: "tts:\n  sampler_decode_steps: 7\n", noCmd: true, want: 7},
+		{name: "deprecated file key", file: "tts:\n  lsd_decode_steps: 8\n", want: 8},
+		{name: "deprecated file key without flags", file: "tts:\n  lsd_decode_steps: 8\n", noCmd: true, want: 8},
+		{
+			name: "new file key beats deprecated file key",
+			file: "tts:\n  sampler_decode_steps: 7\n  lsd_decode_steps: 8\n",
+			want: 7,
+		},
+		{
+			name: "env beats file",
+			env:  map[string]string{"POCKETTTS_TTS_LSD_DECODE_STEPS": "6"},
+			file: "tts:\n  sampler_decode_steps: 7\n",
+			want: 6,
+		},
+		{
+			name: "new flag beats deprecated env and file key",
+			args: []string{"--sampler-decode-steps=3"},
+			env:  map[string]string{"POCKETTTS_TTS_LSD_DECODE_STEPS": "6"},
+			file: "tts:\n  lsd_decode_steps: 8\n",
+			want: 3,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+
+			defaults := DefaultConfig()
+			opts := LoadOptions{Defaults: defaults}
+
+			if !tc.noCmd {
+				fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
+				fs.SetOutput(io.Discard) // silence the deprecation notice
+				RegisterFlags(fs, defaults)
+
+				err := fs.Parse(tc.args)
+				if err != nil {
+					t.Fatalf("Parse: %v", err)
+				}
+
+				opts.Cmd = &fakeBinder{fs: fs}
+			}
+
+			if tc.file != "" {
+				opts.ConfigFile = filepath.Join(t.TempDir(), "pockettts.yaml")
+
+				err := os.WriteFile(opts.ConfigFile, []byte(tc.file), 0o644)
+				if err != nil {
+					t.Fatalf("WriteFile: %v", err)
+				}
+			}
+
+			cfg, err := Load(opts)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+
+			if cfg.TTS.SamplerDecodeSteps != tc.want {
+				t.Errorf("TTS.SamplerDecodeSteps = %d; want %d", cfg.TTS.SamplerDecodeSteps, tc.want)
+			}
+		})
+	}
 }
