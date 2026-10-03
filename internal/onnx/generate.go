@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+
+	"github.com/cwbudde/go-pocket-tts/internal/genloop"
 )
 
 // GenerateConfig holds parameters for the autoregressive generation loop.
@@ -67,7 +69,8 @@ func (e *Engine) generateAudioStateful(ctx context.Context, tokens []int64, cfg 
 	// Step 3: Autoregressive generation loop.
 	currentFrame := NewBOSSequence() // [1, 1, 32] NaN sentinel for first step
 	var latentFrames []*Tensor
-	var eosCountdown *int
+
+	stop := genloop.EOSStop{FramesAfter: cfg.FramesAfterEOS}
 
 	for step := range cfg.MaxSteps {
 		lastHidden, eosLogits, err := e.FlowLMStepStateful(ctx, currentFrame, kvState)
@@ -75,10 +78,11 @@ func (e *Engine) generateAudioStateful(ctx context.Context, tokens []int64, cfg 
 			return nil, fmt.Errorf("generate step %d: %w", step, err)
 		}
 
-		if EOSDetected(eosLogits, cfg.EOSThreshold) && eosCountdown == nil {
-			countdown := cfg.FramesAfterEOS
-			eosCountdown = &countdown
-			slog.Debug("EOS detected", "step", step, "frames_after_eos", countdown)
+		if stop.Stop(step, EOSDetected(eosLogits, cfg.EOSThreshold)) {
+			eosStep, _ := stop.EOSStep()
+			slog.Debug("EOS stop", "eos_step", eosStep, "frames_after_eos", cfg.FramesAfterEOS)
+
+			break
 		}
 
 		frame, err := e.FlowLMFlow(ctx, lastHidden, cfg.Temperature, cfg.SamplerDecodeSteps)
@@ -88,14 +92,6 @@ func (e *Engine) generateAudioStateful(ctx context.Context, tokens []int64, cfg 
 
 		latentFrames = append(latentFrames, frame)
 		currentFrame = frame
-
-		if eosCountdown != nil {
-			if *eosCountdown == 0 {
-				break
-			}
-
-			*eosCountdown--
-		}
 	}
 
 	slog.Info("generation complete (stateful)", "frames", len(latentFrames))
@@ -128,7 +124,8 @@ func (e *Engine) generateAudioStateless(ctx context.Context, tokens []int64, cfg
 	// Step 2: Autoregressive generation loop (stateless — full sequence each step).
 	sequence := NewBOSSequence()
 	var latentFrames []*Tensor
-	var eosCountdown *int
+
+	stop := genloop.EOSStop{FramesAfter: cfg.FramesAfterEOS}
 
 	for step := range cfg.MaxSteps {
 		lastHidden, eosLogits, err := e.FlowLMStep(ctx, sequence, textEmb)
@@ -136,10 +133,11 @@ func (e *Engine) generateAudioStateless(ctx context.Context, tokens []int64, cfg
 			return nil, fmt.Errorf("generate step %d: %w", step, err)
 		}
 
-		if EOSDetected(eosLogits, cfg.EOSThreshold) && eosCountdown == nil {
-			countdown := cfg.FramesAfterEOS
-			eosCountdown = &countdown
-			slog.Debug("EOS detected", "step", step, "frames_after_eos", countdown)
+		if stop.Stop(step, EOSDetected(eosLogits, cfg.EOSThreshold)) {
+			eosStep, _ := stop.EOSStep()
+			slog.Debug("EOS stop", "eos_step", eosStep, "frames_after_eos", cfg.FramesAfterEOS)
+
+			break
 		}
 
 		frame, err := e.FlowLMFlow(ctx, lastHidden, cfg.Temperature, cfg.SamplerDecodeSteps)
@@ -148,14 +146,6 @@ func (e *Engine) generateAudioStateless(ctx context.Context, tokens []int64, cfg
 		}
 
 		latentFrames = append(latentFrames, frame)
-
-		if eosCountdown != nil {
-			if *eosCountdown == 0 {
-				break
-			}
-
-			*eosCountdown--
-		}
 
 		sequence, err = AppendLatentFrame(sequence, frame)
 		if err != nil {

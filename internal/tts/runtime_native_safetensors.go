@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cwbudde/go-pocket-tts/internal/genloop"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/text"
@@ -17,8 +18,19 @@ import (
 
 const nativeLatentDim = 32
 
+// latentSampler has the signature of Model.SampleNextLatentStateful.
+type latentSampler func(
+	state *nativemodel.FlowLMState,
+	sequenceFrame *tensor.Tensor,
+	decodeSteps int,
+	eosThreshold, temperature float32,
+	rng *rand.Rand,
+) (*tensor.Tensor, bool, error)
+
 type nativeSafetensorsRuntime struct {
 	model *nativemodel.Model
+	// sample replaces model.SampleNextLatentStateful in tests when set.
+	sample latentSampler
 
 	rngMu sync.Mutex
 	rng   *rand.Rand
@@ -196,8 +208,9 @@ func (r *nativeSafetensorsRuntime) prepareFlowState(textEmb *tensor.Tensor, cfg 
 	return flowState, nil
 }
 
-// runARLoop runs the autoregressive latent sampling loop until EOS (plus
-// FramesAfterEOS trailing frames) or maxSteps is reached.
+// runARLoop runs the autoregressive latent sampling loop until the
+// genloop.EOSStop rule ends it (eos_step + FramesAfterEOS frames) or maxSteps
+// is reached.
 func (r *nativeSafetensorsRuntime) runARLoop(
 	ctx context.Context,
 	flowState *nativemodel.FlowLMState,
@@ -206,7 +219,13 @@ func (r *nativeSafetensorsRuntime) runARLoop(
 	cfg RuntimeGenerateConfig,
 ) ([]*tensor.Tensor, error) {
 	var latentFrames []*tensor.Tensor
-	var eosCountdown *int
+
+	sample := r.sample
+	if sample == nil {
+		sample = r.model.SampleNextLatentStateful
+	}
+
+	stop := genloop.EOSStop{FramesAfter: cfg.FramesAfterEOS}
 
 	for step := range maxSteps {
 		err := ctx.Err()
@@ -215,7 +234,7 @@ func (r *nativeSafetensorsRuntime) runARLoop(
 		}
 
 		r.rngMu.Lock()
-		frame, isEOS, err := r.model.SampleNextLatentStateful(
+		frame, isEOS, err := sample(
 			flowState,
 			sequenceFrame,
 			decodeSteps,
@@ -229,22 +248,14 @@ func (r *nativeSafetensorsRuntime) runARLoop(
 			return nil, fmt.Errorf("generate step %d: %w", step, err)
 		}
 
+		if stop.Stop(step, isEOS) {
+			eosStep, _ := stop.EOSStep()
+			slog.Debug("EOS stop", "eos_step", eosStep, "frames_after_eos", cfg.FramesAfterEOS)
+
+			break
+		}
+
 		latentFrames = append(latentFrames, frame)
-
-		if isEOS && eosCountdown == nil {
-			countdown := cfg.FramesAfterEOS
-			eosCountdown = &countdown
-			slog.Debug("EOS detected", "step", step, "frames_after_eos", countdown)
-		}
-
-		if eosCountdown != nil {
-			if *eosCountdown == 0 {
-				break
-			}
-
-			(*eosCountdown)--
-		}
-
 		sequenceFrame = frame
 
 		if cfg.StepCallback != nil {

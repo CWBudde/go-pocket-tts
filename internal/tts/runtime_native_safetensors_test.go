@@ -3,6 +3,7 @@ package tts
 import (
 	"context"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -195,5 +196,49 @@ func TestPrepareFlowState_BOSBeforeVoice_RealGermanCheckpoint(t *testing.T) {
 				t.Fatalf("prompted positions = %d, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+// fakeSampler returns a latentSampler that flags EOS from step eosFrom on and
+// calls onStep (if set) with the 1-based call count, plus that count.
+func fakeSampler(t *testing.T, eosFrom int, onStep func(calls int)) (latentSampler, *int) {
+	t.Helper()
+
+	calls := 0
+
+	return func(_ *nativemodel.FlowLMState, _ *tensor.Tensor, _ int, _, _ float32, _ *rand.Rand) (*tensor.Tensor, bool, error) {
+		step := calls
+		calls++
+
+		if onStep != nil {
+			onStep(calls)
+		}
+
+		return mustTensor(t, make([]float32, nativeLatentDim), []int64{1, 1, nativeLatentDim}), step >= eosFrom, nil
+	}, &calls
+}
+
+func TestRunARLoop_EOSStopRule(t *testing.T) {
+	// EOS is flagged from step 2 on but only accepted from step
+	// genloop.MinFramesBeforeEOS = 6; upstream keeps eos_step + F frames.
+	for _, tc := range []struct {
+		framesAfter int
+		wantFrames  int
+	}{
+		{3, 9},
+		{0, 6},
+	} {
+		sample, calls := fakeSampler(t, 2, nil)
+		rt := &nativeSafetensorsRuntime{sample: sample}
+
+		frames, err := rt.runARLoop(context.Background(), nil, nil, 256, 1, RuntimeGenerateConfig{FramesAfterEOS: tc.framesAfter})
+		if err != nil {
+			t.Fatalf("runARLoop: %v", err)
+		}
+
+		if len(frames) != tc.wantFrames || *calls != tc.wantFrames+1 {
+			t.Errorf("frames_after_eos=%d: %d frames from %d steps, want %d from %d",
+				tc.framesAfter, len(frames), *calls, tc.wantFrames, tc.wantFrames+1)
+		}
 	}
 }

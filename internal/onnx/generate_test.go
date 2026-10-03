@@ -321,82 +321,68 @@ func TestGenerateAudio_RespectsMaxSteps(t *testing.T) {
 	}
 }
 
-func TestGenerateAudio_EOSCountdown(t *testing.T) {
-	// EOS fires on step 2, framesAfterEOS = 3.
-	// Should generate steps: 1(no), 2(EOS, countdown=3), 3(2), 4(1), 5(0→stop).
-	// Total = 5 steps.
-	stepCount := 0
-	flowMain := &fakeRunner{
-		name: "flow_lm_main",
-		fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
-			stepCount++
-			h, _ := NewTensor(make([]float32, 1024), []int64{1, 1024})
-
-			eosVal := float32(-10.0)
-			if stepCount >= 2 {
-				eosVal = 0.0 // fires on step 2+
-			}
-
-			eos, _ := NewTensor([]float32{eosVal}, []int64{1, 1})
-
-			return map[string]*Tensor{"last_hidden": h, "eos_logits": eos}, nil
+// countRuns wraps the named runner of e and returns its call counter.
+func countRuns(e *Engine, name string) *int {
+	calls := 0
+	inner := e.runners[name]
+	e.runners[name] = &fakeRunner{
+		name: name,
+		fn: func(ctx context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+			calls++
+			return inner.Run(ctx, inputs)
 		},
 	}
 
-	e := engineWithFakeRunners(map[string]runnerIface{
-		"text_conditioner": &fakeRunner{
-			name: "text_conditioner",
-			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
-				T := inputs["tokens"].Shape()[1]
-				out, _ := NewTensor(make([]float32, T*1024), []int64{1, T, 1024})
+	return &calls
+}
 
-				return map[string]*Tensor{"text_embeddings": out}, nil
-			},
-		},
-		"flow_lm_main": flowMain,
-		"flow_lm_flow": &fakeRunner{
-			name: "flow_lm_flow",
-			fn: func(_ context.Context, _ map[string]*Tensor) (map[string]*Tensor, error) {
-				out, _ := NewTensor(make([]float32, 32), []int64{1, 32})
-				return map[string]*Tensor{"flow_direction": out}, nil
-			},
-		},
-		"latent_to_mimi": &fakeRunner{
-			name: "latent_to_mimi",
-			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
-				T := inputs["latent"].Shape()[1]
-				out, _ := NewTensor(make([]float32, 512*T), []int64{1, 512, T})
+// generatePaths are the two AR loops with the name of their per-step graph.
+var generatePaths = []struct {
+	name      string
+	engine    func(t *testing.T, eosAfterSteps int) *Engine
+	stepGraph string
+}{
+	{"stateless", fakeGenerateEngine, "flow_lm_main"},
+	{"stateful", fakeStatefulEngine, "flow_lm_step"},
+}
 
-				return map[string]*Tensor{"mimi_latent": out}, nil
-			},
-		},
-		"mimi_decoder": &fakeRunner{
-			name: "mimi_decoder",
-			fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
-				T := inputs["latent"].Shape()[2]
-				out, _ := NewTensor(make([]float32, T*480), []int64{1, 1, T * 480})
+func TestGenerateAudio_EOSStopRule(t *testing.T) {
+	// The fakes flag EOS from their third step call (step 2) on. EOS is only
+	// accepted from step genloop.MinFramesBeforeEOS = 6, and upstream keeps
+	// eos_step + FramesAfterEOS frames: the step that stops the loop runs the
+	// backbone but neither the flow head nor the decoder.
+	for _, path := range generatePaths {
+		for _, tc := range []struct {
+			framesAfter int
+			wantFrames  int
+		}{
+			{3, 9},
+			{0, 6},
+		} {
+			t.Run(fmt.Sprintf("%s/frames_after_eos=%d", path.name, tc.framesAfter), func(t *testing.T) {
+				e := path.engine(t, 3)
+				steps := countRuns(e, path.stepGraph)
+				flows := countRuns(e, "flow_lm_flow")
 
-				return map[string]*Tensor{"audio": out}, nil
-			},
-		},
-	})
+				pcm, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, GenerateConfig{
+					EOSThreshold:       -4.0,
+					MaxSteps:           256,
+					SamplerDecodeSteps: 1,
+					FramesAfterEOS:     tc.framesAfter,
+				})
+				if err != nil {
+					t.Fatalf("GenerateAudio: %v", err)
+				}
 
-	cfg := GenerateConfig{
-		Temperature:        0.0,
-		EOSThreshold:       -4.0,
-		MaxSteps:           256,
-		SamplerDecodeSteps: 1,
-		FramesAfterEOS:     3,
-	}
+				if *flows != tc.wantFrames || len(pcm) != tc.wantFrames*480 {
+					t.Errorf("frames = %d (pcm %d samples), want %d", *flows, len(pcm), tc.wantFrames)
+				}
 
-	_, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, cfg)
-	if err != nil {
-		t.Fatalf("GenerateAudio: %v", err)
-	}
-	// EOS on step 2, countdown 3 → steps 2,3,4,5 (stop at 5).
-	// Total = 5 steps.
-	if stepCount != 5 {
-		t.Errorf("flow_lm_main called %d times, want 5 (EOS at 2 + 3 after)", stepCount)
+				if *steps != tc.wantFrames+1 {
+					t.Errorf("%s calls = %d, want %d", path.stepGraph, *steps, tc.wantFrames+1)
+				}
+			})
+		}
 	}
 }
 
