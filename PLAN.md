@@ -217,20 +217,33 @@ constants and paths are hard-coded around `tts_b6369a24`.
       zero ones. `TestLoadVoiceModelState_RealGermanVoice` (6 layers, pad 0, offset 124) and
       `TestFlowStateFromVoiceModelState_RealGermanVoice` run when the voice is present.
 
-## Phase 3 — Generation Loop Parity
+## Phase 3 — Generation Loop Parity — ✅ DONE (2026-10-03)
 
 All in `internal/tts/runtime_native_safetensors.go`, mirrored in `internal/onnx/generate.go`.
 
-- [ ] **Minimum frames before EOS (#319):** only accept EOS when `step >= 6` (`_MIN_FRAMES_BEFORE_EOS`).
-- [ ] **Off-by-one after EOS:** upstream breaks _before_ queueing when `step >= eos_step + frames_after_eos`
+- [x] **Minimum frames before EOS (#319):** only accept EOS when `step >= 6` (`_MIN_FRAMES_BEFORE_EOS`).
+      (2026-10-03) — new `internal/genloop.EOSStop` (`MinFramesBeforeEOS = 6`) drives the native loop and
+      both ONNX loops; `TestEOSStop`, `TestRunARLoop_EOSStopRule`, `TestGenerateAudio_EOSStopRule`.
+- [x] **Off-by-one after EOS:** upstream breaks _before_ queueing when `step >= eos_step + frames_after_eos`
       and emits exactly F frames after EOS. Go appends first and emits F+1. Fix it and pin it with a test.
-- [ ] **frames_after_eos default** from `model_recommended_frames_after_eos`, falling back to the
+      (2026-10-03) — `EOSStop.Stop` runs before the frame is kept, so all three loops keep `eos_step + F`
+      frames (F = 0 drops the EOS frame); the ONNX loops also skip the flow head on the stopping step.
+- [x] **frames_after_eos default** from `model_recommended_frames_after_eos`, falling back to the
       upstream heuristic.
-- [ ] **Per-chunk fade-in (#332→#335):** multiply the first 120 samples (`sample_rate/200`, 5 ms) of each
+      (2026-10-03) — `modelcfg.ModelConfig.FramesAfterEOS(chunk.FramesAfterEOS())` (nil-safe), used by
+      `tts.Service`, stageprof and WASM (which now loads its checkpoint with the `english_2026-01` config);
+      `TestFramesAfterEOS`, `TestSynthesize_FramesAfterEOS`. Every embedded config leaves it unset, so output is
+      unchanged today.
+- [x] **Per-chunk fade-in (#332→#335):** multiply the first 120 samples (`sample_rate/200`, 5 ms) of each
       chunk's first decoded frame by `linspace(0, 1, 120)` (inclusive endpoints). Do it after `MimiDecode` per
       chunk, not as the optional CLI DSP step. Fix `audio/dsp.go` fade so its ramp reaches 1.0, or keep the two separate.
-- [ ] Cancellation (#228) is already covered: `ctx` from `r.Context()` is checked every step. Add a test that
+      (2026-10-03) — `audio.ChunkFadeIn` (`LinearRamp`, torch `linspace` gains) after Mimi decode in the native
+      runtime and `onnx.decodeLatentsToAudio`; `FadeIn`/`FadeOut` now share the ramp and reach 1.0.
+      `TestGenerateAudio_FadesInChunkStart{,_RealCheckpoint}`, `TestLinearRamp`.
+- [x] Cancellation (#228) is already covered: `ctx` from `r.Context()` is checked every step. Add a test that
       at most one extra step runs after cancel, to match `test_streaming_cancellation.py`.
+      (2026-10-03) — only the native loop checked `ctx`; both ONNX loops now do too.
+      `TestRunARLoop_CancelStopsWithinOneStep`, `TestGenerateAudio_CancelStopsWithinOneStep`.
 
 ## Phase 4 — Text Preparation Parity
 
@@ -291,6 +304,10 @@ Minimal path (precomputed voices only; needs Phases 1, 3, 4 and Phase 5 byte fal
 - [ ] `pockettts synth --language german --voice juergen --text "…"` produces intelligible German
       (listening check plus a Python-reference comparison from Phase 8)
 - [ ] German demo text from upstream `default_parameters.py` used as a CLI smoke example
+- [ ] `german` (6L) + `juergen` ends far too early: "Guten Tag, dies ist ein kurzer Test." hits EOS at step 1
+      on `main` (5 frames) and at the step-6 minimum after Phase 3 (9 frames, 0.36 s). `german_24l` +
+      `juergen` and English are fine. Find out why (text prep, tokenizer, voice state) before the listening check.
+      (Found 2026-10-03 during the Phase 3 smoke run.)
 - [ ] `serve --language german`: one language per process (same as upstream `serve`); add `--default-voice`
       (#271: name | local wav/safetensors | URL, resolved at startup, fail fast)
 - [ ] `doctor` validates the selected language's files
@@ -349,6 +366,8 @@ Follow-ups:
       changes the graphs anyway).
 - [ ] Re-export per language (`scripts/export_onnx.py --language german`), then publish and update the lock file
 - [ ] Known issue: garbled audio at the beginning of longer inputs
+- [ ] `decodeLatentsToAudio` fades in over `audio.ExpectedSampleRate/200` samples; take the rate from the
+      bundle's Mimi config instead of the 24 kHz constant (the native runtime uses `Mimi().SampleRate()`).
 - [ ] **Decide:** keep ONNX only as the voice-cloning encoder until the native Mimi encoder exists, or deprecate it.
       Upstream changes now have to be applied twice (Go + re-export), which is a strong argument for
       minimising it.
@@ -378,6 +397,9 @@ Note: chunk-level streaming (`/tts/stream`) is already implemented.
 
 - [ ] Memory budgeting for model weights, KV cache and per-request buffers (multi-language registry, 24L)
 - [ ] Im2col tiling for cache-friendliness on large convolutions (res3: 38400×192 im2col = 30 MB, overflows L3)
+- [ ] The native AR loop runs the full flow sampler on the stopping step and drops the frame, because
+      `SampleNextLatentStateful` returns the latent and the EOS flag together (upstream does the same). Split
+      backbone/EOS from flow sampling, as the ONNX loops do, to save `decodeSteps` flow passes per chunk.
 
 ---
 

@@ -154,6 +154,27 @@ func TestMimiInnerDim_FallsBackToSEANetDimension(t *testing.T) {
 	}
 }
 
+// Upstream: frames_after_eos or model_recommended_frames_after_eos or the
+// per-chunk guess.
+func TestFramesAfterEOS(t *testing.T) {
+	two, zero := 2, 0
+
+	for _, tc := range []struct {
+		name string
+		cfg  *ModelConfig
+		want int
+	}{
+		{"nil config keeps the guess", nil, 5},
+		{"no recommendation keeps the guess", &ModelConfig{}, 5},
+		{"recommendation wins", &ModelConfig{ModelRecommendedFramesAfterEOS: &two}, 2},
+		{"zero recommendation wins", &ModelConfig{ModelRecommendedFramesAfterEOS: &zero}, 0},
+	} {
+		if got := tc.cfg.FramesAfterEOS(5); got != tc.want {
+			t.Errorf("%s: FramesAfterEOS(5) = %d; want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
 func readTestdata(t *testing.T, name string) string {
 	t.Helper()
 

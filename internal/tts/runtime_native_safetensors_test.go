@@ -2,12 +2,15 @@ package tts
 
 import (
 	"context"
+	"errors"
 	"math"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/cwbudde/go-pocket-tts/internal/genloop"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
@@ -195,5 +198,120 @@ func TestPrepareFlowState_BOSBeforeVoice_RealGermanCheckpoint(t *testing.T) {
 				t.Fatalf("prompted positions = %d, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+// fakeSampler returns a latentSampler that flags EOS from step eosFrom on and
+// calls onStep (if set) with the 1-based call count, plus that count.
+func fakeSampler(t *testing.T, eosFrom int, onStep func(calls int)) (latentSampler, *int) {
+	t.Helper()
+
+	calls := 0
+
+	return func(_ *nativemodel.FlowLMState, _ *tensor.Tensor, _ int, _, _ float32, _ *rand.Rand) (*tensor.Tensor, bool, error) {
+		step := calls
+		calls++
+
+		if onStep != nil {
+			onStep(calls)
+		}
+
+		return mustTensor(t, make([]float32, nativeLatentDim), []int64{1, 1, nativeLatentDim}), step >= eosFrom, nil
+	}, &calls
+}
+
+func TestRunARLoop_EOSStopRule(t *testing.T) {
+	// EOS is flagged from step 2 on but only accepted from step
+	// genloop.MinFramesBeforeEOS = 6; upstream keeps eos_step + F frames.
+	for _, tc := range []struct {
+		framesAfter int
+		wantFrames  int
+	}{
+		{3, 9},
+		{0, 6},
+	} {
+		sample, calls := fakeSampler(t, 2, nil)
+		rt := &nativeSafetensorsRuntime{sample: sample}
+
+		frames, err := rt.runARLoop(context.Background(), nil, nil, 256, 1, RuntimeGenerateConfig{FramesAfterEOS: tc.framesAfter})
+		if err != nil {
+			t.Fatalf("runARLoop: %v", err)
+		}
+
+		if len(frames) != tc.wantFrames || *calls != tc.wantFrames+1 {
+			t.Errorf("frames_after_eos=%d: %d frames from %d steps, want %d from %d",
+				tc.framesAfter, len(frames), *calls, tc.wantFrames, tc.wantFrames+1)
+		}
+	}
+}
+
+func TestRunARLoop_CancelStopsWithinOneStep(t *testing.T) {
+	const cancelAt = 4
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sample, calls := fakeSampler(t, 1000, func(calls int) {
+		if calls == cancelAt {
+			cancel()
+		}
+	})
+	rt := &nativeSafetensorsRuntime{sample: sample}
+
+	_, err := rt.runARLoop(ctx, nil, nil, 256, 1, RuntimeGenerateConfig{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("runARLoop err = %v, want context.Canceled", err)
+	}
+
+	// At most the step that was already running when ctx was cancelled.
+	if *calls > cancelAt+1 {
+		t.Errorf("sampler calls = %d after cancelling at %d", *calls, cancelAt)
+	}
+}
+
+func TestGenerateAudio_FadesInChunkStart_RealCheckpoint(t *testing.T) {
+	modelPath, _ := requireNativeSafetensorsAssetsForUnit(t)
+
+	m, err := nativemodel.LoadModelFromSafetensors(modelPath, nativemodel.DefaultConfig())
+	if err != nil {
+		t.Fatalf("load model: %v", err)
+	}
+	defer m.Close()
+
+	// Seven zero latents with EOS on the last: 6 frames are kept.
+	sample, _ := fakeSampler(t, genloop.MinFramesBeforeEOS, nil)
+	rt := &nativeSafetensorsRuntime{model: m, sample: sample}
+
+	pcm, err := rt.GenerateAudio(context.Background(), []int64{1, 2, 3}, RuntimeGenerateConfig{MaxSteps: 20})
+	if err != nil {
+		t.Fatalf("GenerateAudio: %v", err)
+	}
+
+	frames := make([]*tensor.Tensor, genloop.MinFramesBeforeEOS)
+	for i := range frames {
+		frames[i] = mustTensor(t, make([]float32, nativeLatentDim), []int64{1, 1, nativeLatentDim})
+	}
+
+	ref, err := rt.decodeLatents(frames)
+	if err != nil {
+		t.Fatalf("decodeLatents: %v", err)
+	}
+
+	want := ref.RawData()
+	if len(pcm) != len(want) {
+		t.Fatalf("pcm has %d samples, want %d", len(pcm), len(want))
+	}
+
+	n := int(m.Mimi().SampleRate() / 200)
+
+	for i := range want {
+		w := want[i]
+		if i < n {
+			w *= float32(i) / float32(n-1)
+		}
+
+		if pcm[i] != w {
+			t.Fatalf("pcm[%d] = %v, want %v (decoded %v, fade over %d samples)", i, pcm[i], w, want[i], n)
+		}
 	}
 }

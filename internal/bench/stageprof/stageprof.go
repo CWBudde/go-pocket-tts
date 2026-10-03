@@ -234,7 +234,7 @@ func runOnce(ctx context.Context, rt tts.Runtime, tok textpkg.Tokenizer, cfg con
 				MaxSteps:           cfg.TTS.MaxSteps,
 				EstimatedMaxSteps:  estimatedMaxSteps,
 				SamplerDecodeSteps: cfg.TTS.SamplerDecodeSteps,
-				FramesAfterEOS:     chunk.FramesAfterEOS(),
+				FramesAfterEOS:     cfg.Model.FramesAfterEOS(chunk.FramesAfterEOS()),
 				MimiStepsPerLatent: mimiStepsPerLatent,
 				MimiSequenceLength: estimatedMaxSteps * mimiStepsPerLatent,
 			}

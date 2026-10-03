@@ -135,6 +135,20 @@ func TestFadeIn(t *testing.T) {
 		}
 	})
 
+	t.Run("ramp reaches 1.0 on its last sample", func(t *testing.T) {
+		input := make([]float32, sr)
+		for i := range input {
+			input[i] = 1.0
+		}
+
+		got := FadeIn(input, sr, 10)
+
+		fadeSamples := int(10.0 / 1000.0 * float64(sr))
+		if got[fadeSamples-1] != 1.0 {
+			t.Errorf("last ramp sample = %f, want 1.0", got[fadeSamples-1])
+		}
+	})
+
 	t.Run("ramp is monotonically increasing", func(t *testing.T) {
 		input := make([]float32, sr)
 		for i := range input {
@@ -182,6 +196,20 @@ func TestFadeOut(t *testing.T) {
 		}
 	})
 
+	t.Run("ramp starts at 1.0 on its first sample", func(t *testing.T) {
+		input := make([]float32, sr)
+		for i := range input {
+			input[i] = 1.0
+		}
+
+		got := FadeOut(input, sr, 10)
+
+		fadeSamples := int(10.0 / 1000.0 * float64(sr))
+		if got[len(got)-fadeSamples] != 1.0 {
+			t.Errorf("first ramp sample = %f, want 1.0", got[len(got)-fadeSamples])
+		}
+	})
+
 	t.Run("ramp is monotonically decreasing", func(t *testing.T) {
 		input := make([]float32, sr)
 		for i := range input {
@@ -198,6 +226,79 @@ func TestFadeOut(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestLinearRamp(t *testing.T) {
+	ones := func(n int) []float32 {
+		s := make([]float32, n)
+		for i := range s {
+			s[i] = 1
+		}
+
+		return s
+	}
+
+	t.Run("linspace endpoints", func(t *testing.T) {
+		got := ones(10)
+		LinearRamp(got, 5)
+
+		// torch.linspace(0, 1, 5) = [0, 0.25, 0.5, 0.75, 1].
+		want := []float32{0, 0.25, 0.5, 0.75, 1, 1, 1, 1, 1, 1}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("got %v, want %v", got, want)
+			}
+		}
+	})
+
+	t.Run("n clamped to the input", func(t *testing.T) {
+		got := ones(3)
+		LinearRamp(got, 120)
+
+		if got[0] != 0 || got[1] != 0.5 || got[2] != 1 {
+			t.Fatalf("got %v, want [0 0.5 1]", got)
+		}
+	})
+
+	t.Run("single sample is muted like torch.linspace(0, 1, 1)", func(t *testing.T) {
+		got := ones(4)
+		LinearRamp(got, 1)
+
+		if got[0] != 0 || got[1] != 1 {
+			t.Fatalf("got %v, want [0 1 1 1]", got)
+		}
+	})
+
+	t.Run("n <= 0 and empty input are no-ops", func(t *testing.T) {
+		got := ones(2)
+		LinearRamp(got, 0)
+		LinearRamp(nil, 5)
+
+		if got[0] != 1 || got[1] != 1 {
+			t.Fatalf("got %v, want unchanged", got)
+		}
+	})
+}
+
+func TestChunkFadeIn(t *testing.T) {
+	const sr = 24000
+
+	got := make([]float32, 1920)
+	for i := range got {
+		got[i] = 0.5
+	}
+
+	ChunkFadeIn(got, sr)
+
+	// Upstream: audio[:sr//200] *= linspace(0, 1, sr//200), i.e. 5 ms.
+	n := sr / 200
+	if got[0] != 0 || got[n-1] != 0.5 || got[n] != 0.5 {
+		t.Fatalf("samples 0, %d, %d = %v, %v, %v; want 0, 0.5, 0.5", n-1, n, got[0], got[n-1], got[n])
+	}
+
+	if want := float32(0.5) * (float32(60) / float32(n-1)); got[60] != want {
+		t.Errorf("sample 60 = %v, want %v", got[60], want)
+	}
 }
 
 // Test helpers

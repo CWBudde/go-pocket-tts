@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
@@ -27,6 +28,8 @@ type Service struct {
 	runtime   Runtime
 	tokenizer tokenizer.Tokenizer
 	ttsCfg    config.TTSConfig
+	// model is the model config (cfg.Model); nil without one.
+	model *modelcfg.ModelConfig
 }
 
 // NewService initializes the TTS service with the configured native runtime.
@@ -101,6 +104,7 @@ func NewService(cfg config.Config) (*Service, error) {
 		runtime:   rt,
 		tokenizer: tok,
 		ttsCfg:    cfg.TTS,
+		model:     cfg.Model,
 	}, nil
 }
 
@@ -262,7 +266,7 @@ func (s *Service) generateConfig(chunk text.ChunkMetadata) RuntimeGenerateConfig
 		MaxSteps:           generationStepLimit(s.ttsCfg.MaxSteps, estimatedMaxSteps),
 		EstimatedMaxSteps:  estimatedMaxSteps,
 		SamplerDecodeSteps: s.ttsCfg.SamplerDecodeSteps,
-		FramesAfterEOS:     chunk.FramesAfterEOS(),
+		FramesAfterEOS:     s.model.FramesAfterEOS(chunk.FramesAfterEOS()),
 		MimiStepsPerLatent: mimiStepsPerLatent,
 		MimiSequenceLength: estimatedMaxSteps * mimiStepsPerLatent,
 	}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/cwbudde/go-pocket-tts/internal/audio"
 	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/cwbudde/go-pocket-tts/internal/text"
@@ -64,6 +65,8 @@ type synthesizeOptions struct {
 type nativeEngine struct {
 	runtime   tts.Runtime
 	tokenizer tokenizer.Tokenizer
+	// model is the config of the browser checkpoint (config.DefaultLanguage).
+	model *modelcfg.ModelConfig
 }
 
 var (
@@ -200,15 +203,21 @@ func loadModel(modelSafetensors, tokenizerBytes []byte, progress *progressReport
 		return nil, fmt.Errorf("open model safetensors: %w", err)
 	}
 
+	mc, err := modelcfg.Lookup(config.DefaultLanguage)
+	if err != nil {
+		store.Close()
+		return nil, fmt.Errorf("model config: %w", err)
+	}
+
 	progress.Emit("load", 50, 100, "building native model")
-	model, err := nativemodel.LoadModelFromStore(store, nativemodel.DefaultConfig())
+	model, err := nativemodel.LoadModelFromStore(store, nativemodel.ConfigFor(mc))
 	if err != nil {
 		store.Close()
 		return nil, fmt.Errorf("load native model: %w", err)
 	}
 	runtime := tts.NewNativeSafetensorsRuntime(model)
 
-	newEngine := &nativeEngine{runtime: runtime, tokenizer: tok}
+	newEngine := &nativeEngine{runtime: runtime, tokenizer: tok, model: mc}
 	engineMu.Lock()
 	oldEngine := engine
 	engine = newEngine
@@ -392,7 +401,7 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 			MaxSteps:           maxSteps,
 			EstimatedMaxSteps:  estimatedMaxSteps,
 			SamplerDecodeSteps: opts.SamplerDecodeSteps,
-			FramesAfterEOS:     chunk.FramesAfterEOS(),
+			FramesAfterEOS:     currentEngine.model.FramesAfterEOS(chunk.FramesAfterEOS()),
 			MimiStepsPerLatent: mimiStepsPerLatent,
 			MimiSequenceLength: estimatedMaxSteps * mimiStepsPerLatent,
 			VoiceEmbedding:     voiceEmb,
