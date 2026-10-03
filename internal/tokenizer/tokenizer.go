@@ -1,6 +1,9 @@
 // Package tokenizer provides text tokenization for the PocketTTS engine.
-// The primary implementation uses SentencePiece UNIGRAM tokenization matching
-// the reference Python/Rust implementations exactly.
+// It implements UNIGRAM tokenization in pure Go from either a SentencePiece
+// model (tokenizer.model, ids match Python sentencepiece) or a Hugging Face
+// tokenizer.json (ids match Python tokenizers, upstream pocket-tts's default
+// backend). Both formats share one trie and Viterbi; Load and LoadBytes pick
+// the format from the file name or the bytes.
 package tokenizer
 
 // Piece is one token of an encoding and the text it covers.
@@ -16,6 +19,15 @@ type Piece struct {
 	// the last carries the whole character. So every Text is valid UTF-8 and
 	// the Texts concatenate to "▁" + input with ' ' → '▁' (invalid UTF-8
 	// bytes become U+FFFD).
+	//
+	// Tokenizers loaded from tokenizer.json follow Hugging Face tokenizers:
+	// added tokens (<s>, </s>, ...) are cut out of the raw input first and
+	// become one piece whose Text is the token itself (e.g. "<s>"); every
+	// other segment gets its own leading '▁'. So the Texts concatenate to the
+	// input with each non-token segment mapped to "▁" + segment with ' ' →
+	// '▁'. A literal "<0xXX>" in the input matches that vocab piece and has
+	// Text "<0x41>" etc., and a run of unknown characters is byte-encoded
+	// as a whole but still attributes each character to its last byte piece.
 	Text string
 }
 

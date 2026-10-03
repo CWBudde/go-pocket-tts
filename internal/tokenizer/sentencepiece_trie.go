@@ -4,7 +4,9 @@ package tokenizer
 // a port of sentencepiece's Normalizer (without precompiled charsmap, i.e. the
 // "identity" normalizer the shipped models use), unigram Model::EncodeOptimized
 // (Viterbi over a trie of the vocab) and SentencePieceProcessor's byte
-// fallback, so ids match Python sentencepiece exactly (golden-tested).
+// fallback, so ids match Python sentencepiece exactly (golden-tested). Models
+// loaded from a Hugging Face tokenizer.json reuse the trie and the Viterbi
+// with tokenizers' pipeline around it (see hf_json.go).
 
 import (
 	"errors"
@@ -16,7 +18,7 @@ import (
 // errEmptyModelData is returned when a model is loaded from zero bytes.
 var errEmptyModelData = errors.New("tokenizer model data must not be empty")
 
-var errUnsupportedModel = errors.New("unsupported sentencepiece model")
+var errUnsupportedModel = errors.New("unsupported tokenizer model")
 
 const (
 	spSep rune = 0x2581 // ▁ (LOWER ONE EIGHTH BLOCK) — SentencePiece word-start marker
@@ -32,8 +34,9 @@ const (
 // ── trie ─────────────────────────────────────────────────────────────────────
 
 type spNode struct {
-	id       int32
-	score    float32
+	id int32
+	// score is the piece score; float32 values for SentencePiece models.
+	score    float64
 	end      bool
 	children map[rune]*spNode
 }
@@ -42,7 +45,7 @@ func newSpNode() *spNode {
 	return &spNode{children: make(map[rune]*spNode)}
 }
 
-func (n *spNode) insert(piece string, id int32, score float32) {
+func (n *spNode) insert(piece string, id int32, score float64) {
 	node := n
 
 	for _, r := range piece {
@@ -66,7 +69,7 @@ func (n *spNode) insert(piece string, id int32, score float32) {
 type spModel struct {
 	root     *spNode
 	unkID    int32
-	unkScore float32
+	unkScore float64
 
 	// byteIDs maps a byte to the id of its <0xXX> piece; only set with
 	// byteFallback.
@@ -76,6 +79,12 @@ type spModel struct {
 	addDummyPrefix         bool
 	removeExtraWhitespaces bool
 	escapeWhitespaces      bool
+
+	// hf switches to Hugging Face tokenizers semantics (tokenizer.json):
+	// float64 scores, added-token extraction, per-segment normalization,
+	// Metaspace word splitting and fused unknown runs. nil for SentencePiece
+	// ModelProto models.
+	hf *hfConfig
 }
 
 // newSpModel builds the encoder from a serialized SentencePiece ModelProto.
@@ -146,11 +155,11 @@ func (m *spModel) buildVocab(pieces []spPieceProto) error {
 
 		switch p.typ {
 		case spNormal:
-			m.root.insert(p.piece, id, p.score)
+			m.root.insert(p.piece, id, float64(p.score))
 		case spUserDefined:
 			// sentencepiece gives user-defined symbols a bonus so they are
 			// always chosen: length in bytes times max_score, minus 0.1.
-			m.root.insert(p.piece, id, float32(len(p.piece))*maxScore-0.1)
+			m.root.insert(p.piece, id, float64(float32(len(p.piece))*maxScore-0.1))
 		case spUnknown:
 			m.unkID = id
 			unknowns++
@@ -163,7 +172,7 @@ func (m *spModel) buildVocab(pieces []spPieceProto) error {
 		return fmt.Errorf("%w: need exactly one UNKNOWN piece, found %d", errUnsupportedModel, unknowns)
 	}
 
-	m.unkScore = minScore - spUnkPenalty
+	m.unkScore = float64(minScore - spUnkPenalty)
 
 	if m.byteFallback {
 		for b := range m.byteIDs {
@@ -241,11 +250,11 @@ func (m *spModel) normalize(text string) []rune {
 // last piece, which starts at start (-1: no path yet).
 type spBestPath struct {
 	id    int32
-	score float32
+	score float64
 	start int
 }
 
-func (b *spBestPath) relax(id int32, score float32, start int) {
+func (b *spBestPath) relax(id int32, score float64, start int) {
 	if b.start == -1 || score > b.score {
 		*b = spBestPath{id: id, score: score, start: start}
 	}
@@ -255,6 +264,9 @@ func (b *spBestPath) relax(id int32, score float32, start int) {
 // unigram Model::EncodeOptimized: vocab pieces matching at a position are
 // tried shortest first, ties keep the earlier candidate, and a position
 // without a one-character vocab piece gets a one-character unknown piece.
+// SentencePiece accumulates path scores in float32, tokenizers in float64;
+// rounding each float64 sum of two float32 values to float32 is exactly the
+// float32 sum.
 func (m *spModel) viterbi(runes []rune) []spBestPath {
 	best := make([]spBestPath, len(runes)+1)
 	for i := range best {
@@ -262,6 +274,15 @@ func (m *spModel) viterbi(runes []rune) []spBestPath {
 	}
 
 	best[0].start = 0
+	roundF32 := m.hf == nil
+
+	score := func(base, s float64) float64 {
+		if roundF32 {
+			return float64(float32(base + s))
+		}
+
+		return base + s
+	}
 
 	for i := range runes {
 		base := best[i].score
@@ -275,56 +296,82 @@ func (m *spModel) viterbi(runes []rune) []spBestPath {
 			}
 
 			if node.end {
-				best[j+1].relax(node.id, base+node.score, i)
+				best[j+1].relax(node.id, score(base, node.score), i)
 				hasSingle = hasSingle || j == i
 			}
 		}
 
 		if !hasSingle {
-			best[i+1].relax(m.unkID, base+m.unkScore, i)
+			best[i+1].relax(m.unkID, score(base, m.unkScore), i)
 		}
 	}
 
 	return best
 }
 
+// spSpan is one piece of a best path: vocab id and rune range.
+type spSpan struct {
+	id         int32
+	start, end int
+}
+
+// bestPath runs the Viterbi over runes and returns the pieces of the best
+// path in order.
+func (m *spModel) bestPath(runes []rune) []spSpan {
+	best := m.viterbi(runes)
+
+	// Backtrack the piece boundaries from the end.
+	var path []spSpan
+	for end := len(runes); end > 0; end = best[end].start {
+		path = append(path, spSpan{id: best[end].id, start: best[end].start, end: end})
+	}
+
+	slices.Reverse(path)
+
+	return path
+}
+
+// appendByteFallback appends one <0xXX> piece per UTF-8 byte of surface; all
+// have an empty text except the last, which carries the whole surface.
+func (m *spModel) appendByteFallback(out []Piece, surface string) []Piece {
+	for k := range len(surface) {
+		p := Piece{ID: int64(m.byteIDs[surface[k]])}
+		if k == len(surface)-1 {
+			p.Text = surface
+		}
+
+		out = append(out, p)
+	}
+
+	return out
+}
+
 // pieces encodes text. Piece texts are the normalized text they cover; with
 // byte fallback, an unknown character becomes one piece per UTF-8 byte, all
 // with an empty text except the last, which carries the character.
 func (m *spModel) pieces(text string) []Piece {
+	if m.hf != nil {
+		return m.hfPieces(text)
+	}
+
 	runes := m.normalize(text)
 	if len(runes) == 0 {
 		return []Piece{}
 	}
 
-	best := m.viterbi(runes)
+	path := m.bestPath(runes)
+	out := make([]Piece, 0, len(path))
 
-	// Backtrack the piece boundaries from the end.
-	var ends []int
-	for end := len(runes); end > 0; end = best[end].start {
-		ends = append(ends, end)
-	}
+	for _, s := range path {
+		surface := string(runes[s.start:s.end])
 
-	out := make([]Piece, 0, len(ends))
-
-	for _, end := range slices.Backward(ends) {
-		b := best[end]
-		surface := string(runes[b.start:end])
-
-		if b.id != m.unkID || !m.byteFallback {
-			out = append(out, Piece{ID: int64(b.id), Text: surface})
+		if s.id != m.unkID || !m.byteFallback {
+			out = append(out, Piece{ID: int64(s.id), Text: surface})
 
 			continue
 		}
 
-		for k := range len(surface) {
-			p := Piece{ID: int64(m.byteIDs[surface[k]])}
-			if k == len(surface)-1 {
-				p.Text = surface
-			}
-
-			out = append(out, p)
-		}
+		out = m.appendByteFallback(out, surface)
 	}
 
 	return out

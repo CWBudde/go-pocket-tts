@@ -97,7 +97,7 @@ func Main() {
 	tw := effectiveWorkers(cfg)
 	tensor.SetWorkers(tw)
 
-	tok, err := tokenizer.NewSentencePieceTokenizer(cfg.Paths.TokenizerModel)
+	tok, err := tokenizer.Load(cfg.Paths.TokenizerModel)
 	if err != nil {
 		fatalf("init tokenizer: %v", err)
 	}
