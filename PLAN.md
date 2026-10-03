@@ -274,11 +274,16 @@ All in `internal/tts/runtime_native_safetensors.go`, mirrored in `internal/onnx/
         upstream `tests/test_split_sentences.py`.
         (2026-10-03) — `ensureTerminalPunctuation`; `TestPrepareText_TerminalPunctuation` (the 14 cases),
         `TestPrepareText_TerminalPunctuationDisabled`.
-- [ ] Whitespace: upstream does a single `"  "` → `" "` pass (three spaces stay two), Go collapses every run.
+- [x] Whitespace: upstream does a single `"  "` → `" "` pass (three spaces stay two), Go collapses every run.
       Only matters for input with 3+ spaces in a row; check together with the Phase 5 tokenizer work.
       (Found 2026-10-03.)
+      (2026-10-03) — `PrepareText` now does `\n` → ` `, `\r` → ` `, then one `"  "` → `" "` pass in upstream order;
+      the tokenizer keeps runs of spaces (`remove_extra_whitespaces=false`), so the extra `▁` reach the model like
+      upstream. `TestPrepareText_WhitespaceSinglePass` (10 cases, expected values from upstream Python).
 - [ ] Capitalization uses Go `unicode.ToUpper` on the first rune; upstream uses Python `str.upper()`, which can
       expand (`ß` → `SS`). No shipped language starts a sentence that way; note only. (Found 2026-10-03.)
+- [ ] `strings.TrimSpace` / `strings.Fields` (prepare, splitter, word count) treat U+001C–U+001F as non-space;
+      Python `str.strip()` / `str.split()` strip them. Only control characters differ; note only. (Found 2026-10-03.)
 - [x] **Decimal points do not split sentences (#217):** no boundary when the prefix ends with digit + `.` and
       the suffix starts with a digit (`Version 2.0 is out. Pi is 3.14.` → 1 chunk).
       (2026-10-03) — `isDecimalPeriodBoundary` in the ported splitter, including upstream's quirk that
@@ -298,30 +303,46 @@ All in `internal/tts/runtime_native_safetensors.go`, mirrored in `internal/onnx/
       `models/tokenizer.model`; `TestSplitIntoBestSentences_UpstreamGolden` matches all of them (skips without the
       model). Model-free tests in `split_test.go` (`texttest.Tokenizer`). `ChunkBySentence` (CLI `--chunk`) still
       splits on characters.
-- [ ] Splitter goldens only cover ASCII-ish English. Add `…`, `ﬁ`/`½` and German cases once Phase 5 removes NFKC
+- [x] Splitter goldens only cover ASCII-ish English. Add `…`, `ﬁ`/`½` and German cases once Phase 5 removes NFKC
       and adds byte fallback: today NFKC turns `…` into `...`, which Go treats as sentence-end tokens while upstream
       sees byte pieces, and German digits are `<unk>`. Python `str.isdigit()` also accepts `²` etc., Go
       `unicode.IsDigit` does not (decimal rule only). (Found 2026-10-03.)
+      (2026-10-03) — `split_upstream.json` gained `ellipsis`, `ligature`, `vulgar_fraction`, `superscript_decimal`,
+      `tab_and_symbols` (22 cases); new `split_upstream_german.json` (7 cases: demo text, decimals, `3,50 €`,
+      `24.12.`, `„…“`, umlauts, long clauses) runs on `models/german/tokenizer.model`. `isPyDigit` = `unicode.IsDigit`
+      plus a Numeric_Type=Digit table generated from Python (`TestIsDecimalPeriodBoundary` `²`/`①`/`½` cases).
+      `TestSplitIntoBestSentences_UpstreamGolden` passes all 29 (the four Unicode cases failed with the old NFKC encoder).
 - [ ] German numbers: upstream does no number expansion, and the German vocab has no digits, so they become byte
       tokens. Keep parity first, then consider optional German number/abbreviation normalisation as a
       Go-only extra behind a flag.
 
 ## Phase 5 — Tokenizer
 
-`internal/tokenizer/sentencepiece.go` (uses `vikesh-raj/go-sentencepiece-encoder`).
+`internal/tokenizer/sentencepiece_trie.go` (own Unigram encoder) + `sentencepiece_proto.go` (ModelProto reader).
 
-- [ ] **Byte fallback.** Every shipped tokenizer is Unigram with `byte_fallback: true` (256 `<0xXX>` pieces).
+- [x] **Byte fallback.** Every shipped tokenizer is Unigram with `byte_fallback: true` (256 `<0xXX>` pieces).
       Today unknown characters become `<unk>` (id 0). For German this hits all digits, `Ä Ö Ü`, `€` and `„ “`.
       Implement it by encoding each unknown character as its UTF-8 bytes → `<0xXX>` ids.
-- [ ] **No NFKC.** The released tokenizers use an `identity` normalizer; the Go encoder always applies NFKC.
+      (2026-10-03) — each unknown character becomes one `<0xXX>` piece per UTF-8 byte, ids looked up by piece name;
+      `EncodePieces` gives the bytes `Text` "" except the last, which carries the character (sentencepiece's
+      surface convention). `TestEncodePieces_ByteFallback` (`€` → `<0xE2><0x82><0xAC>`, invalid UTF-8 → U+FFFD bytes).
+- [x] **No NFKC.** The released tokenizers use an `identity` normalizer; the Go encoder always applies NFKC.
       Disable it or work around it, and test with `café`, `14½-13½`, `"  hello  "`, `""`, `" "` (upstream
       `test_tokenizer_backends.py`).
-- [ ] Probably replace the third-party encoder with our own Unigram Viterbi (vocab + scores + byte fallback,
+      (2026-10-03) — identity normalizer from the model's `NormalizerSpec`: no NFKC, no control-character
+      stripping, only `' '` becomes `▁` (tabs/newlines are byte pieces), dummy prefix always added; a non-empty
+      charsmap is rejected at load. `testdata/sp_golden.json`: 66 cases (upstream TEXTS + CHECKS, `…`, `ﬁ`, `²`,
+      tabs, zero-width, German) from Python sentencepiece 0.2.2 for the english and german tokenizers;
+      `TestEncode_MatchesSentencePieceGolden` checks ids and per-piece surfaces (skips without the models).
+- [x] Probably replace the third-party encoder with our own Unigram Viterbi (vocab + scores + byte fallback,
       ~200 LOC). That gives full control and drops the NFKC dependency.
-      (2026-10-03) — partial: native now uses the in-repo trie + Viterbi (`sentencepiece_trie.go`, formerly
-      wasm-only), because the library loses the surface of consecutive unknown runes in `Tokenize`; ids match the
-      library on ~944 lines × 4 shipped tokenizers. Still NFKC, still no byte fallback. Any new encoder must keep
-      `EncodePieces` (byte-fallback pieces need surfaces that concatenate to the original bytes).
+      (2026-10-03) — port of sentencepiece `EncodeOptimized` (`unk_score = min NORMAL score − 10`, an unknown
+      only where no single-character piece matches); the ModelProto is read with `protowire`, so
+      `go-sentencepiece-encoder` is gone and `golang.org/x/text` is only an indirect viper dependency. Ids equal
+      Python sentencepiece on a 1829-line corpus (repo + upstream docs/tests + Unicode/German lines) for both
+      tokenizers; the old encoder differed on 1462 (english) / 1718 (german) of those lines, plain English prose
+      was unchanged. Synthetic-model tests and `FuzzSentencePieceModel` cover loading and Viterbi without the
+      models. WASM shrinks from 17.7 MB to 9.4 MB.
 - [ ] **`tokenizer.json` loader (#317).** Parse `model.vocab` (`[piece, score]` pairs), `unk_id` and
       `byte_fallback`, and reuse the same Viterbi. Pick the loader by file extension in `internal/tts/service.go` and
       `cmd/pockettts-wasm/main_wasm.go`. This is needed for models that may be JSON-only (dutch, re-tokenized
@@ -349,6 +370,9 @@ Minimal path (precomputed voices only; needs Phases 1, 3, 4 and Phase 5 byte fal
       on `main` (5 frames) and at the step-6 minimum after Phase 3 (9 frames, 0.36 s). `german_24l` +
       `juergen` and English are fine. Find out why (text prep, tokenizer, voice state) before the listening check.
       (Found 2026-10-03 during the Phase 3 smoke run.)
+      (2026-10-03) — re-measured after the Phase 4 text prep and Phase 5 tokenizer work: the same sentence now
+      stops at EOS step 26 (before the tokenizer change) / 28 (after); EOS varies between runs at temperature 0.3.
+      The tokenizer does not change its 12 tokens. Still to judge in the listening check.
 - [ ] `serve --language german`: one language per process (same as upstream `serve`); add `--default-voice`
       (#271: name | local wav/safetensors | URL, resolved at startup, fail fast)
 - [ ] `doctor` validates the selected language's files
