@@ -550,7 +550,9 @@ func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, Str
 			workers = 2
 		}
 
-		ns := &nativeSynthesizer{svc: svc}
+		// /voices lists manifest IDs; the synthesizer maps them to files.
+		vm, _ := voices.(*tts.VoiceManager)
+		ns := &nativeSynthesizer{svc: svc, voices: vm}
 
 		return ns, voices, workers, ns, nil
 	case config.BackendCLI:
@@ -597,11 +599,17 @@ func (s staticVoiceLister) ListVoices() []tts.Voice {
 }
 
 type nativeSynthesizer struct {
-	svc *tts.Service
+	svc    *tts.Service
+	voices *tts.VoiceManager // nil when the voice manifest is unreadable
 }
 
 func (n *nativeSynthesizer) Synthesize(ctx context.Context, text, voice string) ([]byte, error) {
-	samples, err := n.svc.SynthesizeCtx(ctx, text, voice)
+	path, err := n.voicePath(voice)
+	if err != nil {
+		return nil, err
+	}
+
+	samples, err := n.svc.SynthesizeCtx(ctx, text, path)
 	if err != nil {
 		return nil, err
 	}
@@ -610,7 +618,29 @@ func (n *nativeSynthesizer) Synthesize(ctx context.Context, text, voice string) 
 }
 
 func (n *nativeSynthesizer) SynthesizeStream(ctx context.Context, text, voice string, out chan<- tts.PCMChunk) error {
-	return n.svc.SynthesizeStream(ctx, text, voice, out)
+	path, err := n.voicePath(voice)
+	if err != nil {
+		return err
+	}
+
+	return n.svc.SynthesizeStream(ctx, text, path, out)
+}
+
+// voicePath maps a voice ID from the manifest, as listed by /voices, to its
+// file; tts.Service only accepts file paths. Other values, such as a direct
+// .safetensors path, pass through unchanged.
+func (n *nativeSynthesizer) voicePath(voice string) (string, error) {
+	if n.voices == nil {
+		return voice, nil
+	}
+
+	for _, v := range n.voices.ListVoices() {
+		if v.ID == voice {
+			return n.voices.ResolvePath(voice)
+		}
+	}
+
+	return voice, nil
 }
 
 type cliSynthesizer struct {
