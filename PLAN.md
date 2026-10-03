@@ -250,16 +250,35 @@ All in `internal/tts/runtime_native_safetensors.go`, mirrored in `internal/onnx/
 `internal/text/prepare.go` + `internal/text/chunk.go`; callers are `internal/tts/service.go`, `internal/tts/parity.go` and
 `internal/bench/stageprof/stageprof.go`.
 
-- [ ] Introduce `text.Options` built from `ModelConfig`:
-  - [ ] `PadShortInputs`: today it's always on; it should only be on for `english_2026-01` (8-space pad for fewer than 5 words)
-  - [ ] `CapitalizeFirst` (#307): today it's always on
-  - [ ] `RemoveSemicolons`: `;` → `,` (french, german)
-  - [ ] `ReplaceCharacters` (#325): translate/delete, collapse whitespace, then
+- [x] Introduce `text.Options` built from `ModelConfig`:
+      (2026-10-03) — `text.Options` / `text.OptionsFor(*modelcfg.ModelConfig)` (nil → `DefaultOptions()` =
+      `english_2026-01`), passed to `PrepareText`/`PrepareChunks` by `tts.Service`, parity, stageprof and WASM.
+      `PrepareText` follows upstream `prepare_text_prompt` step by step and returns the word count for the
+      frames_after_eos guess (after replacement, before the terminal fix-up). `PrepareChunks` prepares the whole
+      text once before splitting, like `split_into_best_sentences`. `TestOptionsFor`,
+      `TestSynthesize_TextOptionsFromModelConfig`.
+  - [x] `PadShortInputs`: today it's always on; it should only be on for `english_2026-01` (8-space pad for fewer than 5 words)
+        (2026-10-03) — `TestPrepareText_PadShortInputs`; german has it off (`TestOptionsFor`).
+  - [x] `CapitalizeFirst` (#307): today it's always on
+        (2026-10-03) — `TestPrepareText_CapitalizeFirst` (upstream `salAm` case).
+  - [x] `RemoveSemicolons`: `;` → `,` (french, german)
+        (2026-10-03) — `TestPrepareText_RemoveSemicolons`.
+  - [x] `ReplaceCharacters` (#325): translate/delete, collapse whitespace, then
         `([.!?…])\s*[,;:]` → `$1`. If the text ends up empty, return an error (upstream raises `ValueError`).
         German/French/… set: delete `" “ ” „ « » ( ) [ ]`, map `’ ‘` → `'`. Spanish also deletes `¡ ¿`. French also maps `:` → `,`.
-  - [ ] `AppendTerminalPunctuation` (#296, #288): terminal set `.!?…`. A trailing weak mark `, ; : - – —` is
+        (2026-10-03) — empty result → `text.ErrEmptyText`; `modelcfg.Parse` rejects keys that are not one character
+        (like `str.maketrans`). `TestPrepareText_ReplaceCharacters` (upstream cases),
+        `TestPrepareChunks_ReplaceCharactersBeforeSplitting`, `TestParse_RejectsMultiCharacterReplaceCharactersKey`.
+  - [x] `AppendTerminalPunctuation` (#296, #288): terminal set `.!?…`. A trailing weak mark `, ; : - – —` is
         replaced by `.`. Closers `" ' ” ’ ) ] »` stay after the inserted period. Port the 14-case table from
         upstream `tests/test_split_sentences.py`.
+        (2026-10-03) — `ensureTerminalPunctuation`; `TestPrepareText_TerminalPunctuation` (the 14 cases),
+        `TestPrepareText_TerminalPunctuationDisabled`.
+- [ ] Whitespace: upstream does a single `"  "` → `" "` pass (three spaces stay two), Go collapses every run.
+      Only matters for input with 3+ spaces in a row; check together with the Phase 5 tokenizer work.
+      (Found 2026-10-03.)
+- [ ] Capitalization uses Go `unicode.ToUpper` on the first rune; upstream uses Python `str.upper()`, which can
+      expand (`ß` → `SS`). No shipped language starts a sentence that way; note only. (Found 2026-10-03.)
 - [ ] **Decimal points do not split sentences (#217):** no boundary when the prefix ends with digit + `.` and
       the suffix starts with a digit (`Version 2.0 is out. Pi is 3.14.` → 1 chunk).
 - [ ] Re-check chunking against upstream `text_chunking.py`: upstream splits on token boundaries
