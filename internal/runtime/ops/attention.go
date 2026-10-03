@@ -47,7 +47,8 @@ func Attention(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Tenso
 		return nil, errors.New("ops: attention requires non-nil q/k/v")
 	}
 
-	if out, handled, err := attention4D(q, k, v, causal, offset); handled || err != nil {
+	out, handled, err := attention4D(q, k, v, causal, offset)
+	if handled || err != nil {
 		return out, err
 	}
 
@@ -67,6 +68,7 @@ func AttentionWithPositions(q, k, v *tensor.Tensor, posQ, posK []int64, context 
 
 	qShape := q.Shape()
 	kShape := k.Shape()
+
 	vShape := v.Shape()
 	if len(qShape) != 4 || len(kShape) != 4 || len(vShape) != 4 {
 		return nil, fmt.Errorf("ops: attention with positions requires 4D q/k/v, got q=%v k=%v v=%v", qShape, kShape, vShape)
@@ -74,6 +76,7 @@ func AttentionWithPositions(q, k, v *tensor.Tensor, posQ, posK []int64, context 
 
 	tq := int(qShape[2])
 	tk := int(kShape[2])
+
 	if len(posQ) != tq {
 		return nil, fmt.Errorf("ops: attention posQ length %d does not match query length %d", len(posQ), tq)
 	}
@@ -128,6 +131,7 @@ func attentionGeneric(q, k, v *tensor.Tensor, causal bool, offset int64) (*tenso
 	return out, nil
 }
 
+//nolint:gocyclo,funlen,maintidx // hot attention kernel; splitting adds per-call overhead and shared-state plumbing
 func attention4D(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Tensor, bool, error) {
 	qShape := q.Shape()
 	kShape := k.Shape()
@@ -304,6 +308,7 @@ func attention4D(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Ten
 	return out, true, nil
 }
 
+//nolint:gocyclo,funlen // hot attention kernel; splitting adds per-call overhead and shared-state plumbing
 func attention4DPositions(q, k, v *tensor.Tensor, posQ, posK []int64, context int64) (*tensor.Tensor, error) {
 	qShape := q.Shape()
 	kShape := k.Shape()
@@ -399,6 +404,7 @@ func attention4DPositions(q, k, v *tensor.Tensor, posQ, posK []int64, context in
 			qRow := qData[qOff : qOff+dI]
 
 			maxV := float32(math.Inf(-1))
+
 			for ki := range tkI {
 				if !positionMaskAllows(posQ[qi], posK[ki], context) {
 					scores[ki] = float32(math.Inf(-1))
@@ -425,6 +431,7 @@ func attention4DPositions(q, k, v *tensor.Tensor, posQ, posK []int64, context in
 			}
 
 			var sum float64
+
 			for ki := range tkI {
 				s := scores[ki]
 				if math.IsInf(float64(s), -1) {
@@ -501,21 +508,31 @@ func applyCausalMaskInPlace(data []float32, q, k, blocks int, offset int64) {
 	}
 }
 
-func scaleMaskSoftmaxInPlace(scores *tensor.Tensor, scale float32, causal bool, offset int64) error {
+// softmaxDims validates the score tensor and returns its query/key dims.
+func softmaxDims(scores *tensor.Tensor) (int, int, error) {
 	if scores == nil {
-		return errors.New("ops: softmax input is nil")
+		return 0, 0, errors.New("ops: softmax input is nil")
 	}
 
 	shape := scores.Shape()
 	if len(shape) < 2 {
-		return fmt.Errorf("ops: softmax expects rank >= 2, got %d", len(shape))
+		return 0, 0, fmt.Errorf("ops: softmax expects rank >= 2, got %d", len(shape))
 	}
 
 	q := int(shape[len(shape)-2])
 	k := int(shape[len(shape)-1])
 
 	if q <= 0 || k <= 0 {
-		return fmt.Errorf("ops: softmax expects positive query/key dims, got %d and %d", q, k)
+		return 0, 0, fmt.Errorf("ops: softmax expects positive query/key dims, got %d and %d", q, k)
+	}
+
+	return q, k, nil
+}
+
+func scaleMaskSoftmaxInPlace(scores *tensor.Tensor, scale float32, causal bool, offset int64) error {
+	q, k, err := softmaxDims(scores)
+	if err != nil {
+		return err
 	}
 
 	data := scores.RawData()

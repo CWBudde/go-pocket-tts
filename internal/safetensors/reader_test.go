@@ -420,7 +420,8 @@ func TestInspectVoiceFile_ModelState(t *testing.T) {
 		t.Fatalf("offset data = %v, want [2]", got)
 	}
 
-	if _, _, err := LoadVoiceEmbedding(path); err == nil || !strings.Contains(err.Error(), "model state") {
+	_, _, err = LoadVoiceEmbedding(path)
+	if err == nil || !strings.Contains(err.Error(), "model state") {
 		t.Fatalf("LoadVoiceEmbedding(model state) err = %v, want model-state error", err)
 	}
 }
@@ -627,7 +628,7 @@ func TestValidateModelKeys_MissingKey(t *testing.T) {
 		shape []int64
 		data  []byte
 	}{
-		"text_emb.weight": {"F32", []int64{1}, float32Bytes([]float32{1.0})},
+		"flow_lm.conditioner.embed.weight": {"F32", []int64{1}, float32Bytes([]float32{1.0})},
 	}
 	data := buildSafetensors(t, tensors)
 	path := writeTempSafetensors(t, data)
@@ -639,6 +640,35 @@ func TestValidateModelKeys_MissingKey(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "missing required tensors") {
 		t.Errorf("error should mention missing tensors; got: %v", err)
+	}
+}
+
+// TestValidateModelKeys_RealModel guards against requiredModelKeys drifting
+// away from the tensor names in released PocketTTS checkpoints.
+func TestValidateModelKeys_RealModel(t *testing.T) {
+	candidates := []string{
+		filepath.Join("models", "tts_b6369a24.safetensors"),
+		filepath.Join("..", "..", "models", "tts_b6369a24.safetensors"),
+	}
+
+	path := ""
+
+	for _, candidate := range candidates {
+		_, err := os.Stat(candidate)
+		if err == nil {
+			path = candidate
+
+			break
+		}
+	}
+
+	if path == "" {
+		t.Skipf("checkpoint not available in any expected location: %v", candidates)
+	}
+
+	err := ValidateModelKeys(path)
+	if err != nil {
+		t.Fatalf("ValidateModelKeys(%s): %v", path, err)
 	}
 }
 

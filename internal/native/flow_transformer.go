@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strconv"
-	"strings"
 
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
@@ -77,6 +76,7 @@ func (s *flowTransformerLayerState) ensureKVCapacity(extra int64) error {
 	}
 
 	kShape := s.kCache.Shape()
+
 	vShape := s.vCache.Shape()
 	if len(kShape) != 4 || len(vShape) != 4 {
 		return fmt.Errorf("native: KV cache rank mismatch k=%v v=%v", kShape, vShape)
@@ -91,6 +91,7 @@ func (s *flowTransformerLayerState) ensureKVCapacity(extra int64) error {
 	}
 
 	newCap := growCacheCapacity(kShape[2], needed)
+
 	kNew, err := growKVCache(s.kCache, newCap)
 	if err != nil {
 		return fmt.Errorf("native: grow key cache: %w", err)
@@ -269,12 +270,14 @@ func (l *flowTransformerLayer) attentionFromQKV(
 	d := l.nHeads * l.headDim
 
 	var a *tensor.Tensor
+
 	var err error
 	if causal {
 		a, err = ops.Attention(q, k, v, true, offset)
 	} else {
 		a, err = ops.Attention(q, k, v, false, 0)
 	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +329,6 @@ func (l *flowTransformerLayer) attentionFromPositions(
 func (l *flowTransformerLayer) forwardWithState(
 	x, ropeCos, ropeSin *tensor.Tensor,
 	state *flowTransformerLayerState,
-	incremental bool,
 ) (*tensor.Tensor, error) {
 	if state == nil {
 		return nil, errors.New("native: flow transformer layer state is nil")
@@ -463,6 +465,7 @@ func (t *flowTransformer) initStateFromVoiceModelState(voiceState *safetensors.V
 
 	for i, layer := range t.layers {
 		moduleName := flowAttentionModuleName(i)
+
 		module := voiceState.Modules[moduleName]
 		if module == nil {
 			return nil, fmt.Errorf("native: voice model state missing module %q", moduleName)
@@ -557,6 +560,7 @@ func readVoiceStateOffset(moduleName string, offset *safetensors.Tensor) (int64,
 	}
 
 	v := offset.Data[0]
+
 	i := int64(v)
 	if float32(i) != v {
 		return 0, fmt.Errorf("native: voice model state module %q offset %v is not an integer", moduleName, v)
@@ -599,10 +603,10 @@ func splitVoiceKVCache(moduleName string, cache *safetensors.Tensor, layer *flow
 	kData := make([]float32, outLen)
 	vData := make([]float32, outLen)
 
-	for batch := int64(0); batch < b; batch++ {
-		for step := int64(0); step < steps; step++ {
-			for head := int64(0); head < heads; head++ {
-				for dim := int64(0); dim < headDim; dim++ {
+	for batch := range b {
+		for step := range steps {
+			for head := range heads {
+				for dim := range headDim {
 					dst := (((batch*heads+head)*steps+step)*headDim + dim)
 					kSrc := voiceKVIndex(0, batch, step, head, dim, b, steps, heads, headDim)
 					vSrc := voiceKVIndex(1, batch, step, head, dim, b, steps, heads, headDim)
@@ -668,10 +672,11 @@ func growKVCache(cache *tensor.Tensor, capacity int64) (*tensor.Tensor, error) {
 	}
 
 	data := cache.RawData()
+
 	out := make([]float32, int(batches*heads*capacity*headDim))
-	for batch := int64(0); batch < batches; batch++ {
-		for head := int64(0); head < heads; head++ {
-			for step := int64(0); step < fullSteps; step++ {
+	for batch := range batches {
+		for head := range heads {
+			for step := range fullSteps {
 				src := int((((batch*heads+head)*fullSteps + step) * headDim))
 				dst := int((((batch*heads+head)*capacity + step) * headDim))
 				copy(out[dst:dst+int(headDim)], data[src:src+int(headDim)])
@@ -684,6 +689,7 @@ func growKVCache(cache *tensor.Tensor, capacity int64) (*tensor.Tensor, error) {
 
 func copyKVAt(dst, src *tensor.Tensor, offset int64) error {
 	dstShape := dst.Shape()
+
 	srcShape := src.Shape()
 	if len(dstShape) != 4 || len(srcShape) != 4 {
 		return fmt.Errorf("cache rank mismatch dst=%v src=%v", dstShape, srcShape)
@@ -701,9 +707,10 @@ func copyKVAt(dst, src *tensor.Tensor, offset int64) error {
 	srcData := src.RawData()
 	batches, heads, dstSteps, headDim := dstShape[0], dstShape[1], dstShape[2], dstShape[3]
 	srcSteps := srcShape[2]
-	for batch := int64(0); batch < batches; batch++ {
-		for head := int64(0); head < heads; head++ {
-			for step := int64(0); step < srcSteps; step++ {
+
+	for batch := range batches {
+		for head := range heads {
+			for step := range srcSteps {
 				dstOff := int((((batch*heads+head)*dstSteps + offset + step) * headDim))
 				srcOff := int((((batch*heads+head)*srcSteps + step) * headDim))
 				copy(dstData[dstOff:dstOff+int(headDim)], srcData[srcOff:srcOff+int(headDim)])
@@ -712,22 +719,6 @@ func copyKVAt(dst, src *tensor.Tensor, offset int64) error {
 	}
 
 	return nil
-}
-
-func flowLayerIndexFromModule(module string) (int, bool) {
-	const prefix = "transformer.layers."
-	const suffix = ".self_attn"
-	if !strings.HasPrefix(module, prefix) || !strings.HasSuffix(module, suffix) {
-		return 0, false
-	}
-
-	raw := strings.TrimSuffix(strings.TrimPrefix(module, prefix), suffix)
-	idx, err := strconv.Atoi(raw)
-	if err != nil {
-		return 0, false
-	}
-
-	return idx, true
 }
 
 func (t *flowTransformer) forward(x *tensor.Tensor) (*tensor.Tensor, error) {
@@ -761,7 +752,7 @@ func (t *flowTransformer) prefill(x *tensor.Tensor, state *flowTransformerState)
 
 	var err error
 	for i, layer := range t.layers {
-		x, err = layer.forwardWithState(x, t.ropeCos, t.ropeSin, &state.layers[i], false)
+		x, err = layer.forwardWithState(x, t.ropeCos, t.ropeSin, &state.layers[i])
 		if err != nil {
 			return fmt.Errorf("native: transformer prefill layer %d: %w", i, err)
 		}
@@ -785,7 +776,7 @@ func (t *flowTransformer) step(x *tensor.Tensor, state *flowTransformerState) (*
 
 	var err error
 	for i, layer := range t.layers {
-		x, err = layer.forwardWithState(x, t.ropeCos, t.ropeSin, &state.layers[i], true)
+		x, err = layer.forwardWithState(x, t.ropeCos, t.ropeSin, &state.layers[i])
 		if err != nil {
 			return nil, fmt.Errorf("native: transformer step layer %d: %w", i, err)
 		}

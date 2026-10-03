@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,11 +217,13 @@ func TestExportVoiceCmd_WritesUpstreamModelStateViaPythonExporter(t *testing.T) 
 	}
 	buildVoiceEncoder = func(_ config.Config, _ string) (voiceEncoder, error) {
 		t.Fatal("legacy voice encoder should not be built for --format=model-state")
-		return nil, nil
+		return nil, errors.New("unexpected legacy voice encoder build")
 	}
 
 	in := filepath.Join(t.TempDir(), "prompt.wav")
-	if err := os.WriteFile(in, []byte{1, 2, 3, 4}, 0o644); err != nil {
+
+	err := os.WriteFile(in, []byte{1, 2, 3, 4}, 0o644)
+	if err != nil {
 		t.Fatalf("write input fixture: %v", err)
 	}
 
@@ -236,7 +239,8 @@ func TestExportVoiceCmd_WritesUpstreamModelStateViaPythonExporter(t *testing.T) 
 		"--language=english_2026-01",
 	})
 
-	if err := cmd.Execute(); err != nil {
+	err = cmd.Execute()
+	if err != nil {
 		t.Fatalf("export-voice command failed: %v", err)
 	}
 

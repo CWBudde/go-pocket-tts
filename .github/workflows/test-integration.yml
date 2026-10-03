@@ -33,8 +33,9 @@ jobs:
           python-version: "3.13"
 
       - name: Install pocket-tts
+        # Pinned to the upstream version the Go port is synced to; bump with PLAN.md Phase 8.
         run: |
-          pip install pocket-tts
+          pip install pocket-tts==2.1.0
           pocket-tts --version
 
       - name: Verify pocket-tts binary is on PATH

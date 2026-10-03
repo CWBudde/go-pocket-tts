@@ -110,12 +110,12 @@ func TestTTS_ConcurrencyThrottling(t *testing.T) {
 	var (
 		mu         sync.Mutex
 		peak       int
-		current    int32
+		current    atomic.Int32
 		releaseAll = make(chan struct{})
 	)
 	synth := &countingSynthesizer{
 		onEnter: func() {
-			n := int(atomic.AddInt32(&current, 1))
+			n := int(current.Add(1))
 
 			mu.Lock()
 			if n > peak {
@@ -124,7 +124,7 @@ func TestTTS_ConcurrencyThrottling(t *testing.T) {
 			mu.Unlock()
 			<-releaseAll
 		},
-		onExit: func() { atomic.AddInt32(&current, -1) },
+		onExit: func() { current.Add(-1) },
 		wav:    []byte("RIFF"),
 	}
 

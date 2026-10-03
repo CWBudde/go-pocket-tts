@@ -14,6 +14,7 @@ linters:
     - err113 # sentinel errors too verbose for this codebase
     - exhaustive # don't require exhaustive switch on enums
     - exhaustruct # don't require all struct fields populated
+    - exhaustruct_v5 # successor of exhaustruct (golangci-lint >= 2.13)
     - gochecknoglobals # sync.Pools, singletons, config vars are fine
     - godox # allow TODO/FIXME comments
     - ireturn # allow returning interfaces
@@ -75,7 +76,19 @@ linters:
         text: empty-block
 
       # test files are more relaxed
-      - linters: [funlen, cyclop, gocognit, maintidx, wrapcheck, dupl, noctx, forcetypeassert, gosec, thelper, usetesting, goconst]
+      - linters:
+          - funlen
+          - cyclop
+          - gocognit
+          - maintidx
+          - wrapcheck
+          - dupl
+          - noctx
+          - forcetypeassert
+          - gosec
+          - thelper
+          - usetesting
+          - goconst
         path: _test\.go
 
       # unsafe is intentional in SIMD/tensor code

@@ -101,7 +101,7 @@ func (l *Linear) ForwardInto(x, out *tensor.Tensor) error {
 		return fmt.Errorf("native: linear out rank mismatch: x %v out %v", xShape, outShape)
 	}
 
-	for i := 0; i < len(xShape)-1; i++ {
+	for i := range len(xShape) - 1 {
 		if xShape[i] != outShape[i] {
 			return fmt.Errorf("native: linear out shape mismatch: x %v out %v", xShape, outShape)
 		}
@@ -143,12 +143,14 @@ func (l *Linear) forwardIntoTrusted(x, out *tensor.Tensor) error {
 	runBatchRange := func(lo, hi int) {
 		for bIdx := lo; bIdx < hi; bIdx++ {
 			xSlice := xData[bIdx*inI : bIdx*inI+inI]
+
 			yBase := bIdx * outI
 			for o := range outI {
 				sum := tensor.DotProduct(xSlice, wData[o*inI:(o+1)*inI])
 				if biasData != nil {
 					sum += biasData[o]
 				}
+
 				outData[yBase+o] = sum
 			}
 		}
@@ -161,6 +163,7 @@ func (l *Linear) forwardIntoTrusted(x, out *tensor.Tensor) error {
 			if biasData != nil {
 				sum += biasData[o]
 			}
+
 			outData[o] = sum
 		}
 	}
@@ -300,6 +303,7 @@ func (ln *LayerNorm) forwardIntoTrusted(x, out *tensor.Tensor) error {
 			mean /= float64(dd)
 
 			var variance float64
+
 			for _, v := range src {
 				delta := float64(v) - mean
 				variance += delta * delta
@@ -318,6 +322,7 @@ func (ln *LayerNorm) forwardIntoTrusted(x, out *tensor.Tensor) error {
 
 	const layerNormParallelMinOps = int64(1 << 17)
 	totalOps := int64(len(xData))
+
 	workers := tensor.Workers()
 	if workers > 1 && outer > 1 && totalOps >= layerNormParallelMinOps {
 		parallelForByWorkers(outer, workers, runRows)

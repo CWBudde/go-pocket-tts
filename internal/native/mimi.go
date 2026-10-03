@@ -238,10 +238,6 @@ func loadMimiTransformerLayer(vb *VarBuilder, nHeads, context int64) (*mimiTrans
 	}, nil
 }
 
-func (l *mimiTransformerLayer) forward(x, ropeCos, ropeSin *tensor.Tensor) (*tensor.Tensor, error) {
-	return l.forwardWithScratch(x, ropeCos, ropeSin, nil)
-}
-
 func (l *mimiTransformerLayer) forwardWithScratch(x, ropeCos, ropeSin *tensor.Tensor, scratch *mimiDecodeScratch) (*tensor.Tensor, error) {
 	var (
 		n1  *tensor.Tensor
@@ -285,6 +281,7 @@ func (l *mimiTransformerLayer) forwardWithScratch(x, ropeCos, ropeSin *tensor.Te
 	}
 
 	var n2 *tensor.Tensor
+
 	if scratch != nil {
 		n2Out, ensureErr := scratch.ensure(&scratch.norm2, x.Shape())
 		if ensureErr != nil {
@@ -305,6 +302,7 @@ func (l *mimiTransformerLayer) forwardWithScratch(x, ropeCos, ropeSin *tensor.Te
 	}
 
 	var ff *tensor.Tensor
+
 	if scratch != nil {
 		ff1Shape := append([]int64(nil), n2.Shape()...)
 		ff1Shape[len(ff1Shape)-1] = l.linear1.outDim
@@ -372,8 +370,10 @@ func (l *mimiTransformerLayer) selfAttentionWithScratch(x, ropeCos, ropeSin *ten
 
 	var qkv *tensor.Tensor
 	var err error
+
 	if scratch != nil {
 		qkvShape := []int64{b, t, l.inProj.outDim}
+
 		qkvOut, ensureErr := scratch.ensure(&scratch.qkv, qkvShape)
 		if ensureErr != nil {
 			return nil, ensureErr
@@ -415,6 +415,7 @@ func (l *mimiTransformerLayer) selfAttentionWithScratch(x, ropeCos, ropeSin *ten
 	}
 
 	pos := positionsRange(0, t)
+
 	a, err := ops.AttentionWithPositions(q, k, v, pos, pos, l.context)
 	if err != nil {
 		return nil, err
@@ -547,12 +548,15 @@ func LoadMimiModel(vb *VarBuilder, cfg MimiConfig) (*MimiModel, error) {
 	if cfg.SampleRate == 0 {
 		cfg = DefaultMimiConfig()
 	}
+
 	if cfg.Context == 0 {
 		cfg.Context = DefaultMimiConfig().Context
 	}
+
 	if cfg.FrameRate == 0 {
 		cfg.FrameRate = DefaultMimiConfig().FrameRate
 	}
+
 	if cfg.EncoderFrameRate == 0 {
 		cfg.EncoderFrameRate = DefaultMimiConfig().EncoderFrameRate
 	}
@@ -694,27 +698,6 @@ func (m *MimiModel) QuantizerProject(latentBCT *tensor.Tensor) (*tensor.Tensor, 
 	return ops.Conv1D(latentBCT, m.quantizerOutProj.weight, m.quantizerOutProj.bias, 1, 0, 1, 1)
 }
 
-func (m *MimiModel) acquireDecodeScratch() *mimiDecodeScratch {
-	if m == nil {
-		return &mimiDecodeScratch{}
-	}
-
-	raw := m.decodeScratchPool.Get()
-	if scratch, ok := raw.(*mimiDecodeScratch); ok && scratch != nil {
-		return scratch
-	}
-
-	return &mimiDecodeScratch{}
-}
-
-func (m *MimiModel) releaseDecodeScratch(scratch *mimiDecodeScratch) {
-	if m == nil || scratch == nil {
-		return
-	}
-
-	m.decodeScratchPool.Put(scratch)
-}
-
 // DecodeFromLatent maps [B, 512, T] to PCM-like output [B, 1, N].
 func (m *MimiModel) DecodeFromLatent(latent *tensor.Tensor) (*tensor.Tensor, error) {
 	if m == nil {
@@ -795,3 +778,24 @@ func (m *MimiModel) EncodeToLatent(_ *tensor.Tensor) (*tensor.Tensor, error) {
 
 func cosf(x float32) float64 { return math.Cos(float64(x)) }
 func sinf(x float32) float64 { return math.Sin(float64(x)) }
+
+func (m *MimiModel) acquireDecodeScratch() *mimiDecodeScratch {
+	if m == nil {
+		return &mimiDecodeScratch{}
+	}
+
+	raw := m.decodeScratchPool.Get()
+	if scratch, ok := raw.(*mimiDecodeScratch); ok && scratch != nil {
+		return scratch
+	}
+
+	return &mimiDecodeScratch{}
+}
+
+func (m *MimiModel) releaseDecodeScratch(scratch *mimiDecodeScratch) {
+	if m == nil || scratch == nil {
+		return
+	}
+
+	m.decodeScratchPool.Put(scratch)
+}

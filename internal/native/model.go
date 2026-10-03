@@ -175,12 +175,12 @@ type latentToMimiProjector struct {
 
 func newLatentToMimiProjector(flow *FlowLM, mimi *MimiModel) (*latentToMimiProjector, error) {
 	if flow == nil || mimi == nil || mimi.quantizerOutProj == nil || mimi.quantizerOutProj.weight == nil {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil projector means "not applicable"; the sole caller stores it as an optional fast path
 	}
 
 	proj := mimi.quantizerOutProj
 	if proj.stride != 1 || proj.dilation != 1 || proj.groups != 1 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil projector means "not applicable"; the sole caller stores it as an optional fast path
 	}
 
 	wShape := proj.weight.Shape()
@@ -193,11 +193,11 @@ func newLatentToMimiProjector(flow *FlowLM, mimi *MimiModel) (*latentToMimiProje
 
 	kSize := int(wShape[2])
 	if kSize != 1 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil projector means "not applicable"; the sole caller stores it as an optional fast path
 	}
 
 	if inCh <= 0 || outCh <= 0 || inCh != int(flow.cfg.LDim) {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil projector means "not applicable"; the sole caller stores it as an optional fast path
 	}
 
 	std := flow.embStd.RawData()

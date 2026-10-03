@@ -48,7 +48,6 @@ func (r *nativeSafetensorsRuntime) MimiTiming() (float64, float64, int) {
 	return mimi.FrameRate(), mimi.EncoderFrameRate(), mimi.MimiStepsPerLatent()
 }
 
-//nolint:gocognit,cyclop,funlen // Generation pipeline intentionally keeps staged control-flow and logging in one place.
 func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []int64, cfg RuntimeGenerateConfig) ([]float32, error) {
 	if r == nil || r.model == nil {
 		return nil, errors.New("native-safetensors runtime unavailable")
@@ -58,18 +57,8 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 		return nil, errors.New("generate: token slice must not be empty")
 	}
 
-	maxSteps := cfg.MaxSteps
-	if maxSteps <= 0 {
-		maxSteps = cfg.EstimatedMaxSteps
-	}
-	if maxSteps <= 0 {
-		maxSteps = text.EstimateMaxFrames(len(tokens), text.DefaultMimiFrameRate)
-	}
-
-	decodeSteps := cfg.LSDDecodeSteps
-	if decodeSteps <= 0 {
-		decodeSteps = 1
-	}
+	maxSteps := resolveMaxSteps(cfg, len(tokens))
+	decodeSteps := resolveDecodeSteps(cfg)
 
 	overallStart := time.Now()
 	stageStart := overallStart
@@ -97,6 +86,59 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 		"text_frames", textEmb.Shape()[1],
 	)
 
+	flowState, err := r.prepareFlowState(textEmb, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	sequenceFrame, err := newBOSSequenceTensor()
+	if err != nil {
+		return nil, fmt.Errorf("generate: build bos sequence: %w", err)
+	}
+
+	stageStart = time.Now()
+
+	latentFrames, err := r.runARLoop(ctx, flowState, sequenceFrame, maxSteps, decodeSteps, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Debug("native-safetensors AR loop complete", "ms", time.Since(stageStart).Milliseconds(), "frames", len(latentFrames))
+
+	stageStart = time.Now()
+
+	audio3D, err := r.decodeLatents(latentFrames)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Debug("native-safetensors decode complete", "ms", time.Since(stageStart).Milliseconds())
+
+	shape := audio3D.Shape()
+	if len(shape) != 3 || shape[0] != 1 || shape[1] != 1 {
+		return nil, fmt.Errorf("generate: unexpected audio shape %v, want [1,1,N]", shape)
+	}
+
+	slog.Info(
+		"generation complete",
+		"backend", "native-safetensors",
+		"frames", len(latentFrames),
+		"samples", len(audio3D.RawData()),
+		"duration_ms", time.Since(overallStart).Milliseconds(),
+	)
+
+	return append([]float32(nil), audio3D.RawData()...), nil
+}
+
+func (r *nativeSafetensorsRuntime) Close() {
+	if r != nil && r.model != nil {
+		r.model.Close()
+	}
+}
+
+// prepareFlowState applies voice conditioning to the text embeddings and
+// returns the flow state primed with the conditioning sequence.
+func (r *nativeSafetensorsRuntime) prepareFlowState(textEmb *tensor.Tensor, cfg RuntimeGenerateConfig) (*nativemodel.FlowLMState, error) {
 	if cfg.VoiceEmbedding != nil && cfg.VoiceModelState != nil {
 		return nil, errors.New("generate: voice embedding and voice model state are mutually exclusive")
 	}
@@ -118,9 +160,13 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 		}
 	}
 
-	stageStart = time.Now()
+	stageStart := time.Now()
 
-	var flowState *nativemodel.FlowLMState
+	var (
+		flowState *nativemodel.FlowLMState
+		err       error
+	)
+
 	if cfg.VoiceModelState != nil {
 		flowState, err = r.model.NewFlowStateFromVoiceModelState(cfg.VoiceModelState)
 		if err != nil {
@@ -142,15 +188,20 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 
 	slog.Debug("native-safetensors flow prompt complete", "ms", time.Since(stageStart).Milliseconds())
 
-	sequenceFrame, err := newBOSSequenceTensor()
-	if err != nil {
-		return nil, fmt.Errorf("generate: build bos sequence: %w", err)
-	}
+	return flowState, nil
+}
 
+// runARLoop runs the autoregressive latent sampling loop until EOS (plus
+// FramesAfterEOS trailing frames) or maxSteps is reached.
+func (r *nativeSafetensorsRuntime) runARLoop(
+	ctx context.Context,
+	flowState *nativemodel.FlowLMState,
+	sequenceFrame *tensor.Tensor,
+	maxSteps, decodeSteps int,
+	cfg RuntimeGenerateConfig,
+) ([]*tensor.Tensor, error) {
 	var latentFrames []*tensor.Tensor
 	var eosCountdown *int
-
-	stageStart = time.Now()
 
 	for step := range maxSteps {
 		err := ctx.Err()
@@ -200,10 +251,31 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 		}
 	}
 
-	slog.Debug("native-safetensors AR loop complete", "ms", time.Since(stageStart).Milliseconds(), "frames", len(latentFrames))
+	return latentFrames, nil
+}
 
-	stageStart = time.Now()
+func resolveMaxSteps(cfg RuntimeGenerateConfig, tokenCount int) int {
+	if cfg.MaxSteps > 0 {
+		return cfg.MaxSteps
+	}
 
+	if cfg.EstimatedMaxSteps > 0 {
+		return cfg.EstimatedMaxSteps
+	}
+
+	return text.EstimateMaxFrames(tokenCount, text.DefaultMimiFrameRate)
+}
+
+func resolveDecodeSteps(cfg RuntimeGenerateConfig) int {
+	if cfg.LSDDecodeSteps > 0 {
+		return cfg.LSDDecodeSteps
+	}
+
+	return 1
+}
+
+// decodeLatents stacks the latent frames and decodes them to a [1,1,N] audio tensor.
+func (r *nativeSafetensorsRuntime) decodeLatents(latentFrames []*tensor.Tensor) (*tensor.Tensor, error) {
 	latent, err := stackLatentFramesTensor(latentFrames)
 	if err != nil {
 		return nil, fmt.Errorf("generate: stack latents: %w", err)
@@ -219,28 +291,7 @@ func (r *nativeSafetensorsRuntime) GenerateAudio(ctx context.Context, tokens []i
 		return nil, fmt.Errorf("generate: mimi_decode: %w", err)
 	}
 
-	slog.Debug("native-safetensors decode complete", "ms", time.Since(stageStart).Milliseconds())
-
-	shape := audio3D.Shape()
-	if len(shape) != 3 || shape[0] != 1 || shape[1] != 1 {
-		return nil, fmt.Errorf("generate: unexpected audio shape %v, want [1,1,N]", shape)
-	}
-
-	slog.Info(
-		"generation complete",
-		"backend", "native-safetensors",
-		"frames", len(latentFrames),
-		"samples", len(audio3D.RawData()),
-		"duration_ms", time.Since(overallStart).Milliseconds(),
-	)
-
-	return append([]float32(nil), audio3D.RawData()...), nil
-}
-
-func (r *nativeSafetensorsRuntime) Close() {
-	if r != nil && r.model != nil {
-		r.model.Close()
-	}
+	return audio3D, nil
 }
 
 func newBOSSequenceTensor() (*tensor.Tensor, error) {

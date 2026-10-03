@@ -7,10 +7,13 @@ import (
 
 // workers controls goroutine parallelism for tensor math kernels such as
 // Linear and MatMul. Values <= 1 disable parallel execution.
-var workers atomic.Int32
+var workers = newDefaultWorkers()
 
-func init() {
-	workers.Store(1)
+func newDefaultWorkers() *atomic.Int32 {
+	w := new(atomic.Int32)
+	w.Store(1)
+
+	return w
 }
 
 // SetWorkers sets the maximum number of goroutines used by tensor kernels.

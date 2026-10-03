@@ -418,12 +418,14 @@ func TestFlowTransformerStatefulAttentionMatchesFullLastToken(t *testing.T) {
 	}
 
 	state := &flowTransformerLayerState{}
+
 	_, k, v, err := layer.projectQKV(prefix, ropeCos, ropeSin, 0)
 	if err != nil {
 		t.Fatalf("project prefix: %v", err)
 	}
 
-	if err := state.appendKV(k, v); err != nil {
+	err = state.appendKV(k, v)
+	if err != nil {
 		t.Fatalf("append prefix: %v", err)
 	}
 
@@ -438,7 +440,9 @@ func TestFlowTransformerStatefulAttentionMatchesFullLastToken(t *testing.T) {
 	}
 
 	stepStart := state.offset
-	if err := state.appendKV(k, v); err != nil {
+
+	err = state.appendKV(k, v)
+	if err != nil {
 		t.Fatalf("append step: %v", err)
 	}
 

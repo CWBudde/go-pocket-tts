@@ -276,6 +276,7 @@ func (e *Engine) FlowLMStepStateful(ctx context.Context, sequenceFrame *Tensor, 
 		updated, ok := outputs[key]
 		if !ok {
 			legacyKey := fmt.Sprintf("kv_%d", i)
+
 			updated, ok = outputs[legacyKey]
 			if !ok {
 				return nil, nil, fmt.Errorf("flow_lm_step: missing '%s' in output", key)
