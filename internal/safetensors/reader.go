@@ -155,12 +155,14 @@ func LoadVoiceModelStateFromBytes(data []byte) (*VoiceModelState, error) {
 }
 
 // requiredModelKeys is a subset of tensor keys that must be present in a valid
-// PocketTTS safetensors model file.
+// PocketTTS safetensors model file. Only keys shared by every upstream config
+// are listed (no voice-cloning encoder, time embeddings or BOS tensors).
 var requiredModelKeys = []string{
-	"text_emb.weight",
-	"flow_transformer.layers.0.self_attn.q_proj.weight",
-	"lsd_decode.net.0.weight",
-	"mimi_decode.model.decoder.model.0.conv.conv.weight",
+	"flow_lm.conditioner.embed.weight",
+	"flow_lm.transformer.layers.0.self_attn.in_proj.weight",
+	"flow_lm.flow_net.input_proj.weight",
+	"flow_lm.out_eos.weight",
+	"mimi.decoder.model.0.conv.weight",
 }
 
 // ValidateModelKeys reads only the header of a safetensors file and verifies
