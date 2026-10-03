@@ -40,6 +40,42 @@ func TestResolveBundleFromLock_ByVariant(t *testing.T) {
 	}
 }
 
+func TestResolveBundleFromLock_LegacyVariantAlias(t *testing.T) {
+	tests := []struct{ locked, requested string }{
+		{"b6369a24", "english_2026-01"},
+		{"english_2026-01", "b6369a24"},
+		{"english_2026-01", "english_2026-01"},
+	}
+	for _, tc := range tests {
+		lockPath := filepath.Join(t.TempDir(), "lock.json")
+		writeLockFile(t, lockPath, ONNXBundleLock{
+			Version: 1,
+			Bundles: []ONNXBundle{
+				{ID: "other", Variant: "german", URL: "https://example.invalid/de.zip"},
+				{ID: "en", Variant: tc.locked, URL: "https://example.invalid/en.zip"},
+			},
+		})
+
+		b, err := resolveBundleFromLock(lockPath, "", tc.requested)
+		if err != nil || b.ID != "en" {
+			t.Errorf("lock variant %q, requested %q: got %+v, %v; want bundle en", tc.locked, tc.requested, b, err)
+		}
+	}
+}
+
+func TestResolveBundleFromLock_EmptyVariant(t *testing.T) {
+	lockPath := filepath.Join(t.TempDir(), "lock.json")
+	writeLockFile(t, lockPath, ONNXBundleLock{
+		Version: 1,
+		Bundles: []ONNXBundle{{ID: "en", Variant: "english_2026-01", URL: "x"}},
+	})
+
+	_, err := resolveBundleFromLock(lockPath, "", "")
+	if err == nil || !strings.Contains(err.Error(), "variant is required") {
+		t.Fatalf("err = %v; want variant-required error", err)
+	}
+}
+
 func TestResolveBundleFromLock_ByID(t *testing.T) {
 	tmp := t.TempDir()
 	lockPath := filepath.Join(tmp, "lock.json")
@@ -277,7 +313,9 @@ func TestDownloadONNXBundle_FromLockAndFileURL(t *testing.T) {
 
 	var stdout bytes.Buffer
 
+	// The lock entry uses the legacy variant name; the language resolves it.
 	err := DownloadONNXBundle(DownloadONNXBundleOptions{
+		Variant:  "english_2026-01",
 		LockFile: lockPath,
 		OutDir:   outDir,
 		Stdout:   &stdout,

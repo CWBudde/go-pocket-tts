@@ -32,12 +32,12 @@ func ExportONNX(opts ExportOptions) error {
 		return errors.New("out dir is required")
 	}
 
-	if opts.Variant == "" {
-		opts.Variant = "b6369a24"
-	}
-
 	if opts.Language != "" && opts.Config != "" {
 		return errors.New("language and config are mutually exclusive")
+	}
+
+	if opts.Language == "" && opts.Config == "" && opts.Variant == "" {
+		return errors.New("language, config or variant is required")
 	}
 
 	if opts.Stdout == nil {
@@ -63,7 +63,27 @@ func ExportONNX(opts ExportOptions) error {
 		return fmt.Errorf("resolve export helper: %w", err)
 	}
 
-	args := []string{scriptPath, "--models-dir", opts.ModelsDir, "--out-dir", opts.OutDir, "--variant", opts.Variant}
+	cmd := exec.Command(pythonBin, exportArgs(opts, scriptPath)...)
+	cmd.Stdout = opts.Stdout
+
+	cmd.Stderr = opts.Stderr
+
+	err = cmd.Run()
+	if err != nil {
+		return fmt.Errorf("run ONNX export helper: %w", err)
+	}
+
+	return nil
+}
+
+// exportArgs builds the export script's arguments. --variant is the script's
+// deprecated alias for a language and is passed only when set.
+func exportArgs(opts ExportOptions, scriptPath string) []string {
+	args := []string{scriptPath, "--models-dir", opts.ModelsDir, "--out-dir", opts.OutDir}
+	if opts.Variant != "" {
+		args = append(args, "--variant", opts.Variant)
+	}
+
 	if opts.Language != "" {
 		args = append(args, "--language", opts.Language)
 	}
@@ -80,17 +100,7 @@ func ExportONNX(opts ExportOptions) error {
 		args = append(args, "--max-seq", strconv.Itoa(opts.MaxSeq))
 	}
 
-	cmd := exec.Command(pythonBin, args...)
-	cmd.Stdout = opts.Stdout
-
-	cmd.Stderr = opts.Stderr
-
-	err = cmd.Run()
-	if err != nil {
-		return fmt.Errorf("run ONNX export helper: %w", err)
-	}
-
-	return nil
+	return args
 }
 
 func validateExportTooling(pythonBin string) error {

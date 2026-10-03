@@ -216,8 +216,10 @@ Write the WAV to stdout:
 ./pockettts-tools model export --models-dir models --out-dir models/onnx
 ```
 
-The exporter uses the current upstream PocketTTS loader. Select a built-in
-language or a custom upstream `.yaml` config when needed:
+The exporter uses the current upstream PocketTTS loader. It exports the model
+of the global `--language` (default `english_2026-01`), or a custom upstream
+`.yaml` config. `--variant b6369a24` is a hidden, deprecated alias for
+`--language english_2026-01`:
 
 ```bash
 ./pockettts-tools model export --language english_2026-01
@@ -241,10 +243,12 @@ Download and verify a prebuilt ONNX archive directly:
   --out-dir models/onnx
 ```
 
-Or resolve a pinned bundle from lock file (`bundles/onnx-bundles.lock.json`):
+Or resolve a pinned bundle from lock file (`bundles/onnx-bundles.lock.json`).
+The bundle `variant` defaults to the `--language`; lock entries with the legacy
+variant `b6369a24` match `english_2026-01`:
 
 ```bash
-./pockettts-tools model download-onnx --variant b6369a24 --out-dir models/onnx
+./pockettts-tools model download-onnx --language english_2026-01 --out-dir models/onnx
 ```
 
 ### Verify

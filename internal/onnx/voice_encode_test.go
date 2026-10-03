@@ -2,6 +2,8 @@ package onnx
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -174,5 +176,44 @@ func TestEncodeVoiceSamples_MissingMimiEncoderGraph(t *testing.T) {
 	_, err := e.encodeVoiceSamples(context.Background(), []float32{1})
 	if err == nil {
 		t.Fatal("expected error when mimi_encoder graph is missing")
+	}
+}
+
+func TestResolveModelWeightsPath_NoLegacyCheckpointName(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("POCKETTTS_MODEL_SAFETENSORS", "")
+
+	// The legacy flat checkpoint name next to the ONNX manifest and under
+	// models/ is no longer guessed: callers pass the configured model path.
+	for _, p := range []string{"tts_b6369a24.safetensors", filepath.Join("models", "tts_b6369a24.safetensors")} {
+		err := os.MkdirAll(filepath.Dir(p), 0o755)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		err = os.WriteFile(p, []byte("x"), 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	e := &Engine{manifestPath: filepath.Join(dir, "onnx", "manifest.json")}
+
+	got, err := e.resolveModelWeightsPath()
+	if err == nil {
+		t.Fatalf("resolveModelWeightsPath = %q; want not-found error", got)
+	}
+
+	generic := filepath.Join(dir, "model.safetensors")
+
+	err = os.WriteFile(generic, []byte("x"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err = e.resolveModelWeightsPath()
+	if err != nil || got != generic {
+		t.Errorf("resolveModelWeightsPath = %q, %v; want %q", got, err, generic)
 	}
 }

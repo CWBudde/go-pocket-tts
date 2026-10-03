@@ -221,11 +221,11 @@ func (e *Engine) resolveModelWeightsPath() (string, error) {
 	}
 
 	manifestDir := filepath.Dir(e.manifestPath)
+	// Generic names only: the checkpoint name depends on the language, and
+	// the CLI always passes the configured model path.
 	candidates := []string{
-		filepath.Join(manifestDir, "..", "tts_b6369a24.safetensors"),
 		filepath.Join(manifestDir, "..", "model.safetensors"),
 		filepath.Join(manifestDir, "..", "tts.safetensors"),
-		"models/tts_b6369a24.safetensors",
 		"models/model.safetensors",
 	}
 
