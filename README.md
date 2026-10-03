@@ -363,7 +363,8 @@ and `--paths-tokenizer-model` at the matching tokenizer model.
 
 `--language` (`tts.language`, `POCKETTTS_TTS_LANGUAGE`) selects one of the
 embedded upstream model configs: `english_2026-01` (default), `english_2026-09`,
-`english_2026-09_24l`, `german`, `german_24l`. Unless set explicitly, the model,
+`english_2026-09_24l`, `english_drifting_26-09` (one-step drifting sampler head),
+`german`, `german_24l`. Unless set explicitly, the model,
 tokenizer and voice manifest paths follow the language:
 `models/<lang>/model.safetensors`, `models/<lang>/tokenizer.model` and
 `voices/<lang>/manifest.json`; `english_2026-01` keeps the flat

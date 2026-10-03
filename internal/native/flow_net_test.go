@@ -270,3 +270,24 @@ func TestFlowLMDecode_Guards(t *testing.T) {
 		t.Errorf("flow_matching decode with 0 steps: err = %v", err)
 	}
 }
+
+func TestConfigFor_FlowType(t *testing.T) {
+	for language, want := range map[string]string{
+		"english_2026-01":        modelcfg.FlowTypeLSD,
+		"german":                 modelcfg.FlowTypeLSD,
+		"english_drifting_26-09": modelcfg.FlowTypeDrifting,
+	} {
+		mc, err := modelcfg.Lookup(language)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := ConfigFor(mc).FlowLM.FlowType; got != want {
+			t.Errorf("ConfigFor(%s).FlowLM.FlowType = %q, want %q", language, got, want)
+		}
+	}
+
+	if got := DefaultConfig().FlowLM.FlowType; got != modelcfg.FlowTypeLSD {
+		t.Errorf("DefaultConfig().FlowLM.FlowType = %q, want %q", got, modelcfg.FlowTypeLSD)
+	}
+}

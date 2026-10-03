@@ -160,8 +160,15 @@ func TestLanguageManifest_AllLanguagesPinned(t *testing.T) {
 				t.Errorf("%s: %s has no pinned checksum", language, f.Filename)
 			}
 
-			if !strings.HasPrefix(f.Filename, "languages/"+language+"/") {
-				t.Errorf("%s: %s is outside languages/%s/", language, f.Filename, language)
+			// The tokenizer may be another language's: english_drifting_26-09
+			// uses the english_2026-09 one.
+			dir := "languages/"
+			if f.LocalPath == "model.safetensors" {
+				dir += language + "/"
+			}
+
+			if !strings.HasPrefix(f.Filename, dir) {
+				t.Errorf("%s: %s is outside %s", language, f.Filename, dir)
 			}
 		}
 

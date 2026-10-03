@@ -8,7 +8,7 @@ import (
 )
 
 func TestLanguages(t *testing.T) {
-	want := []string{"english_2026-01", "english_2026-09", "english_2026-09_24l", "german", "german_24l"}
+	want := []string{"english_2026-01", "english_2026-09", "english_2026-09_24l", "english_drifting_26-09", "german", "german_24l"}
 	if got := Languages(); !slices.Equal(got, want) {
 		t.Errorf("Languages() = %v; want %v", got, want)
 	}
@@ -32,11 +32,12 @@ func TestLookup_EmbeddedConfigsParse(t *testing.T) {
 // Upstream: get_default_voice_for_language matches by substring.
 func TestLookup_DefaultVoice(t *testing.T) {
 	for name, want := range map[string]string{
-		"german":              "juergen",
-		"german_24l":          "juergen",
-		"english_2026-01":     "alba",
-		"english_2026-09":     "alba",
-		"english_2026-09_24l": "alba",
+		"german":                 "juergen",
+		"german_24l":             "juergen",
+		"english_2026-01":        "alba",
+		"english_2026-09":        "alba",
+		"english_2026-09_24l":    "alba",
+		"english_drifting_26-09": "alba",
 	} {
 		cfg, err := Lookup(name)
 		if err != nil {
@@ -46,6 +47,21 @@ func TestLookup_DefaultVoice(t *testing.T) {
 		if cfg.DefaultVoice != want {
 			t.Errorf("Lookup(%q).DefaultVoice = %q; want %q", name, cfg.DefaultVoice, want)
 		}
+	}
+}
+
+func TestLookup_DriftingSamplerHead(t *testing.T) {
+	cfg, err := Lookup("english_drifting_26-09")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.FlowLM.Flow.Type != FlowTypeDrifting || cfg.NumTimeConds() != 0 {
+		t.Errorf("Flow.Type = %q, NumTimeConds() = %d; want %q and 0", cfg.FlowLM.Flow.Type, cfg.NumTimeConds(), FlowTypeDrifting)
+	}
+
+	if cfg.FlowLM.LookupTable.Tokenizer != "sentencepiece" {
+		t.Errorf("LookupTable.Tokenizer = %q; want sentencepiece (tokenizer.model until tokenizer.json loads)", cfg.FlowLM.LookupTable.Tokenizer)
 	}
 }
 
