@@ -76,7 +76,19 @@ linters:
         text: empty-block
 
       # test files are more relaxed
-      - linters: [funlen, cyclop, gocognit, maintidx, wrapcheck, dupl, noctx, forcetypeassert, gosec, thelper, usetesting, goconst]
+      - linters:
+          - funlen
+          - cyclop
+          - gocognit
+          - maintidx
+          - wrapcheck
+          - dupl
+          - noctx
+          - forcetypeassert
+          - gosec
+          - thelper
+          - usetesting
+          - goconst
         path: _test\.go
 
       # unsafe is intentional in SIMD/tensor code
