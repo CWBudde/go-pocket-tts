@@ -361,7 +361,10 @@ Python PocketTTS `.yaml` config with `--backend cli` or `export-voice
 inference, point `--paths-model-path` at a local model `.safetensors` checkpoint
 and `--paths-tokenizer-model` at the matching tokenizer: a `tokenizer.json`
 (Hugging Face tokenizers) or a SentencePiece `tokenizer.model`, picked by the
-file extension; both give the same token ids for the shipped models.
+file extension; both give the same token ids for the shipped models on ordinary
+text. They differ only on input that literally spells a special token (`<s>`,
+`</s>`, `<unk>`, `<pad>`) or a byte piece (`<0x41>`): `tokenizer.json` matches
+those as that token, SentencePiece encodes the characters.
 
 `--language` (`tts.language`, `POCKETTTS_TTS_LANGUAGE`) selects one of the
 embedded upstream model configs: `english_2026-01` (default), `english_2026-09`,
