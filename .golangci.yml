@@ -48,6 +48,7 @@ linters:
       case:
         rules:
           json: snake
+          yaml: snake # upstream model configs (internal/modelcfg)
 
     wsl_v5:
       allow-first-in-block: true
