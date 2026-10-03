@@ -127,6 +127,9 @@ func TestIsDecimalPeriodBoundary(t *testing.T) {
 		{"End. 5 apples", 2, false},       // no digit before the period
 		{".5", 2, false},                  // prefix "." is shorter than two characters
 		{"٣.١٤", 2, true},                 // Arabic-Indic digits are digits too
+		{"Version ².5", 4, true},          // Python str.isdigit accepts superscripts
+		{"Version 2.①", 3, true},          // ... and circled digits
+		{"Add ½.5", 4, false},             // ½ is numeric but not a digit
 		{"Pi is 3.14", 3, false},          // prefix "Pi is 3" does not end with a period
 		{"Pi is 3.", 4, false},            // empty suffix
 		{"It is 3.x", 4, false},           // suffix does not start with a digit

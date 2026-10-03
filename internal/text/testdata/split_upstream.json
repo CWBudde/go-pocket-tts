@@ -1,5 +1,6 @@
 {
   "upstream": "kyutai-labs/pocket-tts@41cbc84 pocket_tts/models/text_chunking.py",
+  "model": "models/tokenizer.model",
   "tokenizer_sha256": "d461765ae179566678c93091c5fa6f2984c31bbe990bf1aa62d92c64d91bc3f6",
   "options": "pad_with_spaces_for_short_inputs=False, remove_semicolons=False, other defaults",
   "cases": [
@@ -130,6 +131,36 @@
       "text": "Wait! Are you sure? Yes. Absolutely sure!",
       "max_tokens": 4,
       "chunks": ["Wait!", "Are you sure?", "Yes.", "Absolutely sure!"]
+    },
+    {
+      "name": "ellipsis",
+      "text": "Wait for it… Then go. Really… ok.",
+      "max_tokens": 5,
+      "chunks": ["Wait for it… Then go.", "Really… ok."]
+    },
+    {
+      "name": "ligature",
+      "text": "The ﬁrst ﬁsh. The ﬁnal one.",
+      "max_tokens": 5,
+      "chunks": ["The ﬁrst ﬁsh.", "The ﬁnal one."]
+    },
+    {
+      "name": "vulgar_fraction",
+      "text": "Add ½ cup. Then ½ more.",
+      "max_tokens": 5,
+      "chunks": ["Add ½ cup.", "Then ½ more."]
+    },
+    {
+      "name": "superscript_decimal",
+      "text": "Version ².5 is out. Next one.",
+      "max_tokens": 5,
+      "chunks": ["Version ².5 is out.", "Next one."]
+    },
+    {
+      "name": "tab_and_symbols",
+      "text": "Price:\t5 € each. Done.",
+      "max_tokens": 5,
+      "chunks": ["Price:", "5 € each.", "Done."]
     },
     {
       "name": "paragraph_50",

@@ -1,0 +1,66 @@
+{
+  "upstream": "kyutai-labs/pocket-tts@41cbc84 pocket_tts/models/text_chunking.py",
+  "model": "models/german/tokenizer.model",
+  "tokenizer_sha256": "b3d6fb751a0bbc0b18df78687a03c11e4f2fbb0fa4b8f85e83064cd9d80ee34b",
+  "options": "pad_with_spaces_for_short_inputs=False, remove_semicolons=False, other defaults",
+  "cases": [
+    {
+      "name": "german_demo",
+      "text": "Hallo Welt. Ich bin Pocket TTS von Kyutai. Ich bin schnell genug, um auch auf kleinen CPUs zu laufen. Ich hoffe, ich gefalle dir.",
+      "max_tokens": 10,
+      "chunks": [
+        "Hallo Welt.",
+        "Ich bin Pocket TTS von Kyutai.",
+        "Ich bin schnell genug,",
+        "um auch auf kleinen CPUs zu laufen.",
+        "Ich hoffe, ich gefalle dir."
+      ]
+    },
+    {
+      "name": "german_decimals",
+      "text": "Version 2.0 ist da. Pi ist 3.14 und e ist 2.718.",
+      "max_tokens": 8,
+      "chunks": ["Version 2.0 ist da.", "Pi ist 3.14 und e ist 2.718."]
+    },
+    {
+      "name": "german_date_and_euro",
+      "text": "Es kostet 3,50 €. Am 24.12. ist Weihnachten.",
+      "max_tokens": 8,
+      "chunks": ["Es kostet 3,", "50 €.", "Am 24.12.", "ist Weihnachten."]
+    },
+    {
+      "name": "german_quotes",
+      "text": "„Guten Tag“, sagte er. Dann ging er nach Hause.",
+      "max_tokens": 6,
+      "chunks": ["„Guten Tag“,", "sagte er.", "Dann ging er nach Hause."]
+    },
+    {
+      "name": "german_umlauts",
+      "text": "Über Äpfel und Öl: Größe ist Glückssache; Mäßigung auch.",
+      "max_tokens": 6,
+      "chunks": [
+        "Über Äpfel und Öl:",
+        "Größe ist Glückssache;",
+        "Mäßigung auch."
+      ]
+    },
+    {
+      "name": "german_long_clauses",
+      "text": "Der Zug, der um acht Uhr abfährt, hält in Köln, Bonn, Koblenz, Mainz und Frankfurt, bevor er schließlich München erreicht.",
+      "max_tokens": 12,
+      "chunks": [
+        "Der Zug, der um acht Uhr abfährt,",
+        "hält in Köln, Bonn,",
+        "Koblenz,",
+        "Mainz und Frankfurt,",
+        "bevor er schließlich München erreicht."
+      ]
+    },
+    {
+      "name": "german_short",
+      "text": "Guten Tag, dies ist ein kurzer Test.",
+      "max_tokens": 50,
+      "chunks": ["Guten Tag, dies ist ein kurzer Test."]
+    }
+  ]
+}
