@@ -353,10 +353,10 @@ func TestSynthesize_ReusesGenerationConfig(t *testing.T) {
 		runtime:   rt,
 		tokenizer: fakeTokenizer{},
 		ttsCfg: config.TTSConfig{
-			Temperature:    0.9,
-			EOSThreshold:   -3.5,
-			MaxSteps:       123,
-			LSDDecodeSteps: 5,
+			Temperature:        0.9,
+			EOSThreshold:       -3.5,
+			MaxSteps:           123,
+			SamplerDecodeSteps: 5,
 		},
 	}
 
@@ -376,7 +376,7 @@ func TestSynthesize_ReusesGenerationConfig(t *testing.T) {
 	if rt.lastCfg.Temperature != 0.9 ||
 		rt.lastCfg.EOSThreshold != -3.5 ||
 		rt.lastCfg.MaxSteps != 123 ||
-		rt.lastCfg.LSDDecodeSteps != 5 {
+		rt.lastCfg.SamplerDecodeSteps != 5 {
 		t.Fatalf("runtime config mismatch: %+v", rt.lastCfg)
 	}
 

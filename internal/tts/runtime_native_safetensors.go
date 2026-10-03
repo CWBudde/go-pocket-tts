@@ -267,8 +267,8 @@ func resolveMaxSteps(cfg RuntimeGenerateConfig, tokenCount int) int {
 }
 
 func resolveDecodeSteps(cfg RuntimeGenerateConfig) int {
-	if cfg.LSDDecodeSteps > 0 {
-		return cfg.LSDDecodeSteps
+	if cfg.SamplerDecodeSteps > 0 {
+		return cfg.SamplerDecodeSteps
 	}
 
 	return 1

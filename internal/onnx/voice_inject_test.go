@@ -166,11 +166,11 @@ func TestGenerateAudio_WithVoiceEmbedding_PrependsToTextEmb(t *testing.T) {
 	voiceEmb, _ := NewTensor(voiceData, []int64{1, 2, 1024})
 
 	cfg := GenerateConfig{
-		Temperature:    0.0,
-		EOSThreshold:   -4.0,
-		MaxSteps:       256,
-		LSDDecodeSteps: 1,
-		VoiceEmbedding: voiceEmb,
+		Temperature:        0.0,
+		EOSThreshold:       -4.0,
+		MaxSteps:           256,
+		SamplerDecodeSteps: 1,
+		VoiceEmbedding:     voiceEmb,
 	}
 
 	tokens := []int64{1, 2, 3, 4, 5}
@@ -252,10 +252,10 @@ func TestGenerateAudio_WithoutVoiceEmbedding_Unchanged(t *testing.T) {
 	})
 
 	cfg := GenerateConfig{
-		Temperature:    0.0,
-		EOSThreshold:   -4.0,
-		MaxSteps:       256,
-		LSDDecodeSteps: 1,
+		Temperature:        0.0,
+		EOSThreshold:       -4.0,
+		MaxSteps:           256,
+		SamplerDecodeSteps: 1,
 		// VoiceEmbedding: nil — no voice
 	}
 

@@ -9,12 +9,12 @@ import (
 
 // GenerateConfig holds parameters for the autoregressive generation loop.
 type GenerateConfig struct {
-	Temperature    float64 // noise scale for flow sampling (default 0.7)
-	EOSThreshold   float64 // raw logit threshold for EOS detection (default -4.0)
-	MaxSteps       int     // maximum AR steps before forced stop (default 256)
-	LSDDecodeSteps int     // Euler integration steps per frame (default 1)
-	FramesAfterEOS int     // extra frames to generate after first EOS
-	VoiceEmbedding *Tensor // optional voice conditioning [1, T_voice, D]; prepended to text_embeddings
+	Temperature        float64 // noise scale for flow sampling (default 0.7)
+	EOSThreshold       float64 // raw logit threshold for EOS detection (default -4.0)
+	MaxSteps           int     // maximum AR steps before forced stop (default 256)
+	SamplerDecodeSteps int     // sampler integration steps per frame (default 1)
+	FramesAfterEOS     int     // extra frames to generate after first EOS
+	VoiceEmbedding     *Tensor // optional voice conditioning [1, T_voice, D]; prepended to text_embeddings
 }
 
 // GenerateAudio runs the full TTS generation pipeline:
@@ -81,7 +81,7 @@ func (e *Engine) generateAudioStateful(ctx context.Context, tokens []int64, cfg 
 			slog.Debug("EOS detected", "step", step, "frames_after_eos", countdown)
 		}
 
-		frame, err := e.FlowLMFlow(ctx, lastHidden, cfg.Temperature, cfg.LSDDecodeSteps)
+		frame, err := e.FlowLMFlow(ctx, lastHidden, cfg.Temperature, cfg.SamplerDecodeSteps)
 		if err != nil {
 			return nil, fmt.Errorf("generate step %d flow: %w", step, err)
 		}
@@ -142,7 +142,7 @@ func (e *Engine) generateAudioStateless(ctx context.Context, tokens []int64, cfg
 			slog.Debug("EOS detected", "step", step, "frames_after_eos", countdown)
 		}
 
-		frame, err := e.FlowLMFlow(ctx, lastHidden, cfg.Temperature, cfg.LSDDecodeSteps)
+		frame, err := e.FlowLMFlow(ctx, lastHidden, cfg.Temperature, cfg.SamplerDecodeSteps)
 		if err != nil {
 			return nil, fmt.Errorf("generate step %d flow: %w", step, err)
 		}

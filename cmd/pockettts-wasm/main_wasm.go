@@ -54,11 +54,11 @@ func (p *progressReporter) Emit(stage string, current, total int, detail string)
 }
 
 type synthesizeOptions struct {
-	Temperature      float64
-	EOSThreshold     float64
-	MaxSteps         int
-	LSDDecodeSteps   int
-	VoiceSafetensors []byte
+	Temperature        float64
+	EOSThreshold       float64
+	MaxSteps           int
+	SamplerDecodeSteps int
+	VoiceSafetensors   []byte
 }
 
 type nativeEngine struct {
@@ -226,10 +226,10 @@ func loadModel(modelSafetensors, tokenizerBytes []byte, progress *progressReport
 
 func parseSynthOptions(args []js.Value) synthesizeOptions {
 	opts := synthesizeOptions{
-		Temperature:    defaults.TTS.Temperature,
-		EOSThreshold:   defaults.TTS.EOSThreshold,
-		MaxSteps:       defaults.TTS.MaxSteps,
-		LSDDecodeSteps: defaults.TTS.LSDDecodeSteps,
+		Temperature:        defaults.TTS.Temperature,
+		EOSThreshold:       defaults.TTS.EOSThreshold,
+		MaxSteps:           defaults.TTS.MaxSteps,
+		SamplerDecodeSteps: defaults.TTS.SamplerDecodeSteps,
 	}
 
 	if len(args) < 3 {
@@ -258,10 +258,18 @@ func parseSynthOptions(args []js.Value) synthesizeOptions {
 			opts.MaxSteps = steps
 		}
 	}
-	if v := optVal.Get("lsdSteps"); !v.IsUndefined() && !v.IsNull() {
-		steps := v.Int()
+
+	// samplerSteps replaces the deprecated lsdSteps option, which is still
+	// honoured when samplerSteps is absent.
+	stepsVal := optVal.Get("samplerSteps")
+	if stepsVal.IsUndefined() || stepsVal.IsNull() {
+		stepsVal = optVal.Get("lsdSteps")
+	}
+
+	if !stepsVal.IsUndefined() && !stepsVal.IsNull() {
+		steps := stepsVal.Int()
 		if steps > 0 {
-			opts.LSDDecodeSteps = steps
+			opts.SamplerDecodeSteps = steps
 		}
 	}
 
@@ -383,7 +391,7 @@ func synthesize(input string, progress *progressReporter, opts synthesizeOptions
 			EOSThreshold:       opts.EOSThreshold,
 			MaxSteps:           maxSteps,
 			EstimatedMaxSteps:  estimatedMaxSteps,
-			LSDDecodeSteps:     opts.LSDDecodeSteps,
+			SamplerDecodeSteps: opts.SamplerDecodeSteps,
 			FramesAfterEOS:     chunk.FramesAfterEOS(),
 			MimiStepsPerLatent: mimiStepsPerLatent,
 			MimiSequenceLength: estimatedMaxSteps * mimiStepsPerLatent,

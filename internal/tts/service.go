@@ -261,7 +261,7 @@ func (s *Service) generateConfig(chunk text.ChunkMetadata) RuntimeGenerateConfig
 		EOSThreshold:       s.ttsCfg.EOSThreshold,
 		MaxSteps:           generationStepLimit(s.ttsCfg.MaxSteps, estimatedMaxSteps),
 		EstimatedMaxSteps:  estimatedMaxSteps,
-		LSDDecodeSteps:     s.ttsCfg.LSDDecodeSteps,
+		SamplerDecodeSteps: s.ttsCfg.SamplerDecodeSteps,
 		FramesAfterEOS:     chunk.FramesAfterEOS(),
 		MimiStepsPerLatent: mimiStepsPerLatent,
 		MimiSequenceLength: estimatedMaxSteps * mimiStepsPerLatent,
