@@ -37,6 +37,19 @@ type Config struct {
 	TokenizerModelPath string
 	// ValidateSafetensors, if set, is called to validate the model file contents.
 	ValidateSafetensors func(path string) error
+	// LoadTokenizer, if set, loads the tokenizer once it exists, for example
+	// to check its vocab size against the model config's n_bins.
+	LoadTokenizer func(path string) error
+
+	// Language, if non-empty, names the model config whose files are checked.
+	Language string
+	// VoiceManifestPath, if non-empty, must exist: native synthesis needs a voice.
+	VoiceManifestPath string
+	// DefaultVoice, if non-empty, must resolve through ResolveVoice once the
+	// voice manifest exists; synthesis without --voice uses it.
+	DefaultVoice string
+	// ResolveVoice maps a voice ID of the voice manifest to its file.
+	ResolveVoice func(id string) (string, error)
 }
 
 // Result collects the outcome of all checks.
@@ -59,6 +72,10 @@ func (r *Result) fail(msg string) { r.failures = append(r.failures, msg) }
 // Each check line is prefixed with PassMark or FailMark.
 func Run(cfg Config, w io.Writer) Result {
 	var res Result
+
+	if cfg.Language != "" {
+		_, _ = fmt.Fprintf(w, "language: %s\n", cfg.Language)
+	}
 
 	// ---- pocket-tts binary ------------------------------------------------
 	if cfg.SkipPocketTTS {
@@ -93,6 +110,8 @@ func Run(cfg Config, w io.Writer) Result {
 		}
 	}
 
+	checkVoiceManifest(cfg, w, &res)
+
 	// ---- voice files ------------------------------------------------------
 	for _, path := range cfg.VoiceFiles {
 		_, statErr := os.Stat(path)
@@ -126,18 +145,74 @@ func Run(cfg Config, w io.Writer) Result {
 		}
 	}
 
-	// ---- tokenizer model --------------------------------------------------
-	if cfg.TokenizerModelPath != "" {
-		_, statErr := os.Stat(cfg.TokenizerModelPath)
-		if statErr != nil {
-			res.fail(fmt.Sprintf("tokenizer model %q: not found", cfg.TokenizerModelPath))
-			_, _ = fmt.Fprintf(w, "%s tokenizer model: not found (%s)\n", FailMark, cfg.TokenizerModelPath)
-		} else {
-			_, _ = fmt.Fprintf(w, "%s tokenizer model: %s\n", PassMark, cfg.TokenizerModelPath)
-		}
-	}
+	checkTokenizer(cfg, w, &res)
 
 	return res
+}
+
+// checkTokenizer checks that the tokenizer exists and, with LoadTokenizer,
+// that it loads.
+func checkTokenizer(cfg Config, w io.Writer, res *Result) {
+	if cfg.TokenizerModelPath == "" {
+		return
+	}
+
+	_, statErr := os.Stat(cfg.TokenizerModelPath)
+	if statErr != nil {
+		res.fail(fmt.Sprintf("tokenizer model %q: not found", cfg.TokenizerModelPath))
+		_, _ = fmt.Fprintf(w, "%s tokenizer model: not found (%s)\n", FailMark, cfg.TokenizerModelPath)
+
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "%s tokenizer model: %s\n", PassMark, cfg.TokenizerModelPath)
+
+	if cfg.LoadTokenizer == nil {
+		return
+	}
+
+	loadErr := cfg.LoadTokenizer(cfg.TokenizerModelPath)
+	if loadErr != nil {
+		res.fail(fmt.Sprintf("tokenizer load: %v", loadErr))
+		_, _ = fmt.Fprintf(w, "%s tokenizer load: %v\n", FailMark, loadErr)
+
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "%s tokenizer load: ok\n", PassMark)
+}
+
+// checkVoiceManifest checks that the voice manifest exists and that the
+// default voice resolves through it.
+func checkVoiceManifest(cfg Config, w io.Writer, res *Result) {
+	if cfg.VoiceManifestPath == "" {
+		return
+	}
+
+	_, statErr := os.Stat(cfg.VoiceManifestPath)
+	if statErr != nil {
+		res.fail(fmt.Sprintf("voice manifest %q: not found; run 'pockettts model download' (same --language)",
+			cfg.VoiceManifestPath))
+		_, _ = fmt.Fprintf(w, "%s voice manifest: not found (%s)\n", FailMark, cfg.VoiceManifestPath)
+
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "%s voice manifest: %s\n", PassMark, cfg.VoiceManifestPath)
+
+	if cfg.DefaultVoice == "" || cfg.ResolveVoice == nil {
+		return
+	}
+
+	path, err := cfg.ResolveVoice(cfg.DefaultVoice)
+	if err != nil {
+		res.fail(fmt.Sprintf("default voice %q: %v; run 'pockettts model download' (same --language)", cfg.DefaultVoice, err))
+		_, _ = fmt.Fprintf(w, "%s default voice %s: %v\n", FailMark, cfg.DefaultVoice, err)
+
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "%s default voice %s: %s\n", PassMark, cfg.DefaultVoice, path)
 }
 
 // checkPythonVersion returns an error if ver is outside [3.10, 3.15).

@@ -1,9 +1,16 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
+
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/doctor"
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 )
 
 func TestProbePocketTTSVersion_MissingExecutable(t *testing.T) {
@@ -193,5 +200,80 @@ func TestCollectVoiceFiles_PathResolvedRelativeToManifest(t *testing.T) {
 	_, err = os.Stat(files[0])
 	if err != nil {
 		t.Errorf("returned path does not exist: %q (%v)", files[0], err)
+	}
+}
+
+// germanDoctorConfig is the config doctor gets for --language german, with the
+// repo-relative paths seen from this package directory.
+func germanDoctorConfig(t *testing.T) config.Config {
+	t.Helper()
+
+	paths := config.PathsForLanguage("german")
+	root := filepath.Join("..", "..")
+
+	cfg := config.DefaultConfig()
+	cfg.TTS.Language = "german"
+	cfg.TTS.Backend = config.BackendNative
+	cfg.Paths.ModelPath = filepath.Join(root, filepath.FromSlash(paths.ModelPath))
+	cfg.Paths.TokenizerModel = filepath.Join(root, filepath.FromSlash(paths.TokenizerModel))
+	cfg.Paths.VoiceManifest = filepath.Join(root, filepath.FromSlash(paths.VoiceManifest))
+
+	for _, p := range []string{cfg.Paths.ModelPath, cfg.Paths.TokenizerModel, cfg.Paths.VoiceManifest} {
+		_, err := os.Stat(p)
+		if err != nil {
+			t.Skipf("german assets not downloaded (%v); run pockettts model download --language german", err)
+		}
+	}
+
+	mc, err := modelcfg.Lookup("german")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg.Model = mc
+
+	return cfg
+}
+
+func TestNewDoctorConfig_GermanPasses(t *testing.T) {
+	cfg := germanDoctorConfig(t)
+
+	var out strings.Builder
+
+	result := doctor.Run(newDoctorConfig(cfg, config.BackendNative), &out)
+	if result.Failed() {
+		t.Fatalf("doctor --language german failed: %v\n%s", result.Failures(), out.String())
+	}
+
+	for _, want := range []string{"language: german", "default voice juergen:", "tokenizer load: ok"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestNewDoctorConfig_ChecksLanguageFiles(t *testing.T) {
+	cfg := germanDoctorConfig(t)
+	cfg.Model.FlowLM.LookupTable.NBins--
+
+	result := doctor.Run(newDoctorConfig(cfg, config.BackendNative), io.Discard)
+	if !slices.ContainsFunc(result.Failures(), func(f string) bool { return strings.Contains(f, "n_bins") }) {
+		t.Errorf("n_bins mismatch: failures = %v; want a tokenizer vocab size failure", result.Failures())
+	}
+
+	cfg = germanDoctorConfig(t)
+	cfg.Model.DefaultVoice = "nobody"
+
+	result = doctor.Run(newDoctorConfig(cfg, config.BackendNative), io.Discard)
+	if !slices.ContainsFunc(result.Failures(), func(f string) bool { return strings.Contains(f, `default voice "nobody"`) }) {
+		t.Errorf("unknown default voice: failures = %v; want a default voice failure", result.Failures())
+	}
+
+	cfg = germanDoctorConfig(t)
+	cfg.Paths.VoiceManifest = filepath.Join(t.TempDir(), "manifest.json")
+
+	result = doctor.Run(newDoctorConfig(cfg, config.BackendNative), io.Discard)
+	if !slices.ContainsFunc(result.Failures(), func(f string) bool { return strings.Contains(f, "voice manifest") }) {
+		t.Errorf("missing voice manifest: failures = %v; want a voice manifest failure", result.Failures())
 	}
 }
