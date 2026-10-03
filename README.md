@@ -153,6 +153,20 @@ export HF_TOKEN=...  # or use --hf-token
 ./pockettts model download --hf-repo kyutai/pocket-tts
 ```
 
+Other languages download into their own directories (see `--language` below):
+`languages/<lang>/` from Hugging Face, pinned to the revisions in the embedded
+model config and checked against pinned SHA256 checksums, goes to
+`models/<lang>/model.safetensors` and `models/<lang>/tokenizer.model`, and the
+language's predefined voices go next to the voice manifest the runtime reads
+(`--paths-voice-manifest`, by default `voices/<lang>/manifest.json`), which
+lists them:
+
+```bash
+./pockettts model download --language german --hf-repo kyutai/pocket-tts-without-voice-cloning
+./pockettts-tools voice download --language german                 # all predefined voices
+./pockettts-tools voice download --language german --voice juergen # or only some
+```
+
 ### 2) Sanity-check your setup
 
 Checks:
@@ -203,8 +217,10 @@ Write the WAV to stdout:
 ./pockettts-tools model export --models-dir models --out-dir models/onnx
 ```
 
-The exporter uses the current upstream PocketTTS loader. Select a built-in
-language or a custom upstream `.yaml` config when needed:
+The exporter uses the current upstream PocketTTS loader. It exports the model
+of the global `--language` (default `english_2026-01`), or a custom upstream
+`.yaml` config. `--variant b6369a24` is a hidden, deprecated alias for
+`--language english_2026-01`:
 
 ```bash
 ./pockettts-tools model export --language english_2026-01
@@ -228,10 +244,12 @@ Download and verify a prebuilt ONNX archive directly:
   --out-dir models/onnx
 ```
 
-Or resolve a pinned bundle from lock file (`bundles/onnx-bundles.lock.json`):
+Or resolve a pinned bundle from lock file (`bundles/onnx-bundles.lock.json`).
+The bundle `variant` defaults to the `--language`; lock entries with the legacy
+variant `b6369a24` match `english_2026-01`:
 
 ```bash
-./pockettts-tools model download-onnx --variant b6369a24 --out-dir models/onnx
+./pockettts-tools model download-onnx --language english_2026-01 --out-dir models/onnx
 ```
 
 ### Verify
@@ -353,7 +371,10 @@ tokenizer and voice manifest paths follow the language:
 `voices/manifest.json`. `--model-config <file>` loads a custom upstream model
 config instead; like upstream's `--config` it cannot be combined with
 `--language`, and it needs explicit `--paths-model-path` and
-`--paths-tokenizer-model`.
+`--paths-tokenizer-model`. `synth`, `bench`, `doctor` and `serve` read voice IDs
+from the voice manifest (`--paths-voice-manifest`). Unless `--temperature` is
+set, generation uses the model config's `default_temperature` (0.3 for every
+shipped config).
 
 `pockettts synth --text -` explicitly reads text from stdin. Omitting `--text`
 continues to read stdin as well.

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -858,6 +859,7 @@ func TestExportONNX_PythonBinNotFound(t *testing.T) {
 	err := ExportONNX(ExportOptions{
 		ModelsDir: t.TempDir(),
 		OutDir:    t.TempDir(),
+		Language:  "english_2026-01",
 		PythonBin: "/nonexistent/python999",
 	})
 	if err == nil {
@@ -878,6 +880,42 @@ func TestExportONNX_LanguageAndConfigMutuallyExclusive(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "mutually exclusive") {
 		t.Fatalf("error = %q; want mutually exclusive", err.Error())
+	}
+}
+
+func TestExportONNX_RequiresModelSource(t *testing.T) {
+	err := ExportONNX(ExportOptions{ModelsDir: t.TempDir(), OutDir: t.TempDir()})
+	if err == nil || !strings.Contains(err.Error(), "language, config or variant is required") {
+		t.Fatalf("ExportONNX(no source) err = %v; want model-source error", err)
+	}
+}
+
+func TestExportArgs(t *testing.T) {
+	base := []string{"export.py", "--models-dir", "m", "--out-dir", "o"}
+
+	tests := []struct {
+		name string
+		opts ExportOptions
+		want []string
+	}{
+		{"language", ExportOptions{Language: "german"}, append(slices.Clone(base), "--language", "german")},
+		{"config", ExportOptions{Config: "c.yaml"}, append(slices.Clone(base), "--config", "c.yaml")},
+		{"legacy variant", ExportOptions{Variant: "b6369a24"}, append(slices.Clone(base), "--variant", "b6369a24")},
+		{
+			"int8 and max-seq",
+			ExportOptions{Language: "german", Int8: true, MaxSeq: 512},
+			append(slices.Clone(base), "--language", "german", "--int8", "--max-seq", "512"),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.opts.ModelsDir, tc.opts.OutDir = "m", "o"
+
+			got := exportArgs(tc.opts, "export.py")
+			if !slices.Equal(got, tc.want) {
+				t.Errorf("exportArgs = %v; want %v", got, tc.want)
+			}
+		})
 	}
 }
 

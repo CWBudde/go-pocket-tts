@@ -7,7 +7,7 @@ import (
 )
 
 func TestResolveVoiceOrPath_Empty(t *testing.T) {
-	got, err := resolveVoiceOrPath("")
+	got, err := resolveVoiceOrPath("voices/manifest.json", "")
 	if err != nil {
 		t.Fatalf("resolveVoiceOrPath(\"\") returned error: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestResolveVoiceOrPath_NoManifest(t *testing.T) {
 		t.Fatalf("Chdir: %v", err)
 	}
 
-	got, err := resolveVoiceOrPath("my-voice")
+	got, err := resolveVoiceOrPath("voices/manifest.json", "my-voice")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestResolveVoiceOrPath_KnownVoiceInManifest(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	got, err := resolveVoiceOrPath("alice")
+	got, err := resolveVoiceOrPath("voices/manifest.json", "alice")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestResolveVoiceOrPath_UnknownVoicePassesThrough(t *testing.T) {
 	}
 
 	// "bob" is not in manifest → treated as raw CLI voice value
-	got, err := resolveVoiceOrPath("bob")
+	got, err := resolveVoiceOrPath("voices/manifest.json", "bob")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

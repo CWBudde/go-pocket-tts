@@ -8,6 +8,7 @@ type Manifest struct {
 }
 
 type ModelFile struct {
+	Repo      string `json:"repo,omitempty"` // Overrides Manifest.Repo for this file.
 	Filename  string `json:"filename"`
 	Revision  string `json:"revision"`
 	SHA256    string `json:"sha256"`
@@ -16,7 +17,7 @@ type ModelFile struct {
 
 func PinnedManifest(repo string) (Manifest, error) {
 	switch repo {
-	case "kyutai/pocket-tts":
+	case GatedRepo:
 		return Manifest{
 			Repo: repo,
 			Files: []ModelFile{
@@ -29,7 +30,7 @@ func PinnedManifest(repo string) (Manifest, error) {
 				},
 			},
 		}, nil
-	case "kyutai/pocket-tts-without-voice-cloning":
+	case VoiceRepo:
 		return Manifest{
 			Repo: repo,
 			Files: []ModelFile{
@@ -51,7 +52,11 @@ func PinnedManifest(repo string) (Manifest, error) {
 }
 
 const (
-	voiceRepo     = "kyutai/pocket-tts-without-voice-cloning"
+	// GatedRepo holds the weights with voice cloning (access must be granted).
+	GatedRepo = "kyutai/pocket-tts"
+	// VoiceRepo is the ungated repo: weights without voice cloning, the
+	// tokenizers and the predefined voices.
+	VoiceRepo     = "kyutai/pocket-tts-without-voice-cloning"
 	voiceRevision = "d4fdd22ae8c8e1cb3634e150ebeff1dab2d16df3"
 )
 
@@ -80,5 +85,5 @@ func VoiceManifest() Manifest {
 		}
 	}
 
-	return Manifest{Repo: voiceRepo, Files: files}
+	return Manifest{Repo: VoiceRepo, Files: files}
 }

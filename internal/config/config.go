@@ -121,7 +121,7 @@ func DefaultConfig() Config {
 			CLIConfigPath:      "",
 			Concurrency:        1,
 			Quiet:              true,
-			Temperature:        0.7,
+			Temperature:        0.3, // DefaultLanguage's default_temperature; Load uses the model's
 			EOSThreshold:       -4.0,
 			MaxSteps:           256,
 			SamplerDecodeSteps: 1,
@@ -170,7 +170,8 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.String("tts-cli-config-path", defaults.TTS.CLIConfigPath, "Path to pocket-tts config file")
 	fs.Int("tts-concurrency", defaults.TTS.Concurrency, "Max concurrent pocket-tts subprocesses")
 	fs.Bool("tts-quiet", defaults.TTS.Quiet, "Pass --quiet to pocket-tts generate")
-	fs.Float64("temperature", defaults.TTS.Temperature, "Noise temperature for flow sampling")
+	fs.Float64("temperature", defaults.TTS.Temperature,
+		"Noise temperature for flow sampling (follows the model config's default_temperature unless set)")
 	fs.Float64("eos-threshold", defaults.TTS.EOSThreshold, "Raw logit threshold for EOS detection")
 	fs.Int("max-steps", defaults.TTS.MaxSteps, "Maximum autoregressive generation steps")
 	fs.Int("sampler-decode-steps", defaults.TTS.SamplerDecodeSteps, "Sampler integration steps per latent frame")
@@ -247,7 +248,18 @@ func Load(opts LoadOptions) (Config, error) {
 		return Config{}, err
 	}
 
+	applyModelDefaults(v, flags, &cfg)
+
 	return cfg, nil
+}
+
+// applyModelDefaults fills the generation settings the user did not set
+// explicitly from the resolved model config. Upstream: --temperature defaults
+// to None, which means the model's default_temperature.
+func applyModelDefaults(v *viper.Viper, flags *pflag.FlagSet, cfg *Config) {
+	if !isExplicit(v, flags, "tts.temperature") {
+		cfg.TTS.Temperature = cfg.Model.DefaultTemperature
+	}
 }
 
 // DefaultLanguage is the model config used without --language. It stays the

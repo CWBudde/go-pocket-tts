@@ -45,10 +45,6 @@ func DownloadONNXBundle(opts DownloadONNXBundleOptions) error {
 		return errors.New("out dir is required")
 	}
 
-	if opts.Variant == "" {
-		opts.Variant = "b6369a24"
-	}
-
 	if opts.LockFile == "" {
 		opts.LockFile = filepath.Join("bundles", "onnx-bundles.lock.json")
 	}
@@ -152,13 +148,29 @@ func resolveBundleFromLock(lockFile, bundleID, variant string) (ONNXBundle, erro
 		return ONNXBundle{}, fmt.Errorf("bundle id %q not found in %s", bundleID, lockFile)
 	}
 
+	if variant == "" {
+		return ONNXBundle{}, errors.New("bundle variant is required (pass --language, --variant or --bundle-id)")
+	}
+
 	for _, b := range lock.Bundles {
-		if b.Variant == variant {
+		if canonicalVariant(b.Variant) == canonicalVariant(variant) {
 			return b, nil
 		}
 	}
 
 	return ONNXBundle{}, fmt.Errorf("no bundle found for variant %q in %s", variant, lockFile)
+}
+
+// legacyVariants maps checkpoint signatures that older lock files and the
+// --variant flag used to the model config (language) they denote.
+var legacyVariants = map[string]string{"b6369a24": "english_2026-01"}
+
+func canonicalVariant(variant string) string {
+	if language, ok := legacyVariants[variant]; ok {
+		return language
+	}
+
+	return variant
 }
 
 func fetchBundleArchive(client *http.Client, bundleURL string) (string, string, error) {

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/cwbudde/go-pocket-tts/internal/config"
 )
 
 // --- NewRootCmd ---
@@ -121,8 +123,7 @@ func TestModelExportCmd_Flags(t *testing.T) {
 	}{
 		{"models-dir", "models"},
 		{"out-dir", "models/onnx"},
-		{"variant", "b6369a24"},
-		{"language", ""},
+		{"variant", ""},
 		{"tts-config-path", ""},
 		{"python-bin", ""},
 	}
@@ -145,6 +146,55 @@ func TestModelExportCmd_Flags(t *testing.T) {
 		t.Error("flag 'int8' not registered")
 	} else if int8Flag.DefValue != "false" {
 		t.Errorf("flag 'int8' default = %q; want %q", int8Flag.DefValue, "false")
+	}
+}
+
+// The global --language (tts.language) selects the export; model export no
+// longer shadows it with a local flag, and --variant is a hidden legacy alias.
+func TestModelExportCmd_LanguageIsGlobal(t *testing.T) {
+	cmd := newModelExportCmd()
+	if cmd.LocalFlags().Lookup("language") != nil {
+		t.Error("model export defines a local --language that shadows the global one")
+	}
+
+	if f := cmd.Flags().Lookup("variant"); f == nil || !f.Hidden || f.Deprecated == "" {
+		t.Errorf("--variant = %+v; want hidden and deprecated", f)
+	}
+}
+
+func TestModelExportSource(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.TTS.Language = "german"
+
+	tests := []struct {
+		name, variant, configPath, wantLanguage string
+	}{
+		{"global language", "", "", "german"},
+		{"legacy variant", "b6369a24", "", ""},
+		{"upstream config file", "", "c.yaml", ""},
+	}
+	for _, tc := range tests {
+		if got := exportLanguage(cfg, tc.variant, tc.configPath); got != tc.wantLanguage {
+			t.Errorf("%s: exportLanguage = %q; want %q", tc.name, got, tc.wantLanguage)
+		}
+	}
+}
+
+func TestDownloadONNXVariant(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.TTS.Language = "german"
+
+	if got := onnxBundleVariant(cfg, ""); got != "german" {
+		t.Errorf("onnxBundleVariant(no flag) = %q; want the language german", got)
+	}
+
+	if got := onnxBundleVariant(cfg, "b6369a24"); got != "b6369a24" {
+		t.Errorf("onnxBundleVariant(--variant b6369a24) = %q; want b6369a24", got)
+	}
+
+	f := newModelDownloadONNXCmd().Flags().Lookup("variant")
+	if f == nil || f.DefValue != "" {
+		t.Errorf("download-onnx --variant = %+v; want default \"\"", f)
 	}
 }
 

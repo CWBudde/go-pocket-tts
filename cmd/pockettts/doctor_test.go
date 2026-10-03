@@ -66,7 +66,7 @@ func TestCollectVoiceFiles_NoManifest(t *testing.T) {
 		t.Fatalf("Chdir: %v", err)
 	}
 
-	files := collectVoiceFiles()
+	files := collectVoiceFiles("voices/manifest.json")
 	// With no manifest, should return nil/empty (not panic).
 	if len(files) != 0 {
 		t.Errorf("expected nil/empty slice without manifest, got %v", files)
@@ -114,7 +114,7 @@ func TestCollectVoiceFiles_WithManifest(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	files := collectVoiceFiles()
+	files := collectVoiceFiles("voices/manifest.json")
 	if len(files) != 1 {
 		t.Errorf("expected 1 voice file, got %d: %v", len(files), files)
 	}
@@ -180,7 +180,7 @@ func TestCollectVoiceFiles_PathResolvedRelativeToManifest(t *testing.T) {
 		t.Fatalf("Chdir: %v", err)
 	}
 
-	files := collectVoiceFiles()
+	files := collectVoiceFiles("voices/manifest.json")
 	if len(files) != 1 {
 		t.Fatalf("expected 1 resolved path, got %d: %v", len(files), files)
 	}

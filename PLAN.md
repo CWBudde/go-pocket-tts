@@ -118,23 +118,47 @@ constants and paths are hard-coded around `tts_b6369a24`.
       `--model-config <file>` uses `modelcfg.LoadCustom` (default voice `alba`, like upstream `--config`),
       rejects an explicit `--language` and requires explicit model and tokenizer paths. `paths.voice_manifest`
       has no consumers yet; they move to it with the hard-coded `voices/manifest.json` item below.
-- [ ] Change the default `Temperature` from 0.7 to "use `default_temperature` from the model config" (0.3). Keep
+- [x] Change the default `Temperature` from 0.7 to "use `default_temperature` from the model config" (0.3). Keep
       the explicit `--temperature` override.
+      (2026-10-03) — `config.Load` sets `tts.temperature` from `Config.Model.DefaultTemperature` unless it is
+      set explicitly (flag, either env style or file), also for `--model-config`. `DefaultConfig()` (used by
+      the wasm build) is 0.3, and a test pins it to `english_2026-01`. The web slider default is 0.3 too.
 - [x] Rename `LSDDecodeSteps` → `SamplerDecodeSteps` (keep the old flag as a hidden deprecated alias, like upstream)
       (2026-10-03) — field renamed in `config`, `tts`, `onnx`, `bench/stageprof` and the wasm build; new
       `--sampler-decode-steps` / `tts.sampler_decode_steps`; `--lsd-steps` is hidden + deprecated and overrides
       like upstream's `--lsd-decode-steps`; old file key `tts.lsd_decode_steps` and env `POCKETTTS_TTS_LSD_DECODE_STEPS`
       / `POCKETTTS_LSD_STEPS` still accepted; wasm reads `samplerSteps`, falls back to `lsdSteps`.
-- [ ] `internal/model/manifest.go` + `models/download-manifest.lock.json`: make them per language. Use the upstream layout
+- [x] `internal/model/manifest.go` + `models/download-manifest.lock.json`: make them per language. Use the upstream layout
       `languages/<lang>/{model.safetensors, tokenizer.model, tokenizer.json, embeddings/*.safetensors}`
       at revision `1e08e6a23401048648a9fdcfde2f89348215c2a7` (ungated repo; gated `kyutai/pocket-tts@3e82814…`
       is optional for cloning). Local layout:
       `models/<lang>/model.safetensors`, `models/<lang>/tokenizer.model`, `voices/<lang>/*.safetensors` + `voices/<lang>/manifest.json`. Keep the current flat layout working as `english_2026-01`.
-- [ ] Remove the remaining hard-coded `b6369a24` defaults: `cmd/pockettts-tools/model_download_onnx.go`,
+      (2026-10-03) — `model.LanguageManifest` / `VoiceManifestForLanguage` derive `languages/<lang>/…` from the
+      embedded configs' `hf://…@rev` pins (`ParseHFRef`); for all four non-flat languages these serve the same blobs
+      as `1e08e6a…` (a test checks it). Ungated files are hard-pinned in the generated
+      `internal/model/language_checksums.json` (`go generate ./internal/model/`, Go generator over the HF tree API);
+      gated weights keep the metadata checksum. `ModelFile.Repo` lets the gated download take the tokenizer from
+      the ungated repo; lock records carry the repo. `model download --language <lang>` writes
+      `models/<lang>/{model.safetensors,tokenizer.model,download-manifest.lock.json}`;
+      `pockettts-tools voice download --language <lang> [--voice id…]` writes `voices/<lang>/*.safetensors` and
+      merges `voices/<lang>/manifest.json` (license `CC-BY-4.0`, the repo license). `english_2026-01` keeps
+      `PinnedManifest` / `VoiceManifest` and the flat paths. Probed against HF for german (ungated model +
+      tokenizer, voices juergen/alba). `tokenizer.json` is not downloaded yet (see Phase 5).
+- [x] Remove the remaining hard-coded `b6369a24` defaults: `cmd/pockettts-tools/model_download_onnx.go`,
       `model_export.go`, `internal/model/export.go`, `internal/model/onnx_bundle.go`,
       `internal/onnx/voice_encode.go`
-- [ ] Remove the remaining hard-coded `voices/manifest.json`: `cmd/pockettts/synth.go`, `cmd/pockettts/doctor.go`,
+      (2026-10-03) — `model export` follows the global `--language` (its shadowing local `--language` is gone);
+      `--variant` is hidden + deprecated and only passed to the script when set. `download-onnx --variant`
+      defaults to the language, and bundle lookup treats `b6369a24` and `english_2026-01` as the same variant
+      (`legacyVariants`). `voice_encode` no longer guesses `tts_b6369a24.safetensors`; the CLI passes
+      `paths.model_path`. Remaining `b6369a24` uses are the `english_2026-01` flat model path, the export
+      script's legacy alias, the web asset path (Phase 6 language picker) and test fixtures.
+- [x] Remove the remaining hard-coded `voices/manifest.json`: `cmd/pockettts/synth.go`, `cmd/pockettts/doctor.go`,
       `internal/server/server.go`, `web/main.js`
+      (2026-10-03) — `synth`, `bench`, `doctor` and `serve` (`runtimeDeps`) read `cfg.Paths.VoiceManifest`, so
+      `--paths-voice-manifest` and `--language` now pick the voices. `web/main.js` only moves the path into a
+      `voiceManifestAssetPath` const next to the model/tokenizer consts; a language-aware web layout belongs to
+      the Phase 6 "Web/WASM: language picker" item.
 
 ## Phase 2 — Checkpoint / Numerics Parity
 
@@ -217,6 +241,9 @@ All in `internal/tts/runtime_native_safetensors.go`, mirrored in `internal/onnx/
       `byte_fallback`, and reuse the same Viterbi. Pick the loader by file extension in `internal/tts/service.go` and
       `cmd/pockettts-wasm/main_wasm.go`. This is needed for models that may be JSON-only (dutch, re-tokenized
       french `@8843db7`; verify on HF). German still ships `tokenizer.model`, which is identical to the json.
+- [ ] Download `languages/<lang>/tokenizer.json` with the per-language manifest once the loader exists. It is not
+      an LFS file, so the HF tree API has no SHA256 for it; `internal/model/internal/genchecksums` has to hash
+      the file itself. (Found 2026-10-03 while making the download manifest per language.)
 
 ## Phase 6 — German Support (end-to-end)
 

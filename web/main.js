@@ -27,12 +27,14 @@ const state = {
   action: "Starting...",
 };
 
+// Matches the model config's default_temperature (english_2026-01: 0.3).
 const modelConfig = {
-  temperature: 0.7,
+  temperature: 0.3,
 };
 
 const modelAssetPath = "./models/tts_b6369a24.safetensors";
 const tokenizerAssetPath = "./models/tokenizer.model";
+const voiceManifestAssetPath = "./voices/manifest.json";
 const preferredVoiceID = "alba";
 
 function formatError(err) {
@@ -465,7 +467,7 @@ function handleSynthesize() {
 
 async function loadVoiceManifestAndPrefetch() {
   try {
-    const res = await fetch("./voices/manifest.json");
+    const res = await fetch(voiceManifestAssetPath);
     if (!res.ok) {
       throw new Error(`fetch voices manifest failed (${res.status})`);
     }
