@@ -6,10 +6,16 @@ package tokenizer
 // Piece is one token of an encoding and the text it covers.
 type Piece struct {
 	ID int64
-	// Text is the source surface of the piece after normalization (NFKC,
-	// whitespace folded to '▁'); '▁' (U+2581) marks a word start, as in the
-	// vocab. The first piece carries the dummy-prefix '▁' unless the input
-	// already starts with '▁'. Unknown pieces keep the characters they cover.
+	// Text is the source surface of the piece after normalization. The
+	// shipped models use sentencepiece's identity normalizer: only ' ' is
+	// replaced by '▁' (U+2581), which marks a word start as in the vocab;
+	// every other character (tabs, newlines, NFKC-decomposable ones) is kept.
+	// The first piece always carries the dummy-prefix '▁', even when the
+	// input starts with '▁'. An unknown character is byte-fallback encoded as
+	// one <0xXX> piece per UTF-8 byte: all but the last have an empty Text,
+	// the last carries the whole character. So every Text is valid UTF-8 and
+	// the Texts concatenate to "▁" + input with ' ' → '▁' (invalid UTF-8
+	// bytes become U+FFFD).
 	Text string
 }
 

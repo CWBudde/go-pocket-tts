@@ -11,7 +11,7 @@ var ErrEmptyPath = errors.New("tokenizer model path must not be empty")
 
 // SentencePieceTokenizer implements Tokenizer using a pure-Go UNIGRAM SentencePiece model.
 type SentencePieceTokenizer struct {
-	trie *spTrie
+	model *spModel
 }
 
 // NewSentencePieceTokenizer loads a SentencePiece model from the given path.
@@ -25,12 +25,12 @@ func NewSentencePieceTokenizer(modelPath string) (*SentencePieceTokenizer, error
 		return nil, fmt.Errorf("load sentencepiece model %q: %w", modelPath, err)
 	}
 
-	trie, err := newSpTrie(data)
+	model, err := newSpModel(data)
 	if err != nil {
 		return nil, fmt.Errorf("load sentencepiece model %q: %w", modelPath, err)
 	}
 
-	return &SentencePieceTokenizer{trie: trie}, nil
+	return &SentencePieceTokenizer{model: model}, nil
 }
 
 // Encode tokenizes text and returns SentencePiece token IDs as int64.
@@ -55,5 +55,5 @@ func (t *SentencePieceTokenizer) EncodePieces(text string) ([]Piece, error) {
 		return []Piece{}, nil
 	}
 
-	return t.trie.pieces(text), nil
+	return t.model.pieces(text), nil
 }

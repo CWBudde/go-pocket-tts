@@ -78,7 +78,7 @@ var strayPunctuation = regexp.MustCompile(`([.!?…])\s*[,;:]`)
 // PrepareText ports upstream prepare_text_prompt:
 //  1. Trim; apply opts.ReplaceCharacters, collapse whitespace and drop a
 //     comma/semicolon/colon after a sentence mark. Empty → ErrEmptyText.
-//  2. Normalize newlines → spaces, collapse repeated spaces.
+//  2. Newlines → spaces, then one "  " → " " pass.
 //  3. opts.RemoveSemicolons: ';' → ','.
 //  4. Count words (returned; it drives the frames_after_eos guess).
 //  5. opts.CapitalizeFirst: upper-case the first character.
@@ -96,13 +96,10 @@ func PrepareText(input string, opts Options) (string, int, error) {
 		return "", 0, ErrEmptyText
 	}
 
-	s = strings.ReplaceAll(s, "\r\n", " ")
-	s = strings.ReplaceAll(s, "\r", " ")
+	// One "  " → " " pass like upstream, so longer runs only shrink.
 	s = strings.ReplaceAll(s, "\n", " ")
-	// Go collapses every run of spaces; upstream does a single "  " → " " pass.
-	for strings.Contains(s, "  ") {
-		s = strings.ReplaceAll(s, "  ", " ")
-	}
+	s = strings.ReplaceAll(s, "\r", " ")
+	s = strings.ReplaceAll(s, "  ", " ")
 
 	if opts.RemoveSemicolons {
 		s = strings.ReplaceAll(s, ";", ",")

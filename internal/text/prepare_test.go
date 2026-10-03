@@ -311,14 +311,25 @@ func TestPrepareChunks_WhitespaceOnlyError(t *testing.T) {
 // PrepareText — whitespace collapse edge cases
 // ---------------------------------------------------------------------------
 
-func TestPrepareText_CollapseTripleSpaces(t *testing.T) {
-	// Go collapses all runs of multiple spaces (unlike Python which only does
-	// a single replace("  ", " ") pass). Verify Go fully collapses ≥ 3 spaces.
-	got := mustPrepare(t, "hello   world   test", DefaultOptions())
-
-	inner := strings.TrimLeft(got, " ")
-	if strings.Contains(inner, "  ") {
-		t.Errorf("PrepareText with triple spaces: %q still contains double spaces in content", got)
+// Upstream prepare_text_prompt does one replace("  ", " ") pass after turning
+// newlines into spaces, so longer runs only shrink. Expected values are the
+// upstream Python output.
+func TestPrepareText_WhitespaceSinglePass(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"a  b", "A b."},
+		{"a   b", "A  b."},
+		{"a    b", "A  b."},
+		{"a     b", "A   b."},
+		{"a \r\n b", "A  b."},
+		{"a\r\nb", "A b."},
+		{"a\n\nb", "A b."},
+		{"a \n b", "A  b."},
+		{"a\t\tb", "A\t\tb."},
+		{"one   two   three four five six", "One  two  three four five six."},
+	} {
+		if got := mustPrepare(t, tc.in, upstreamOptions()); got != tc.want {
+			t.Errorf("PrepareText(%q) = %q; want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
