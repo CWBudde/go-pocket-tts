@@ -30,28 +30,37 @@ Fresh macOS arm64 machine (Go 1.27.1, uv, gh, golangci-lint, just, treefmt prese
 and `go test -short ./...` pass. 12 tests skip (10 because ORT is missing, 2 because `POCKETTTS_NATIVE_PY_FIXTURE` is unset).
 The local `models/tts_b6369a24.safetensors` (checksum OK), `models/tokenizer.model` and 8 English voices are present.
 
-- [ ] **Fix `doctor` / `model verify` false failure.** `internal/safetensors/reader.go` `requiredModelKeys`
+- [x] **Fix `doctor` / `model verify` false failure.** `internal/safetensors/reader.go` `requiredModelKeys`
       lists keys that don't exist in real checkpoints (`text_emb.weight`, `flow_transformer.*.q_proj`,
       `lsd_decode.*`, `mimi_decode.*`). Replace them with real names, e.g.
       `flow_lm.conditioner.embed.weight`, `flow_lm.transformer.layers.0.self_attn.in_proj.weight`,
       a `flow_lm.flow_net.*` key, `mimi.decoder.model.0.conv.weight`. Verify them against the real header.
       Add a test that reads the header of the real local model when present (skip otherwise). This currently breaks
       step 3 of README "Get Started" on every machine.
-- [ ] **Setup docs** (`README.md` "Get Started", `docs/INSTALL.md`):
-  - [ ] Install the HF CLI (`uv tool install huggingface_hub` → `hf`), which `just generate` needs for voices
-  - [ ] Install `prettier` (`npm i -g prettier` or `brew install prettier`): `treefmt` / `just fmt` / `just ci` fail without it
-  - [ ] Download voices as an explicit step
-  - [ ] Optional ORT on macOS: `brew install onnxruntime` + `POCKETTTS_ORT_LIB=/opt/homebrew/lib/libonnxruntime.dylib`
-  - [ ] Note that the ungated repo `kyutai/pocket-tts-without-voice-cloning` is enough for precomputed voices;
+      (2026-10-03) — `requiredModelKeys` now checks 5 keys shared by every upstream config (verified against the
+      `english_2026-01` and `german` headers); `TestValidateModelKeys_RealModel` validates the local checkpoint;
+      `doctor` and `model verify` pass.
+- [x] **Setup docs** (`README.md` "Get Started", `docs/INSTALL.md`):
+  - [x] Install the HF CLI (`uv tool install huggingface_hub` → `hf`), which `just generate` needs for voices
+  - [x] Install `prettier` (`npm i -g prettier` or `brew install prettier`): `treefmt` / `just fmt` / `just ci` fail without it
+  - [x] Download voices as an explicit step
+  - [x] Optional ORT on macOS: `brew install onnxruntime` + `POCKETTTS_ORT_LIB=/opt/homebrew/lib/libonnxruntime.dylib`
+  - [x] Note that the ungated repo `kyutai/pocket-tts-without-voice-cloning` is enough for precomputed voices;
         `HF_TOKEN` and accepting the terms are only needed for the gated `kyutai/pocket-tts`
         (voice-cloning weights)
-  - [ ] Parity setup: clone upstream at the pinned commit into `original/pockettts`, then `uv sync`. Mention
+  - [x] Parity setup: clone upstream at the pinned commit into `original/pockettts`, then `uv sync`. Mention
         `exclude-newer = "7 days"` and that the dev group is now heavy (torchaudio, transformers, utmos)
+  - (2026-10-03) — README "Get Started" voice step + "Development tools", gated/ungated note in Quickstart;
+    `docs/INSTALL.md` Homebrew ORT and "Parity setup (Python reference)" sections
 - [ ] Refresh the `original/pockettts` snapshot to the target commit, and `original/xn` if useful (the xn Rust
       port moved to `gradium-ai/xn-ptts`, #330)
 - [ ] Bump the commit/version pins in `README.md` (says 2.1.0 / `2dff8a2`) and in this file once Phase 8 is green
-- [ ] Pin `pocket-tts==3.3.0` (or the commit) in `.github/workflows/test-integration.yml` and `model-export.yml`;
-      both are currently unpinned and would silently pick up new defaults
+- [x] Pin `pocket-tts` in `.github/workflows/test-integration.yml` and `model-export.yml`; both were unpinned
+      and would silently pick up new defaults. (2026-10-03) — pinned to `2.1.0` (the synced version;
+      `scripts/export_onnx.py` does not work with 3.x yet). Bump to 3.3.0 together with Phase 8.
+- [x] Lint baseline: golangci-lint 2.13 reported 452 issues on `main`. (2026-10-03) — `exhaustruct_v5` disabled
+      like its deprecated predecessor, the remaining 113 findings fixed; `just ci` is green.
+- [ ] Replace the deprecated `gomodguard` linter with `gomodguard_v2` in `.golangci.yml` (golangci-lint 2.12+ warns)
 
 ## Phase 1 — Model Config Layer (prerequisite for everything multi-language)
 
@@ -231,6 +240,8 @@ Follow-ups:
   - `test_end_on_pause.py`, `test_audio.py` (WAV header frame count), `test_streaming_cancellation.py`
   - `test_utils.py`: every embedded config has `default_temperature == 0.3`
 - [ ] Attention-mask parity tests with offset/context edge cases (carried over)
+- [ ] Bump the `pocket-tts==2.1.0` pin in `test-integration.yml` / `model-export.yml` to the synced version once
+      the scripts above work with it
 - [ ] Known caveat: ONNX-backed native parity tests can panic inside `onnxruntime-purego` with
       `runtime.AddCleanup`; `go test ./... -skip 'TestParity_.*_VsONNX'` is the workaround. Re-check this on Go 1.27.
 
