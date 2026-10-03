@@ -80,7 +80,7 @@ func TestStaticVoiceLister_ReturnsCopy(t *testing.T) {
 
 func TestLoadVoiceLister_MissingManifest_ReturnsStatic(t *testing.T) {
 	// A non-existent manifest path should fall back to staticVoiceLister (no panic).
-	vl := loadVoiceLister()
+	vl := loadVoiceLister(filepath.Join(t.TempDir(), "manifest.json"))
 	if vl == nil {
 		t.Error("loadVoiceLister() returned nil")
 	}
@@ -262,4 +262,36 @@ func TestOptions_WithLogger(_ *testing.T) {
 	opts := defaultOptions()
 	WithLogger(nil)(&opts)
 	// nil logger is valid (caller's choice); no panic expected.
+}
+
+func TestRuntimeDeps_VoiceManifestFromConfig(t *testing.T) {
+	dir := t.TempDir()
+
+	err := os.WriteFile(filepath.Join(dir, "alice.safetensors"), []byte("voice-data"), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	manifestPath := filepath.Join(dir, "manifest.json")
+
+	err = os.WriteFile(manifestPath,
+		[]byte(`{"voices":[{"id":"alice","path":"alice.safetensors","license":"MIT"}]}`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Paths.VoiceManifest = manifestPath
+	s := New(cfg, nil)
+
+	// Only the voice lister matters here; the other deps have their own tests.
+	_, voices, _, _, err := s.runtimeDeps("cli") //nolint:dogsled // see above
+	if err != nil {
+		t.Fatalf("runtimeDeps(cli) error = %v", err)
+	}
+
+	got := voices.ListVoices()
+	if len(got) != 1 || got[0].ID != "alice" {
+		t.Errorf("ListVoices() = %+v; want the voice from cfg.Paths.VoiceManifest", got)
+	}
 }

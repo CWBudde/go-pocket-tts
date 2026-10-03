@@ -47,7 +47,7 @@ func newDoctorCmd() *cobra.Command {
 				SkipPocketTTS: nativeMode,
 				PythonVersion: probePythonVersion,
 				SkipPython:    nativeMode,
-				VoiceFiles:    collectVoiceFiles(),
+				VoiceFiles:    collectVoiceFiles(cfg.Paths.VoiceManifest),
 			}
 			if backend == config.BackendNative {
 				dcfg.NativeModelPath = cfg.Paths.ModelPath
@@ -139,8 +139,8 @@ func probePythonVersion() (string, error) {
 // collectVoiceFiles returns resolved absolute voice file paths from the
 // manifest. Paths are resolved relative to the manifest directory, not to the
 // working directory, so doctor checks are correct regardless of CWD.
-func collectVoiceFiles() []string {
-	vm, err := tts.NewVoiceManager("voices/manifest.json")
+func collectVoiceFiles(manifestPath string) []string {
+	vm, err := tts.NewVoiceManager(manifestPath)
 	if err != nil {
 		return nil
 	}

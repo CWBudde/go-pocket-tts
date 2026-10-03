@@ -47,7 +47,7 @@ func newBenchCmd() *cobra.Command {
 				selectedVoice = voice
 			}
 
-			resolvedVoice, err := resolveVoiceOrPath(selectedVoice)
+			resolvedVoice, err := resolveVoiceOrPath(cfg.Paths.VoiceManifest, selectedVoice)
 			if err != nil {
 				return err
 			}

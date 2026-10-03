@@ -185,7 +185,7 @@ func TestSynthesizeNative_ErrorsOnInvalidConfig(t *testing.T) {
 
 func TestResolveVoiceForNative(t *testing.T) {
 	t.Run("empty voice returns empty", func(t *testing.T) {
-		got, err := resolveVoiceForNative("")
+		got, err := resolveVoiceForNative("voices/manifest.json", "")
 		if err != nil {
 			t.Fatalf("resolveVoiceForNative returned error: %v", err)
 		}
@@ -198,7 +198,7 @@ func TestResolveVoiceForNative(t *testing.T) {
 	t.Run("path-like voice returns as-is", func(t *testing.T) {
 		in := filepath.Join("voices", "alice.safetensors")
 
-		got, err := resolveVoiceForNative(in)
+		got, err := resolveVoiceForNative("voices/manifest.json", in)
 		if err != nil {
 			t.Fatalf("resolveVoiceForNative returned error: %v", err)
 		}
@@ -214,7 +214,7 @@ func TestResolveVoiceForNative(t *testing.T) {
 		mustChdir(t, tmp)
 		t.Cleanup(func() { mustChdir(t, origWD) })
 
-		got, err := resolveVoiceForNative("alice")
+		got, err := resolveVoiceForNative("voices/manifest.json", "alice")
 		if err != nil {
 			t.Fatalf("resolveVoiceForNative returned error: %v", err)
 		}
@@ -249,7 +249,7 @@ func TestResolveVoiceForNative(t *testing.T) {
 			t.Fatalf("write manifest: %v", err)
 		}
 
-		gotKnown, err := resolveVoiceForNative("alice")
+		gotKnown, err := resolveVoiceForNative("voices/manifest.json", "alice")
 		if err != nil {
 			t.Fatalf("resolve known voice failed: %v", err)
 		}
@@ -259,7 +259,7 @@ func TestResolveVoiceForNative(t *testing.T) {
 			t.Fatalf("expected %q, got %q", wantKnown, gotKnown)
 		}
 
-		gotUnknown, err := resolveVoiceForNative("bob")
+		gotUnknown, err := resolveVoiceForNative("voices/manifest.json", "bob")
 		if err != nil {
 			t.Fatalf("resolve unknown voice failed: %v", err)
 		}

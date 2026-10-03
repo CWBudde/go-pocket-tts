@@ -64,7 +64,7 @@ func newSynthCmd() *cobra.Command {
 		"",
 		"Synthesis backend override (native-safetensors|native-onnx|cli; native is alias for native-safetensors)",
 	)
-	cmd.Flags().StringVar(&voice, "voice", "", "Voice ID from voices/manifest.json (overrides config)")
+	cmd.Flags().StringVar(&voice, "voice", "", "Voice ID from the voice manifest (--paths-voice-manifest) or a file path (overrides config)")
 	cmd.Flags().BoolVar(&chunk, "chunk", false, "Split text into sentence chunks and synthesize sequentially")
 	cmd.Flags().IntVar(&maxChunkChars, "max-chunk-chars", 220, "Maximum characters per chunk when --chunk is enabled")
 	cmd.Flags().BoolVar(&normalize, "normalize", false, "Peak-normalize output audio")
@@ -174,7 +174,7 @@ func synthesizeForBackend(
 			return nil, errors.New("--tts-arg is only supported with --backend cli")
 		}
 
-		resolvedVoice, err := resolveVoiceForNative(selectedVoice)
+		resolvedVoice, err := resolveVoiceForNative(cfg.Paths.VoiceManifest, selectedVoice)
 		if err != nil {
 			return nil, err
 		}
@@ -184,7 +184,7 @@ func synthesizeForBackend(
 
 		return synthesizeNative(ctx, nativeCfg, chunks, resolvedVoice)
 	case config.BackendCLI:
-		resolvedVoice, err := resolveVoiceOrPath(selectedVoice)
+		resolvedVoice, err := resolveVoiceOrPath(cfg.Paths.VoiceManifest, selectedVoice)
 		if err != nil {
 			return nil, err
 		}
@@ -435,9 +435,7 @@ func resolveSynthBackend(flagBackend, cfgBackend string) (string, error) {
 // path for the native backend. Unlike resolveVoiceOrPath (which falls back to
 // returning the raw voice string for the CLI), an unresolved ID here means no
 // voice file — we return an empty string so Synthesize skips voice conditioning.
-func resolveVoiceForNative(voice string) (string, error) {
-	manifestPath := filepath.Join("voices", "manifest.json")
-
+func resolveVoiceForNative(manifestPath, voice string) (string, error) {
 	if strings.TrimSpace(voice) == "" {
 		return "", nil
 	}
@@ -475,9 +473,7 @@ func resolveVoiceForNative(voice string) (string, error) {
 	return path, nil
 }
 
-func resolveVoiceOrPath(voice string) (string, error) {
-	manifestPath := filepath.Join("voices", "manifest.json")
-
+func resolveVoiceOrPath(manifestPath, voice string) (string, error) {
 	if strings.TrimSpace(voice) == "" {
 		return "", nil
 	}

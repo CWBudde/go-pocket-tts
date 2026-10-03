@@ -529,7 +529,7 @@ func ProbeHTTP(addr string) error {
 }
 
 func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, StreamingSynthesizer, error) {
-	voices := loadVoiceLister()
+	voices := loadVoiceLister(s.cfg.Paths.VoiceManifest)
 
 	switch backend {
 	case config.BackendNative, config.BackendNativeONNX:
@@ -579,8 +579,8 @@ func chooseWorkerLimit(cfg config.Config, backend string) int {
 	return workers
 }
 
-func loadVoiceLister() VoiceLister {
-	vm, err := tts.NewVoiceManager("voices/manifest.json")
+func loadVoiceLister(manifestPath string) VoiceLister {
+	vm, err := tts.NewVoiceManager(manifestPath)
 	if err != nil {
 		return staticVoiceLister{}
 	}
