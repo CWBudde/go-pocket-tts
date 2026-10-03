@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -216,6 +217,19 @@ func Parse(data []byte) (*ModelConfig, error) {
 	err := dec.Decode(&cfg)
 	if err != nil {
 		return nil, fmt.Errorf("decode: %w", err)
+	}
+
+	// Like upstream's yaml.safe_load, reject trailing documents instead of
+	// silently ignoring them.
+	var trailing yaml.Node
+
+	err = dec.Decode(&trailing)
+	if !errors.Is(err, io.EOF) {
+		if err != nil {
+			return nil, fmt.Errorf("decode: %w", err)
+		}
+
+		return nil, errors.New("decode: expected a single YAML document")
 	}
 
 	var raw map[string]any

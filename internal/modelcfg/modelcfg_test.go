@@ -174,6 +174,16 @@ func TestParse_RejectsUnknownField(t *testing.T) {
 	}
 }
 
+// Upstream's yaml.safe_load raises on a second document instead of ignoring it.
+func TestParse_RejectsMultipleDocuments(t *testing.T) {
+	data := readTestdata(t, "german") + "\n---\nsome_new_option: true\n"
+
+	_, err := Parse([]byte(data))
+	if err == nil || !strings.Contains(err.Error(), "single YAML document") {
+		t.Fatalf("Parse() error = %v; want an error rejecting the second document", err)
+	}
+}
+
 func TestParse_RejectsMissingRequiredField(t *testing.T) {
 	data := strings.Replace(readTestdata(t, "german"), "    num_heads: 16\n", "", 1)
 
