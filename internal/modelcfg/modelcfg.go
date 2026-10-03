@@ -300,6 +300,17 @@ func (c *ModelConfig) MimiInnerDim() int {
 	return c.Mimi.SEANet.Dimension
 }
 
+// FramesAfterEOS returns model_recommended_frames_after_eos, or chunkGuess
+// (text.ChunkMetadata.FramesAfterEOS) when the config has none or c is nil
+// (upstream generate_audio_stream).
+func (c *ModelConfig) FramesAfterEOS(chunkGuess int) int {
+	if c == nil || c.ModelRecommendedFramesAfterEOS == nil {
+		return chunkGuess
+	}
+
+	return *c.ModelRecommendedFramesAfterEOS
+}
+
 func hasKey(node map[string]any, dotted string) bool {
 	head, rest, nested := strings.Cut(dotted, ".")
 

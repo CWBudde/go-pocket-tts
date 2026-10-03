@@ -662,9 +662,9 @@ func TestSynthesize_FramesAfterEOS(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			rt := &captureRuntime{}
 			svc := &Service{
-				runtime:                   rt,
-				tokenizer:                 wordCountTokenizer{},
-				recommendedFramesAfterEOS: tc.recommended,
+				runtime:   rt,
+				tokenizer: wordCountTokenizer{},
+				model:     &modelcfg.ModelConfig{ModelRecommendedFramesAfterEOS: tc.recommended},
 			}
 
 			_, err := svc.Synthesize(tc.text, "")
@@ -676,32 +676,5 @@ func TestSynthesize_FramesAfterEOS(t *testing.T) {
 				t.Errorf("FramesAfterEOS = %d, want %d", rt.lastCfg.FramesAfterEOS, tc.want)
 			}
 		})
-	}
-}
-
-func TestNewService_FramesAfterEOSFromModelConfig(t *testing.T) {
-	modelPath, tokPath := requireNativeSafetensorsAssetsForUnit(t)
-
-	mc, err := modelcfg.Lookup("english_2026-01")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	three := 3
-	mc.ModelRecommendedFramesAfterEOS = &three
-
-	cfg := config.DefaultConfig()
-	cfg.Paths.ModelPath = modelPath
-	cfg.Paths.TokenizerModel = tokPath
-	cfg.Model = mc
-
-	svc, err := NewService(cfg)
-	if err != nil {
-		t.Fatalf("NewService: %v", err)
-	}
-	defer svc.Close()
-
-	if svc.recommendedFramesAfterEOS == nil || *svc.recommendedFramesAfterEOS != 3 {
-		t.Fatalf("recommendedFramesAfterEOS = %v, want 3", svc.recommendedFramesAfterEOS)
 	}
 }

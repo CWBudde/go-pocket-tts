@@ -28,9 +28,8 @@ type Service struct {
 	runtime   Runtime
 	tokenizer tokenizer.Tokenizer
 	ttsCfg    config.TTSConfig
-	// recommendedFramesAfterEOS is the model config's
-	// model_recommended_frames_after_eos; nil falls back to the per-chunk guess.
-	recommendedFramesAfterEOS *int
+	// model is the model config (cfg.Model); nil without one.
+	model *modelcfg.ModelConfig
 }
 
 // NewService initializes the TTS service with the configured native runtime.
@@ -102,10 +101,10 @@ func NewService(cfg config.Config) (*Service, error) {
 	}
 
 	return &Service{
-		runtime:                   rt,
-		tokenizer:                 tok,
-		ttsCfg:                    cfg.TTS,
-		recommendedFramesAfterEOS: recommendedFramesAfterEOS(cfg.Model),
+		runtime:   rt,
+		tokenizer: tok,
+		ttsCfg:    cfg.TTS,
+		model:     cfg.Model,
 	}, nil
 }
 
@@ -267,30 +266,10 @@ func (s *Service) generateConfig(chunk text.ChunkMetadata) RuntimeGenerateConfig
 		MaxSteps:           generationStepLimit(s.ttsCfg.MaxSteps, estimatedMaxSteps),
 		EstimatedMaxSteps:  estimatedMaxSteps,
 		SamplerDecodeSteps: s.ttsCfg.SamplerDecodeSteps,
-		FramesAfterEOS:     s.framesAfterEOS(chunk),
+		FramesAfterEOS:     s.model.FramesAfterEOS(chunk.FramesAfterEOS()),
 		MimiStepsPerLatent: mimiStepsPerLatent,
 		MimiSequenceLength: estimatedMaxSteps * mimiStepsPerLatent,
 	}
-}
-
-// recommendedFramesAfterEOS returns the model config's
-// model_recommended_frames_after_eos, or nil without a model config.
-func recommendedFramesAfterEOS(mc *modelcfg.ModelConfig) *int {
-	if mc == nil {
-		return nil
-	}
-
-	return mc.ModelRecommendedFramesAfterEOS
-}
-
-// framesAfterEOS returns the model's recommended frames after EOS, or the
-// per-chunk guess when the model config has none (upstream generate_audio_stream).
-func (s *Service) framesAfterEOS(chunk text.ChunkMetadata) int {
-	if s.recommendedFramesAfterEOS != nil {
-		return *s.recommendedFramesAfterEOS
-	}
-
-	return chunk.FramesAfterEOS()
 }
 
 func generationStepLimit(configured, estimated int) int {
