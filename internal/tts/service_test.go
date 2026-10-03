@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
@@ -640,4 +641,67 @@ func requireNativeSafetensorsAssetsForUnit(t testing.TB) (modelPath, tokPath str
 	}
 
 	return modelPath, tokPath
+}
+
+func TestSynthesize_FramesAfterEOS(t *testing.T) {
+	two := 2
+
+	for _, tc := range []struct {
+		name        string
+		recommended *int
+		text        string
+		want        int
+	}{
+		// No model recommendation: upstream's per-chunk guess (+2).
+		{"heuristic short", nil, "hello world", 5},
+		{"heuristic long", nil, "one two three four five six", 3},
+		// model_recommended_frames_after_eos wins over the guess.
+		{"recommended short", &two, "hello world", 2},
+		{"recommended long", &two, "one two three four five six", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt := &captureRuntime{}
+			svc := &Service{
+				runtime:                   rt,
+				tokenizer:                 wordCountTokenizer{},
+				recommendedFramesAfterEOS: tc.recommended,
+			}
+
+			_, err := svc.Synthesize(tc.text, "")
+			if err != nil {
+				t.Fatalf("Synthesize: %v", err)
+			}
+
+			if rt.lastCfg.FramesAfterEOS != tc.want {
+				t.Errorf("FramesAfterEOS = %d, want %d", rt.lastCfg.FramesAfterEOS, tc.want)
+			}
+		})
+	}
+}
+
+func TestNewService_FramesAfterEOSFromModelConfig(t *testing.T) {
+	modelPath, tokPath := requireNativeSafetensorsAssetsForUnit(t)
+
+	mc, err := modelcfg.Lookup("english_2026-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	three := 3
+	mc.ModelRecommendedFramesAfterEOS = &three
+
+	cfg := config.DefaultConfig()
+	cfg.Paths.ModelPath = modelPath
+	cfg.Paths.TokenizerModel = tokPath
+	cfg.Model = mc
+
+	svc, err := NewService(cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	defer svc.Close()
+
+	if svc.recommendedFramesAfterEOS == nil || *svc.recommendedFramesAfterEOS != 3 {
+		t.Fatalf("recommendedFramesAfterEOS = %v, want 3", svc.recommendedFramesAfterEOS)
+	}
 }
