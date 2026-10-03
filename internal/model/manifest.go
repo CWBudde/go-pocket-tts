@@ -7,7 +7,6 @@ type Manifest struct {
 	Files []ModelFile `json:"files"`
 }
 
-//nolint:revive // Kept for external API compatibility.
 type ModelFile struct {
 	Filename  string `json:"filename"`
 	Revision  string `json:"revision"`

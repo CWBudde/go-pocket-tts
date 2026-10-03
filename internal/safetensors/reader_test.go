@@ -420,7 +420,8 @@ func TestInspectVoiceFile_ModelState(t *testing.T) {
 		t.Fatalf("offset data = %v, want [2]", got)
 	}
 
-	if _, _, err := LoadVoiceEmbedding(path); err == nil || !strings.Contains(err.Error(), "model state") {
+	_, _, err = LoadVoiceEmbedding(path)
+	if err == nil || !strings.Contains(err.Error(), "model state") {
 		t.Fatalf("LoadVoiceEmbedding(model state) err = %v, want model-state error", err)
 	}
 }

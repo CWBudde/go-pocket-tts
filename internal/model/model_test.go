@@ -757,7 +757,7 @@ func TestResolveChecksumFromMetadata_EtagFallback(t *testing.T) {
 	checksum := strings.Repeat("b", 64)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Etag", `"`+checksum+`"`)
+		w.Header().Set("ETag", `"`+checksum+`"`)
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()

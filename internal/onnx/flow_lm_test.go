@@ -571,9 +571,11 @@ func TestFlowLMStepStateful_PassesOffsetInput(t *testing.T) {
 			if err != nil {
 				t.Fatalf("extract offset input: %v", err)
 			}
+
 			if len(data) != 1 {
 				t.Fatalf("offset input len = %d; want 1", len(data))
 			}
+
 			seenOffset = data[0]
 			sawOffset = true
 
@@ -581,6 +583,7 @@ func TestFlowLMStepStateful_PassesOffsetInput(t *testing.T) {
 			updatedOffset, _ := NewTensor([]int64{newOffset}, []int64{1})
 			hidden, _ := NewTensor(make([]float32, 1024), []int64{1, 1024})
 			eos, _ := NewTensor([]float32{-10.0}, []int64{1, 1})
+
 			return map[string]*Tensor{
 				"kv_out_0":    kv,
 				"offset_out":  updatedOffset,
@@ -603,9 +606,11 @@ func TestFlowLMStepStateful_PassesOffsetInput(t *testing.T) {
 	if !sawOffset {
 		t.Fatal("runner did not receive offset input")
 	}
+
 	if seenOffset != initialOffset {
 		t.Fatalf("offset input = %d; want %d", seenOffset, initialOffset)
 	}
+
 	if state.Offset != newOffset {
 		t.Fatalf("state.Offset = %d; want %d", state.Offset, newOffset)
 	}

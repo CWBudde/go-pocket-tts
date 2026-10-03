@@ -537,6 +537,7 @@ func TestSynthesize_UsesVoiceModelStateIngestion(t *testing.T) {
 	}
 
 	voicePath := filepath.Join(t.TempDir(), "voice_state.safetensors")
+
 	err := safetensors.WriteFile(voicePath, []safetensors.Tensor{
 		{
 			Name:  "transformer.layers.0.self_attn/cache",

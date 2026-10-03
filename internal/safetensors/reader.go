@@ -272,6 +272,7 @@ func isModelStateTensorName(name string) bool {
 
 func loadVoiceModelStateFromStore(store *Store) (*VoiceModelState, error) {
 	state := &VoiceModelState{Modules: make(map[string]map[string]*Tensor)}
+
 	for _, name := range store.Names() {
 		slash := strings.LastIndex(name, "/")
 		if slash <= 0 || slash == len(name)-1 {
