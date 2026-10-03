@@ -53,21 +53,24 @@ The local `models/tts_b6369a24.safetensors` (checksum OK), `models/tokenizer.mod
   - (2026-10-03) — README "Get Started" voice step + "Development tools", gated/ungated note in Quickstart;
     `docs/INSTALL.md` Homebrew ORT and "Parity setup (Python reference)" sections
 - [ ] Refresh the `original/pockettts` snapshot to the target commit, and `original/xn` if useful (the xn Rust
-      port moved to `gradium-ai/xn-ptts`, #330)
+      port moved to `gradium-ai/xn-ptts`, #330). (2026-10-03) — deferred to Phase 8: a 3.x snapshot produces
+      parity fixtures with tanh GELU etc. that the Go numerics don't match yet. Read upstream files at the
+      target commit via `gh api repos/kyutai-labs/pocket-tts/contents/<path>?ref=41cbc84…` until then.
 - [ ] Bump the commit/version pins in `README.md` (says 2.1.0 / `2dff8a2`) and in this file once Phase 8 is green
 - [x] Pin `pocket-tts` in `.github/workflows/test-integration.yml` and `model-export.yml`; both were unpinned
       and would silently pick up new defaults. (2026-10-03) — pinned to `2.1.0` (the synced version;
       `scripts/export_onnx.py` does not work with 3.x yet). Bump to 3.3.0 together with Phase 8.
 - [x] Lint baseline: golangci-lint 2.13 reported 452 issues on `main`. (2026-10-03) — `exhaustruct_v5` disabled
       like its deprecated predecessor, the remaining 113 findings fixed; `just ci` is green.
-- [ ] Replace the deprecated `gomodguard` linter with `gomodguard_v2` in `.golangci.yml` (golangci-lint 2.12+ warns)
+- [x] Replace the deprecated `gomodguard` linter with `gomodguard_v2` in `.golangci.yml` (golangci-lint 2.12+ warns)
+      (2026-10-03) — `gomodguard` disabled; `gomodguard_v2` stays on via `default: all`; no deprecation warning left.
 
 ## Phase 1 — Model Config Layer (prerequisite for everything multi-language)
 
 Upstream selects a model with `--language <name>` → `pocket_tts/config/<name>.yaml`. Go has no equivalent;
 constants and paths are hard-coded around `tts_b6369a24`.
 
-- [ ] New package `internal/modelcfg` (or extend `internal/model`) with a `ModelConfig` struct that mirrors the
+- [x] New package `internal/modelcfg` (or extend `internal/model`) with a `ModelConfig` struct that mirrors the
       upstream YAML fields the Go port needs:
   - `weights_path` and `weights_path_without_voice_cloning`, `tokenizer_path`, `tokenizer` kind (`sentencepiece` | `tokenizers`)
   - `flow_lm.transformer.num_layers` (informational; layers are auto-detected), `flow_lm.flow.{type,depth,dim}`
@@ -76,6 +79,12 @@ constants and paths are hard-coded around `tts_b6369a24`.
   - Text options: `pad_with_spaces_for_short_inputs`, `remove_semicolons`, `replace_characters` (map),
     `capitalize_first_letter`, `append_terminal_punctuation`
   - `default_voice`, `voices_revision`
+  - (2026-10-03) — `internal/modelcfg`: `ModelConfig` mirrors the full upstream `utils/config.py` schema at
+    41cbc84 (strict decode like `extra="forbid"`, required-key check, upstream defaults pre-filled, enum
+    validation), plus `NumTimeConds()` and `MimiInnerDim()` (falls back to `seanet.dimension` like upstream).
+    `default_voice` / `voices_revision` are Go-only fields (`yaml:"-"`): upstream keeps them outside the YAML
+    (`DEFAULT_VOICE_FOR_LANGUAGE`), so the item-2 registry fills them. Tested against three upstream configs in
+    `testdata/`; all 19 upstream configs parse.
 - [ ] Embed the configs we support (`//go:embed configs/*.yaml`), transcribed from upstream `pocket_tts/config/`:
       `english_2026-01` (current), `english_2026-09` (new upstream default `english`), `english_2026-09_24l`,
       `german`, `german_24l`; later `french`, `italian`, `spanish`, `portuguese`, `dutch` and `*_24l`.
