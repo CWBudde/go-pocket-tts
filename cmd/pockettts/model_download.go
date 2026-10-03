@@ -8,6 +8,7 @@ import (
 
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	"github.com/cwbudde/go-pocket-tts/internal/model"
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/spf13/cobra"
 )
 
@@ -17,10 +18,16 @@ func newModelDownloadCmd() *cobra.Command {
 	var hfToken string
 	var fallbackUngated bool
 	var fallbackRepo string
+	var voices []string
+	var allVoices bool
+	var noVoices bool
 
 	cmd := &cobra.Command{
 		Use:   "download",
 		Short: "Download PocketTTS model files from Hugging Face",
+		Long: "Download the model and tokenizer of --language from Hugging Face, then its default voice\n" +
+			"(or --voice / --all-voices) next to the voice manifest (--paths-voice-manifest).\n" +
+			"Voices always come from the ungated repo, pinned like the model files.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := requireConfig()
 			if err != nil {
@@ -36,47 +43,28 @@ func newModelDownloadCmd() *cobra.Command {
 				hfToken = os.Getenv("HF_TOKEN")
 			}
 
-			err = model.Download(model.DownloadOptions{
-				Repo:     hfRepo,
-				Language: language,
-				OutDir:   outDir,
-				HFToken:  hfToken,
-				Stdout:   os.Stdout,
-				Stderr:   os.Stderr,
-			})
-			if err == nil {
+			err = downloadModel(hfRepo, language, outDir, hfToken, fallbackUngated, fallbackRepo)
+			if err != nil {
+				return fmt.Errorf("model download failed: %w", err)
+			}
+
+			if noVoices {
 				return nil
 			}
 
-			var denied *model.AccessDeniedError
-			if fallbackUngated && hfToken == "" && errors.As(err, &denied) && hfRepo == "kyutai/pocket-tts" {
-				_, _ = fmt.Fprintf(
-					os.Stderr,
-					"warning: %v; retrying with ungated repo %q\n",
-					err,
-					fallbackRepo,
-				)
-
-				err = model.Download(model.DownloadOptions{
-					Repo:     fallbackRepo,
-					Language: language,
-					OutDir:   outDir,
-					HFToken:  "",
-					Stdout:   os.Stdout,
-					Stderr:   os.Stderr,
-				})
-				if err == nil {
-					_, _ = fmt.Fprintf(
-						os.Stderr,
-						"note: downloaded ungated model set (without voice cloning).\n",
-					)
-
-					return nil
-				}
+			target, err := model.ResolveVoiceTarget(cfg, "", false)
+			if err != nil {
+				return err
 			}
 
+			selected, err := modelDownloadVoices(cfg, voices, allVoices)
 			if err != nil {
-				return fmt.Errorf("model download failed: %w", err)
+				return err
+			}
+
+			err = model.DownloadVoices(target, selected, os.Stdout)
+			if err != nil {
+				return fmt.Errorf("voice download failed: %w", err)
 			}
 
 			return nil
@@ -89,7 +77,73 @@ func newModelDownloadCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&fallbackUngated, "fallback-ungated", true, "On gated access failure without token, retry with ungated repo")
 	cmd.Flags().StringVar(&fallbackRepo, "fallback-repo", "kyutai/pocket-tts-without-voice-cloning", "Ungated repo used when --fallback-ungated is enabled")
 
+	cmd.Flags().StringArrayVar(&voices, "voice", nil, "Predefined voice to download (repeatable; default: the language's default voice)")
+	cmd.Flags().BoolVar(&allVoices, "all-voices", false, "Download every predefined voice of the language")
+	cmd.Flags().BoolVar(&noVoices, "no-voices", false, "Download only the model and tokenizer")
+	cmd.MarkFlagsMutuallyExclusive("voice", "all-voices", "no-voices")
+
 	return cmd
+}
+
+// downloadModel fetches the model files of language from hfRepo. Without a
+// token, a gated kyutai/pocket-tts failure retries with fallbackRepo when
+// fallbackUngated is set.
+func downloadModel(hfRepo, language, outDir, hfToken string, fallbackUngated bool, fallbackRepo string) error {
+	err := model.Download(model.DownloadOptions{
+		Repo:     hfRepo,
+		Language: language,
+		OutDir:   outDir,
+		HFToken:  hfToken,
+		Stdout:   os.Stdout,
+		Stderr:   os.Stderr,
+	})
+
+	var denied *model.AccessDeniedError
+	if err == nil || !fallbackUngated || hfToken != "" || !errors.As(err, &denied) || hfRepo != "kyutai/pocket-tts" {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(os.Stderr, "warning: %v; retrying with ungated repo %q\n", err, fallbackRepo)
+
+	err = model.Download(model.DownloadOptions{
+		Repo:     fallbackRepo,
+		Language: language,
+		OutDir:   outDir,
+		Stdout:   os.Stdout,
+		Stderr:   os.Stderr,
+	})
+	if err != nil {
+		return err
+	}
+
+	_, _ = fmt.Fprintf(os.Stderr, "note: downloaded ungated model set (without voice cloning).\n")
+
+	return nil
+}
+
+// modelDownloadVoices returns the voices model download fetches: every one
+// (nil) with --all-voices, the --voice ids, else the language's default voice
+// (upstream get_default_voice_for_language).
+func modelDownloadVoices(cfg config.Config, voices []string, all bool) ([]string, error) {
+	if all {
+		return nil, nil
+	}
+
+	if len(voices) > 0 {
+		return voices, nil
+	}
+
+	mc := cfg.Model
+	if mc == nil {
+		var err error
+
+		mc, err = modelcfg.Lookup(cfg.TTS.Language)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return []string{mc.DefaultVoice}, nil
 }
 
 // resolveModelDownload returns the language to download (--language) and the
