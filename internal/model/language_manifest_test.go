@@ -408,19 +408,20 @@ func TestDownload_LanguageGatedUsesPerFileRepo(t *testing.T) {
 }
 
 func TestWriteVoiceIndex_MergesByID(t *testing.T) {
-	dir := t.TempDir()
+	// Any manifest file name works: it is the configured paths.voice_manifest.
+	manifest := filepath.Join(t.TempDir(), "stimmen.json")
 
-	err := WriteVoiceIndex(dir, []string{"juergen"})
+	err := WriteVoiceIndex(manifest, []string{"juergen"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = WriteVoiceIndex(dir, []string{"alba", "juergen"})
+	err = WriteVoiceIndex(manifest, []string{"alba", "juergen"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	vm, err := tts.NewVoiceManager(filepath.Join(dir, "manifest.json"))
+	vm, err := tts.NewVoiceManager(manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +451,7 @@ func TestWriteVoiceIndex_KeepsForeignEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = WriteVoiceIndex(dir, []string{"alba"})
+	err = WriteVoiceIndex(path, []string{"alba"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -157,8 +157,9 @@ Other languages download into their own directories (see `--language` below):
 `languages/<lang>/` from Hugging Face, pinned to the revisions in the embedded
 model config and checked against pinned SHA256 checksums, goes to
 `models/<lang>/model.safetensors` and `models/<lang>/tokenizer.model`, and the
-language's predefined voices go to `voices/<lang>/` together with the
-`manifest.json` the runtime reads:
+language's predefined voices go next to the voice manifest the runtime reads
+(`--paths-voice-manifest`, by default `voices/<lang>/manifest.json`), which
+lists them:
 
 ```bash
 ./pockettts model download --language german --hf-repo kyutai/pocket-tts-without-voice-cloning

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"maps"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -152,12 +151,11 @@ func VoiceManifestForLanguage(language string, voices []string) (Manifest, error
 	return filterVoices(m, voices)
 }
 
-// WriteVoiceIndex adds the downloaded voices ids (<id>.safetensors in dir) to
-// dir/manifest.json, the voice manifest the runtime reads. Existing entries
-// with other ids are kept, so repeated downloads accumulate.
-func WriteVoiceIndex(dir string, ids []string) error {
-	path := filepath.Join(dir, "manifest.json")
-
+// WriteVoiceIndex adds the downloaded voices ids (<id>.safetensors next to
+// the manifest) to the voice manifest at path, the file the runtime reads
+// (paths.voice_manifest). Existing entries with other ids are kept, so
+// repeated downloads accumulate.
+func WriteVoiceIndex(path string, ids []string) error {
 	var index voiceIndex
 
 	data, err := os.ReadFile(path)
