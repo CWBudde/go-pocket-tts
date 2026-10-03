@@ -392,11 +392,28 @@ voices in that folder are German-model states.
 
 Minimal path (precomputed voices only; needs Phases 1, 3, 4 and Phase 5 byte fallback; tanh GELU from Phase 2):
 
-- [ ] `pockettts model download --language german`: model, `tokenizer.model` and voice embeddings → lock file entries
-- [ ] `voices/german/manifest.json` with `juergen` as default (generate it from the HF tree listing)
+- [x] `pockettts model download --language german`: model, `tokenizer.model` and voice embeddings → lock file entries
+      (2026-10-03) — `model download` now also fetches the language's default voice (`--voice id…`, `--all-voices`,
+      `--no-voices`) into the configured voice manifest dir, recording `voices/<lang>/download-manifest.lock.json`
+      and merging `manifest.json`; the voice-download core moved to `model.ResolveVoiceTarget`/`DownloadVoices`,
+      which `pockettts-tools voice download` now calls. Real run `--language german`: model, `tokenizer.json`
+      (the tokenizer since Phase 5) and `juergen` checksum-verified into both lock files. `TestModelDownloadVoices`,
+      `TestModelDownloadCmd_VoiceFlagsAreExclusive`, `TestResolveVoiceTarget`, `TestDownloadVoices_RecordsLockAndIndex`.
+- [x] `voices/german/manifest.json` with `juergen` as default (generate it from the HF tree listing)
+      (2026-10-03) — the manifest is written by the voice download from the pinned checksums (generated from the HF
+      tree API). Like upstream, the default lives in code, not in the manifest: `synth` (native backends) and `serve`
+      now fall back to `modelcfg.DefaultVoice` (`juergen` for german, `alba` for English) when no voice is given, and
+      fail with a `pockettts model download` hint if it does not resolve, instead of generating voice-less.
+      `bench` drives the Python CLI, which applies its own default. `TestResolveNativeVoice_*`,
+      `TestNativeSynthesizer_DefaultVoice`. Real run: German demo text without `--voice` → 82 frames (87 with an
+      explicit `--voice juergen`); a missing manifest fails with the hint.
 - [ ] `pockettts synth --language german --voice juergen --text "…"` produces intelligible German
       (listening check plus a Python-reference comparison from Phase 8)
-- [ ] German demo text from upstream `default_parameters.py` used as a CLI smoke example
+- [x] German demo text from upstream `default_parameters.py` used as a CLI smoke example
+      (2026-10-03) — `modelcfg.DefaultText` mirrors `DEFAULT_TEXT_FOR_LANGUAGE` (substring match, English fallback;
+      `LoadCustom` gets English). The README "Languages" section runs download → doctor → synth with the German
+      text; run as written: doctor passes, synth 90 frames / 7.2 s. `TestLookup_DefaultText`,
+      `TestDefaultTextFor_UpstreamLanguages`, `TestLoadCustom_UsesEnglishDefaultText`.
 - [x] `german` (6L) + `juergen` ends far too early: "Guten Tag, dies ist ein kurzer Test." hits EOS at step 1
       on `main` (5 frames) and at the step-6 minimum after Phase 3 (9 frames, 0.36 s). `german_24l` +
       `juergen` and English are fine. Find out why (text prep, tokenizer, voice state) before the listening check.
@@ -410,11 +427,22 @@ Minimal path (precomputed voices only; needs Phases 1, 3, 4 and Phase 5 byte fal
       ID, pointing at `pockettts-tools voice download`. With the manifest: EOS at steps 26–35 (29–38 frames).
 - [ ] `serve --language german`: one language per process (same as upstream `serve`); add `--default-voice`
       (#271: name | local wav/safetensors | URL, resolved at startup, fail fast)
-- [ ] `doctor` validates the selected language's files
-- [ ] Docs: README section "Languages" with the table of supported configs and a German example
+- [x] `doctor` validates the selected language's files
+      (2026-10-03) — `doctor` prints the language; on the native backends a missing voice manifest fails (it was
+      silently skipped), the default voice must resolve, and native-safetensors loads the tokenizer with the model
+      config's `n_bins`. `TestRun_{PrintsLanguage,VoiceManifestMissingFails,DefaultVoice*,TokenizerLoad*}`,
+      `TestNewDoctorConfig_GermanPasses`, `TestNewDoctorConfig_ChecksLanguageFiles` (n_bins−1, unknown default
+      voice, missing manifest). Real run: `doctor --language german` passes; with a missing manifest it fails.
+- [x] Docs: README section "Languages" with the table of supported configs and a German example
+      (2026-10-03) — table of the six embedded configs (layers, sampler, default voice), local layout, German
+      end-to-end example; Quickstart/doctor/Configuration text points to it and documents the new download flags
+      and the default voice.
 
 Follow-ups:
 
+- [ ] `TestDoctorPasses_Native` (`-tags integration`) already fails on `main`: it expects `backend: native-onnx`
+      for `--backend native` (now native-safetensors) and has no model or tokenizer in its temp dir; with the
+      default voice check it also reports `alba`. Give it real fixtures or skip without assets. (Found 2026-10-03.)
 - [ ] Multi-language server: `language` field in `ttsRequest`, `/voices?language=`, and a lazy-loaded
       language → `tts.Service` registry with an LRU cap (each model is ~220 MB of weights)
 - [ ] Web/WASM: language picker. `web/main.js` hard-codes the English model and tokenizer URLs.
