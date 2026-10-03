@@ -40,19 +40,34 @@ go build -o pockettts ./cmd/pockettts
   --out-dir models
 ```
 
-3. Run local checks:
+3. Download the precomputed voices listed in `voices/manifest.json`. This uses
+   the Hugging Face CLI (`hf`), installed with `uv tool install huggingface_hub`
+   (or `pip install -U huggingface_hub`):
+
+```bash
+for voice in alba marius javert jean fantine cosette eponine azelma; do
+  hf download kyutai/pocket-tts-without-voice-cloning \
+    "embeddings/$voice.safetensors" --local-dir /tmp/pockettts-voices
+  cp "/tmp/pockettts-voices/embeddings/$voice.safetensors" voices/
+done
+```
+
+`just generate` runs steps 1–3 (skipping files that already exist) and then
+synthesizes `hello-world.wav`.
+
+4. Run local checks:
 
 ```bash
 ./pockettts doctor
 ```
 
-4. Generate your first WAV:
+5. Generate your first WAV:
 
 ```bash
 ./pockettts synth --text "Hello world" --out hello.wav
 ```
 
-5. Confirm the file exists:
+6. Confirm the file exists:
 
 ```bash
 ls -lh hello.wav
@@ -81,6 +96,15 @@ ls -lh hello.wav
 - `pockettts-tools model export`
   - Python environment with `pocket_tts`, `torch`, `onnx`
   - optional for `--int8`: Python `onnxruntime`
+- Python parity fixtures: see [docs/INSTALL.md](docs/INSTALL.md#parity-setup-python-reference)
+
+### Development tools
+
+- `hf` (Hugging Face CLI) for voice downloads and `just generate`: `uv tool install huggingface_hub`
+- `prettier` for Markdown/YAML/JSON formatting: `npm i -g prettier` or `brew install prettier`.
+  `just fmt` / `just ci` run `treefmt`, which skips Markdown/YAML/JSON checks when it is missing
+  (CI does not)
+- `gofumpt`, `gci`, `shfmt`, `shellcheck`, `golangci-lint`, `just`, `treefmt`
 
 ## Build
 
@@ -119,7 +143,10 @@ Downloads into `./models` by default.
 ./pockettts model download
 ```
 
-If the Hugging Face repo is gated, provide a token:
+The ungated repo `kyutai/pocket-tts-without-voice-cloning` contains everything
+needed to synthesize with the precomputed voices. Only the gated
+`kyutai/pocket-tts` repo (weights with the voice-cloning encoder) needs an
+`HF_TOKEN` and accepting the model terms on Hugging Face first:
 
 ```bash
 export HF_TOKEN=...  # or use --hf-token
@@ -244,10 +271,10 @@ model state: transformer KV-cache tensors plus offsets such as
 
 Compatibility summary:
 
-| Format | Created by | Native Go backend | ONNX backend |
-| ------ | ---------- | ----------------- | ------------ |
-| Upstream model state | `--format=model-state` or upstream `pocket-tts export-voice` | Accepted directly as prompted FlowLM state | Not supported |
-| Legacy `audio_prompt` | earlier Go tooling or default `--format=legacy-embedding` | Accepted and re-encoded into native state | Accepted as voice embedding |
+| Format                | Created by                                                   | Native Go backend                          | ONNX backend                |
+| --------------------- | ------------------------------------------------------------ | ------------------------------------------ | --------------------------- |
+| Upstream model state  | `--format=model-state` or upstream `pocket-tts export-voice` | Accepted directly as prompted FlowLM state | Not supported               |
+| Legacy `audio_prompt` | earlier Go tooling or default `--format=legacy-embedding`    | Accepted and re-encoded into native state  | Accepted as voice embedding |
 
 See [voices/README.md](voices/README.md) for format and licensing guidance.
 
