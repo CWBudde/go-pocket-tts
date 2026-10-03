@@ -168,3 +168,20 @@ func TestDriftingSamplerHead_RealCheckpoint(t *testing.T) {
 
 	smokeGenerate(t, m, voiceFlowState(t, m, "english_drifting_26-09", "alba"), 3)
 }
+
+// german_24l needs no new modules: the 24 transformer layers are detected
+// from the weights, and its voices carry 24-layer KV caches.
+func TestGerman24L_RealCheckpoint(t *testing.T) {
+	m, _ := loadLanguageModel(t, "german_24l")
+
+	if got := len(m.flow.transformer.layers); got != 24 {
+		t.Fatalf("flow transformer layers = %d, want 24", got)
+	}
+
+	state := voiceFlowState(t, m, "german_24l", "juergen")
+	if got := len(state.transformer.layers); got != 24 {
+		t.Fatalf("voice state layers = %d, want 24", got)
+	}
+
+	smokeGenerate(t, m, state, 2)
+}
