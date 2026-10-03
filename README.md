@@ -153,6 +153,19 @@ export HF_TOKEN=...  # or use --hf-token
 ./pockettts model download --hf-repo kyutai/pocket-tts
 ```
 
+Other languages download into their own directories (see `--language` below):
+`languages/<lang>/` from Hugging Face, pinned to the revisions in the embedded
+model config and checked against pinned SHA256 checksums, goes to
+`models/<lang>/model.safetensors` and `models/<lang>/tokenizer.model`, and the
+language's predefined voices go to `voices/<lang>/` together with the
+`manifest.json` the runtime reads:
+
+```bash
+./pockettts model download --language german --hf-repo kyutai/pocket-tts-without-voice-cloning
+./pockettts-tools voice download --language german                 # all predefined voices
+./pockettts-tools voice download --language german --voice juergen # or only some
+```
+
 ### 2) Sanity-check your setup
 
 Checks:

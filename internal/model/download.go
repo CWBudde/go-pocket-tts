@@ -16,11 +16,12 @@ import (
 )
 
 type DownloadOptions struct {
-	Repo    string
-	OutDir  string
-	HFToken string
-	Stdout  io.Writer
-	Stderr  io.Writer
+	Repo     string
+	Language string // Model config name; "" or FlatLayoutLanguage keeps the flat layout.
+	OutDir   string
+	HFToken  string
+	Stdout   io.Writer
+	Stderr   io.Writer
 }
 
 type AccessDeniedError struct {
@@ -43,6 +44,7 @@ type lockManifest struct {
 }
 
 type lockRecord struct {
+	Repo     string `json:"repo,omitempty"` // Older lock files only have the top-level repo.
 	Revision string `json:"revision"`
 	SHA256   string `json:"sha256"`
 }
@@ -50,7 +52,7 @@ type lockRecord struct {
 var shaHexPattern = regexp.MustCompile(`(?i)^[a-f0-9]{64}$`)
 
 func Download(opts DownloadOptions) error {
-	manifest, err := PinnedManifest(opts.Repo)
+	manifest, err := LanguageManifest(opts.Language, opts.Repo)
 	if err != nil {
 		return err
 	}
@@ -87,23 +89,30 @@ func DownloadManifest(opts DownloadOptions, manifest Manifest) error {
 		lock.Files = make(map[string]lockRecord)
 	}
 
+	lockedRepo := lock.Repo
 	lock.Repo = opts.Repo
 	lock.Generated = time.Now().UTC().Format(time.RFC3339)
 
 	client := &http.Client{Timeout: 0}
 
 	for _, f := range manifest.Files {
+		repo := f.Repo
+		if repo == "" {
+			repo = manifest.Repo
+		}
+
 		expected := strings.ToLower(f.SHA256)
 
 		checksumHard := expected != "" // hard = from manifest, soft = from metadata
 		if expected == "" {
-			if lr, ok := lock.Files[f.Filename]; ok && lr.Revision == f.Revision && isSHA256Hex(lr.SHA256) {
+			if lr, ok := lock.Files[f.Filename]; ok && lr.Revision == f.Revision && isSHA256Hex(lr.SHA256) &&
+				(lr.Repo == repo || (lr.Repo == "" && lockedRepo == repo)) {
 				expected = strings.ToLower(lr.SHA256)
 				checksumHard = true
 			} else {
 				var err error
 
-				expected, err = resolveChecksumFromMetadata(client, manifest.Repo, f, opts.HFToken)
+				expected, err = resolveChecksumFromMetadata(client, repo, f, opts.HFToken)
 				if err != nil {
 					return err
 				}
@@ -129,14 +138,14 @@ func DownloadManifest(opts DownloadOptions, manifest Manifest) error {
 
 		if ok {
 			_, _ = fmt.Fprintf(opts.Stdout, "skip %s (checksum match)\n", f.Filename)
-			lock.Files[f.Filename] = lockRecord{Revision: f.Revision, SHA256: expected}
+			lock.Files[f.Filename] = lockRecord{Repo: repo, Revision: f.Revision, SHA256: expected}
 
 			continue
 		}
 
 		_, _ = fmt.Fprintf(opts.Stdout, "download %s@%s -> %s\n", f.Filename, f.Revision, localPath)
 
-		actual, err := downloadWithProgress(client, manifest.Repo, f, opts.HFToken, localPath, opts.Stdout)
+		actual, err := downloadWithProgress(client, repo, f, opts.HFToken, localPath, opts.Stdout)
 		if err != nil {
 			return err
 		}
@@ -150,7 +159,7 @@ func DownloadManifest(opts DownloadOptions, manifest Manifest) error {
 		}
 
 		_, _ = fmt.Fprintf(opts.Stdout, "verified %s (sha256=%s)\n", f.Filename, actual)
-		lock.Files[f.Filename] = lockRecord{Revision: f.Revision, SHA256: actual}
+		lock.Files[f.Filename] = lockRecord{Repo: repo, Revision: f.Revision, SHA256: actual}
 	}
 
 	err = writeLockManifest(lockPath, lock)
