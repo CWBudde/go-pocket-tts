@@ -165,6 +165,7 @@ func TestMimiConfigDerivesStepsPerLatent(t *testing.T) {
 
 	cfg := DefaultMimiConfig()
 	cfg.FrameRate = 25
+
 	cfg.EncoderFrameRate = 200
 	if got := cfg.MimiStepsPerLatent(); got != 8 {
 		t.Fatalf("custom MimiStepsPerLatent = %d, want 8", got)

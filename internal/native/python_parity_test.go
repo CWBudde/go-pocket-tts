@@ -44,6 +44,7 @@ func TestPythonParity_FlowLMPrefillAndStep(t *testing.T) {
 	}
 
 	ckpt := requireCheckpoint(t)
+
 	m, err := LoadModelFromSafetensors(ckpt, DefaultConfig())
 	if err != nil {
 		t.Fatalf("load model: %v", err)
@@ -51,6 +52,7 @@ func TestPythonParity_FlowLMPrefillAndStep(t *testing.T) {
 	defer m.Close()
 
 	tc := fixture.FlowLM
+
 	textEmb, err := m.TextEmbeddings(tc.Tokens)
 	if err != nil {
 		t.Fatalf("text embeddings: %v", err)
@@ -61,7 +63,8 @@ func TestPythonParity_FlowLMPrefillAndStep(t *testing.T) {
 		t.Fatalf("new flow state: %v", err)
 	}
 
-	if err := m.PromptFlow(state, textEmb); err != nil {
+	err = m.PromptFlow(state, textEmb)
+	if err != nil {
 		t.Fatalf("prompt flow: %v", err)
 	}
 
@@ -84,6 +87,7 @@ func TestPythonParity_FlowLMPrefillAndStep(t *testing.T) {
 	}
 
 	tol := ops.Tolerance{Abs: 2e-4, Rel: 5e-3}
+
 	if tc.StepLastHidden != nil {
 		want, err := tc.StepLastHidden.tensor()
 		if err != nil {
@@ -110,6 +114,7 @@ func TestPythonParity_LatentToMimiAndDecode(t *testing.T) {
 	}
 
 	ckpt := requireCheckpoint(t)
+
 	m, err := LoadModelFromSafetensors(ckpt, DefaultConfig())
 	if err != nil {
 		t.Fatalf("load model: %v", err)
@@ -171,7 +176,9 @@ func loadNativePythonParityFixture(t *testing.T) nativePythonParityFixture {
 	}
 
 	var fixture nativePythonParityFixture
-	if err := json.Unmarshal(data, &fixture); err != nil {
+
+	err = json.Unmarshal(data, &fixture)
+	if err != nil {
 		t.Fatalf("decode %s: %v", path, err)
 	}
 

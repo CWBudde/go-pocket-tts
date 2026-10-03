@@ -34,6 +34,7 @@ func TestLinearForwardIntoMatchesTensorLinear(t *testing.T) {
 	}
 
 	l := &Linear{Weight: w, Bias: bias, inDim: 2, outDim: 3}
+
 	out, err := tensor.Zeros([]int64{2, 2, 3})
 	if err != nil {
 		t.Fatalf("out zeros: %v", err)
@@ -72,6 +73,7 @@ func TestLayerNormForwardIntoMatchesTensorLayerNorm(t *testing.T) {
 	}
 
 	ln := &LayerNorm{Weight: w, Bias: b, Eps: 1e-5, dim: 4}
+
 	out, err := tensor.Zeros([]int64{2, 4})
 	if err != nil {
 		t.Fatalf("out zeros: %v", err)
@@ -105,6 +107,7 @@ func TestLinearForwardIntoRejectsWrongOutShape(t *testing.T) {
 	}
 
 	l := &Linear{Weight: w, inDim: 2, outDim: 2}
+
 	out, err := tensor.Zeros([]int64{2, 3})
 	if err != nil {
 		t.Fatalf("out zeros: %v", err)

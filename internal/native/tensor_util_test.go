@@ -24,6 +24,7 @@ func TestMulLastDimInPlaceMatchesBroadcastMul(t *testing.T) {
 	}
 
 	got := x.Clone()
+
 	got, err = mulLastDimInPlace(got, scale)
 	if err != nil {
 		t.Fatalf("mulLastDimInPlace: %v", err)
@@ -36,6 +37,7 @@ func TestMulLastDimInPlaceMatchesBroadcastMul(t *testing.T) {
 
 	const eps = 1e-6
 	gd := got.RawData()
+
 	wd := want.RawData()
 	if len(gd) != len(wd) {
 		t.Fatalf("len mismatch: got %d want %d", len(gd), len(wd))
@@ -62,6 +64,7 @@ func TestGeluErfTensorInPlaceMatchesCopyVersion(t *testing.T) {
 
 	const eps = 1e-6
 	gd := got.RawData()
+
 	wd := want.RawData()
 	for i := range gd {
 		if math.Abs(float64(gd[i]-wd[i])) > eps {

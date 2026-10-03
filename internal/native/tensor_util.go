@@ -103,19 +103,6 @@ func geluErfTensorInPlace(x *tensor.Tensor) *tensor.Tensor {
 	return x
 }
 
-func eluTensor(x *tensor.Tensor) *tensor.Tensor {
-	out := x.Clone()
-
-	d := out.RawData()
-	for i, v := range d {
-		if v <= 0 {
-			d[i] = float32(math.Exp(float64(v))) - 1
-		}
-	}
-
-	return out
-}
-
 func eluTensorInPlace(x *tensor.Tensor) *tensor.Tensor {
 	d := x.RawData()
 	for i, v := range d {
@@ -202,6 +189,7 @@ func addSameShapeInPlace(dst, src *tensor.Tensor) (*tensor.Tensor, error) {
 	}
 
 	dd := dst.RawData()
+
 	sd := src.RawData()
 	for i := range dd {
 		dd[i] += sd[i]
@@ -231,6 +219,7 @@ func mulLastDimInPlace(x, scale *tensor.Tensor) (*tensor.Tensor, error) {
 	}
 
 	xd := x.RawData()
+
 	sd := scale.RawData()
 	for i := range xd {
 		xd[i] *= sd[i%last]
