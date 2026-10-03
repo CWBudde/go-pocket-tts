@@ -34,10 +34,16 @@ type Service struct {
 }
 
 // loadTokenizer loads cfg.Paths.TokenizerModel; the file decides the backend
-// (tokenizer.json or tokenizer.model). A missing file names the command that
-// downloads it.
+// (tokenizer.json or tokenizer.model). Its vocab size must match the model
+// config's n_bins (unchecked without a model config). A missing file names the
+// command that downloads it.
 func loadTokenizer(cfg config.Config) (tokenizer.Tokenizer, error) {
-	tok, err := tokenizer.Load(cfg.Paths.TokenizerModel)
+	nBins := 0
+	if cfg.Model != nil {
+		nBins = cfg.Model.FlowLM.LookupTable.NBins
+	}
+
+	tok, err := tokenizer.Load(cfg.Paths.TokenizerModel, nBins)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("init tokenizer: %w (run `pockettts model download --language %s` or set --paths-tokenizer-model)",
 			err, cfg.TTS.Language)

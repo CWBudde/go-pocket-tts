@@ -397,6 +397,9 @@ func (doc *hfTokenizerJSON) specials(vocab map[string]int32) ([]hfSpecial, error
 func (m *spModel) buildJSONVocab(vocab []hfVocabEntry) error {
 	minScore := math.Inf(1)
 	m.hf.vocab = make(map[string]int32, len(vocab))
+	// get_vocab_size() adds added tokens missing from the vocab, which
+	// specials rejects, so it is always the vocab length.
+	m.vocabSize = len(vocab)
 
 	for i, e := range vocab {
 		id := int32(i)

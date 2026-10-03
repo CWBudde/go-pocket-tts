@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -178,6 +179,38 @@ func TestNewService_MissingTokenizerSuggestsDownload(t *testing.T) {
 	_, err := NewService(cfg)
 	if err == nil || !strings.Contains(err.Error(), "pockettts model download --language german") {
 		t.Fatalf("NewService error = %v; want a hint to run pockettts model download --language german", err)
+	}
+}
+
+// The tokenizer's vocab size must equal the model config's n_bins, like
+// upstream asserts when it builds the tokenizer.
+func TestLoadTokenizer_VocabSizeMatchesNBins(t *testing.T) {
+	_, tokPath := requireNativeSafetensorsAssetsForUnit(t)
+
+	model, err := modelcfg.Lookup(config.DefaultLanguage)
+	if err != nil {
+		t.Fatalf("modelcfg.Lookup: %v", err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Model = model
+	cfg.Paths.TokenizerModel = tokPath
+
+	_, err = loadTokenizer(cfg)
+	if err != nil {
+		t.Fatalf("loadTokenizer with n_bins %d: %v", model.FlowLM.LookupTable.NBins, err)
+	}
+
+	model.FlowLM.LookupTable.NBins--
+
+	_, err = loadTokenizer(cfg)
+	if !errors.Is(err, tokenizer.ErrVocabSize) {
+		t.Fatalf("loadTokenizer with n_bins %d: got %v, want ErrVocabSize", model.FlowLM.LookupTable.NBins, err)
+	}
+
+	_, err = NewService(cfg)
+	if !errors.Is(err, tokenizer.ErrVocabSize) {
+		t.Fatalf("NewService with n_bins %d: got %v, want ErrVocabSize", model.FlowLM.LookupTable.NBins, err)
 	}
 }
 

@@ -34,6 +34,12 @@ func NewSentencePieceTokenizer(modelPath string) (*SentencePieceTokenizer, error
 	return &SentencePieceTokenizer{model: model}, nil
 }
 
+// VocabSize returns the number of vocab entries, like sentencepiece's
+// vocab_size() and tokenizers' get_vocab_size(): every piece type counts.
+func (t *SentencePieceTokenizer) VocabSize() int {
+	return t.model.vocabSize
+}
+
 // Encode tokenizes text and returns SentencePiece token IDs as int64.
 // It is derived from EncodePieces, so both always agree.
 func (t *SentencePieceTokenizer) Encode(text string) ([]int64, error) {
