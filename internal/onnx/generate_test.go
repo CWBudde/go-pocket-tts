@@ -386,6 +386,48 @@ func TestGenerateAudio_EOSStopRule(t *testing.T) {
 	}
 }
 
+func TestGenerateAudio_CancelStopsWithinOneStep(t *testing.T) {
+	const cancelAt = 4
+
+	for _, path := range generatePaths {
+		t.Run(path.name, func(t *testing.T) {
+			e := path.engine(t, 1000)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			steps := countRuns(e, path.stepGraph)
+			counted := e.runners[path.stepGraph]
+			e.runners[path.stepGraph] = &fakeRunner{
+				name: path.stepGraph,
+				fn: func(ctx context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+					out, err := counted.Run(ctx, inputs)
+
+					if *steps == cancelAt {
+						cancel()
+					}
+
+					return out, err
+				},
+			}
+
+			_, err := e.GenerateAudio(ctx, []int64{1, 2, 3}, GenerateConfig{
+				EOSThreshold:       -4.0,
+				MaxSteps:           256,
+				SamplerDecodeSteps: 1,
+			})
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("GenerateAudio err = %v, want context.Canceled", err)
+			}
+
+			// At most the step that was already running when ctx was cancelled.
+			if *steps > cancelAt+1 {
+				t.Errorf("%s calls = %d after cancelling at %d", path.stepGraph, *steps, cancelAt)
+			}
+		})
+	}
+}
+
 func TestGenerateAudio_MissingTextConditioner(t *testing.T) {
 	e := engineWithFakeRunners(map[string]runnerIface{})
 	cfg := GenerateConfig{MaxSteps: 10}

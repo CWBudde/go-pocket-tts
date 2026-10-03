@@ -73,6 +73,11 @@ func (e *Engine) generateAudioStateful(ctx context.Context, tokens []int64, cfg 
 	stop := genloop.EOSStop{FramesAfter: cfg.FramesAfterEOS}
 
 	for step := range cfg.MaxSteps {
+		err := ctx.Err()
+		if err != nil {
+			return nil, err
+		}
+
 		lastHidden, eosLogits, err := e.FlowLMStepStateful(ctx, currentFrame, kvState)
 		if err != nil {
 			return nil, fmt.Errorf("generate step %d: %w", step, err)
@@ -128,6 +133,11 @@ func (e *Engine) generateAudioStateless(ctx context.Context, tokens []int64, cfg
 	stop := genloop.EOSStop{FramesAfter: cfg.FramesAfterEOS}
 
 	for step := range cfg.MaxSteps {
+		err := ctx.Err()
+		if err != nil {
+			return nil, err
+		}
+
 		lastHidden, eosLogits, err := e.FlowLMStep(ctx, sequence, textEmb)
 		if err != nil {
 			return nil, fmt.Errorf("generate step %d: %w", step, err)

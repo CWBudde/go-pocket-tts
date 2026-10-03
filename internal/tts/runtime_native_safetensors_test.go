@@ -2,6 +2,7 @@ package tts
 
 import (
 	"context"
+	"errors"
 	"math"
 	"math/rand"
 	"os"
@@ -240,5 +241,29 @@ func TestRunARLoop_EOSStopRule(t *testing.T) {
 			t.Errorf("frames_after_eos=%d: %d frames from %d steps, want %d from %d",
 				tc.framesAfter, len(frames), *calls, tc.wantFrames, tc.wantFrames+1)
 		}
+	}
+}
+
+func TestRunARLoop_CancelStopsWithinOneStep(t *testing.T) {
+	const cancelAt = 4
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sample, calls := fakeSampler(t, 1000, func(calls int) {
+		if calls == cancelAt {
+			cancel()
+		}
+	})
+	rt := &nativeSafetensorsRuntime{sample: sample}
+
+	_, err := rt.runARLoop(ctx, nil, nil, 256, 1, RuntimeGenerateConfig{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("runARLoop err = %v, want context.Canceled", err)
+	}
+
+	// At most the step that was already running when ctx was cancelled.
+	if *calls > cancelAt+1 {
+		t.Errorf("sampler calls = %d after cancelling at %d", *calls, cancelAt)
 	}
 }
