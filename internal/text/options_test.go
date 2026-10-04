@@ -69,6 +69,11 @@ func TestPrepareText_CapitalizeFirst(t *testing.T) {
 	if got := mustPrepare(t, "salAm hAle SomA", off); got != "salAm hAle SomA." {
 		t.Errorf("capitalize off: got %q", got)
 	}
+
+	// The default is unchanged, so nothing moves for the shipped languages.
+	if got := mustPrepare(t, "hello there", upstreamOptions()); got != "Hello there." {
+		t.Errorf("default: got %q", got)
+	}
 }
 
 // Upstream test_replace_characters_rewrites_unseen_characters_before_capitalizing.

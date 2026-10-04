@@ -300,6 +300,14 @@ func TestChunkFadeIn(t *testing.T) {
 	if want := float32(0.5) * (float32(60) / float32(n-1)); got[60] != want {
 		t.Errorf("sample 60 = %v, want %v", got[60], want)
 	}
+
+	// Upstream test_decode_audio_worker_fades_in_only_the_first_decoded_frame:
+	// nothing after the ramp is touched.
+	for i := n; i < len(got); i++ {
+		if got[i] != 0.5 {
+			t.Fatalf("sample %d = %v, want 0.5 (outside the fade-in)", i, got[i])
+		}
+	}
 }
 
 // Upstream test_stream_audio_chunks_patches_seekable_wav_header: one second
