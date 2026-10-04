@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/cwbudde/go-pocket-tts/internal/testutil"
 )
 
@@ -247,7 +249,7 @@ func TestSynthNative_Chunked(t *testing.T) {
 // asserts a valid WAV at 24 kHz.
 func TestSynthNativeSafetensors_ShortText(t *testing.T) {
 	modelPath, tokPath := requireNativeSafetensorsAssets(t)
-	manifestPath := requireNativeSafetensorsVoices(t)
+	manifestPath := requireNativeSafetensorsVoices(t, defaultVoiceFor(t, config.DefaultLanguage))
 	out := filepath.Join(t.TempDir(), "native_safetensors.wav")
 
 	root := NewRootCmd()
@@ -346,10 +348,11 @@ func requireNativeSafetensorsAssets(t testing.TB) (modelPath, tokPath string) {
 }
 
 // requireNativeSafetensorsVoices returns the flat English voice manifest
-// (voices/manifest.json) when it and every voice file it lists exist, and
-// skips otherwise. Synthesis without --voice and doctor need it: both resolve
-// the default voice (alba) through it, and doctor checks every listed file.
-func requireNativeSafetensorsVoices(t testing.TB) string {
+// (voices/manifest.json) when it lists the voices ids and their files exist,
+// and skips otherwise. Without ids every listed voice is required: doctor
+// checks every file, while synthesis without --voice resolves only the
+// default voice, which 'model download --voice alba' installs on its own.
+func requireNativeSafetensorsVoices(t testing.TB, ids ...string) string {
 	t.Helper()
 	for _, p := range []string{
 		filepath.Join("voices", "manifest.json"),
@@ -368,13 +371,35 @@ func requireNativeSafetensorsVoices(t testing.TB) string {
 		if err := json.Unmarshal(data, &manifest); err != nil {
 			t.Fatalf("parse %s: %v", p, err)
 		}
+		all := len(ids) == 0
+		paths := make(map[string]string, len(manifest.Voices))
 		for _, v := range manifest.Voices {
-			if _, err := os.Stat(filepath.Join(filepath.Dir(p), v.Path)); err != nil {
-				t.Skipf("voice %q of %s unavailable: %v (run 'pockettts model download')", v.ID, p, err)
+			paths[v.ID] = v.Path
+			if all {
+				ids = append(ids, v.ID)
+			}
+		}
+		for _, id := range ids {
+			path, ok := paths[id]
+			if !ok {
+				t.Fatalf("voice %q is not listed in %s", id, p)
+			}
+			if _, err := os.Stat(filepath.Join(filepath.Dir(p), path)); err != nil {
+				t.Skipf("voice %q of %s unavailable: %v (run 'pockettts model download')", id, p, err)
 			}
 		}
 		return p
 	}
 	t.Skip("voice manifest voices/manifest.json unavailable (run 'pockettts model download')")
 	return ""
+}
+
+// defaultVoiceFor returns the voice synthesis uses without --voice.
+func defaultVoiceFor(t testing.TB, language string) string {
+	t.Helper()
+	mc, err := modelcfg.Lookup(language)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return mc.DefaultVoice
 }
