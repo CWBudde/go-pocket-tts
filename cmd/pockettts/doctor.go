@@ -184,7 +184,8 @@ func probePythonVersion() (string, error) {
 
 // collectVoiceFiles returns resolved absolute voice file paths from the
 // manifest. Paths are resolved relative to the manifest directory, not to the
-// working directory, so doctor checks are correct regardless of CWD.
+// working directory, so doctor checks are correct regardless of CWD. Missing
+// files are resolved the same way, so doctor reports where it looked.
 func collectVoiceFiles(manifestPath string) []string {
 	vm, err := tts.NewVoiceManager(manifestPath)
 	if err != nil {
@@ -195,12 +196,9 @@ func collectVoiceFiles(manifestPath string) []string {
 
 	paths := make([]string, 0, len(voices))
 	for _, v := range voices {
-		resolved, err := vm.ResolvePath(v.ID)
-		if err != nil {
-			// Voice file missing or unresolvable — include the raw path so the
-			// doctor check can report the failure with a useful message.
-			paths = append(paths, v.Path)
-			continue
+		resolved := v.Path
+		if !filepath.IsAbs(resolved) {
+			resolved = filepath.Join(filepath.Dir(manifestPath), resolved)
 		}
 		// Make the path absolute so the doctor stat check is CWD-independent.
 		abs, err := filepath.Abs(resolved)
@@ -208,7 +206,7 @@ func collectVoiceFiles(manifestPath string) []string {
 			resolved = abs
 		}
 
-		paths = append(paths, resolved)
+		paths = append(paths, filepath.Clean(resolved))
 	}
 
 	return paths
