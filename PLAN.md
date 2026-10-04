@@ -599,10 +599,24 @@ Follow-ups:
       (all fail with the old 16-bit check) and WAVE_FORMAT_EXTENSIBLE int16/int24/float32 (40-byte fmt chunk; fails
       when the sub-format GUID names A-law); a synth WAV converted with `afconvert` to `LEI24`/`LEI32`/`LEF32` decodes to
       the same samples as the 16-bit original.
-- [ ] Prompt preprocessing before `end_on_pause`: upstream `get_state_for_audio_prompt` truncates the prompt to 30 s,
+- [x] Prompt preprocessing before `end_on_pause`: upstream `get_state_for_audio_prompt` truncates the prompt to 30 s,
       downmixes to mono and resamples to the Mimi rate (`convert_audio`, `resample_poly`); Go rejects anything that
       isn't 24 kHz mono and never truncates. (Found 2026-10-04.) `audio.DecodeWAV` also rejects 8-bit PCM, which
       upstream's `audio_read` reads (`test_audio.py::test_audio_read_uses_soundfile_for_8_bit_wav`, 8-bit 8 kHz).
+      (2026-10-04) — `EncodeVoice` now runs `audio.PrepareVoicePrompt`: cut to 30 s at the source rate (upstream's CLI
+      passes `truncate=True`), `audio.ResamplePoly` to 24 kHz, then `EndOnPause`. `ResamplePoly` ports scipy
+      `resample_poly` (Kaiser β 5 firwin, taps rounded to float32 like scipy on float32 input, same pre-pad/remove
+      alignment); `TestResamplePoly_MatchesScipy` checks 8 cases from `scripts/dump_resample_golden.py` (upstream
+      `convert_audio`, scipy 1.18.1) to ≤ 2.4e-7. algo-dsp's resampler is causal with its own taps, so it can't match.
+      `audio.DecodePromptWAV` reads any rate and channel count (mean downmix) and 8-bit PCM as `(b−128)/128` like
+      libsndfile (`cwbudde/wav` centres on 127.5); `DecodeWAV` stays strict for `synth`. Ported upstream 8-bit test;
+      `TestEncodeVoice_ResamplesAndDownmixesPrompt` (stereo 48 kHz through the fake encoder). Mutations: Kaiser β 6,
+      pre-remove +1, 8-bit centre 127.5, no truncation, the 30 s limit at 24 kHz, truncating after resampling, the first
+      channel instead of the mean, and `EndOnPause` alone in `EncodeVoice` each fail a test. `afconvert` copies of a
+      `synth` WAV (44.1 kHz stereo int16, 8 kHz u8, 48 kHz float32) match upstream `audio_read` + `convert_audio` to
+      ≤ 1.8e-7; upstream's own `audio_read` raises on float WAVs (`wave` rejects format tag 3 before its soundfile
+      fallback), Go accepts them. Raw PCM prompts stay 24 kHz mono 16-bit. No end-to-end `export-voice` run: ORT is
+      not installed here.
 - [ ] Encoder latent dim from config (`mimiEncoderLatentDim = 512` hard-coded in
       `internal/onnx/voice_encode.go`; new models use 32) + `speaker_proj_weight [1024, inner_dim]`
 - [ ] Cloning for new models requires the gated `kyutai/pocket-tts` weights (`weights_path`); the ungated
