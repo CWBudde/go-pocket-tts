@@ -2,12 +2,16 @@
 
 A pure-Go CLI and HTTP server for [PocketTTS](https://github.com/kyutai-labs/pocket-tts) text-to-speech synthesis. The default backend runs inference directly from safetensors weights — no Python, no ONNX Runtime required. An optional ONNX backend is available as a fallback.
 
+**Online demo:** <https://cwbudde.github.io/go-pocket-tts/> runs the same Go inference in
+your browser (WebAssembly); it downloads the selected model from Hugging Face.
+
 - Synthesize speech from text with the native Go backend (AVX2/FMA optimized)
+- Six embedded upstream model configs: English and German, 6 and 24 layers
 - Serve TTS over HTTP with concurrent worker pool and graceful shutdown
 - Download PocketTTS model checkpoints from Hugging Face
 - Export voice `.safetensors` files from a WAV/PCM prompt
 - Optionally export and run ONNX subgraphs via ONNX Runtime
-- Run in-browser via experimental WASM kernel
+- Run in-browser via experimental WASM kernel ([online demo](https://cwbudde.github.io/go-pocket-tts/))
 
 ## Status
 
@@ -16,7 +20,8 @@ All core features are implemented and functional.
 - Runtime binary: `pockettts` (`synth`, `export-voice`, `serve`, `doctor`, `health`, `model download`, `model verify`).
 - Tooling binary: `pockettts-tools` (`model export`).
 - HTTP server endpoints: `GET /health`, `GET /voices`, `POST /tts`.
-- Experimental browser app via Go WASM kernel (GitHub Pages deployment).
+- Experimental browser app via Go WASM kernel, deployed to GitHub Pages at
+  <https://cwbudde.github.io/go-pocket-tts/> with a picker for all six model configs.
 - Upstream alignment: the current reintegration pass was checked against
   `kyutai-labs/pocket-tts` commit `2dff8a2d1b3b21bf44ecf0084cc8ce79ab6d6bba`
   and upstream package version `2.1.0`.
@@ -210,8 +215,8 @@ Write the WAV to stdout:
 ## Languages
 
 `--language` (`tts.language`, `POCKETTTS_TTS_LANGUAGE`) selects one of the
-embedded upstream model configs. One process serves one language, so start one
-`serve` per language.
+embedded upstream model configs. One `serve` process can host several of them;
+see [Several languages](#several-languages).
 
 | `--language`             | Layers | Sampler  | Default voice |
 | ------------------------ | ------ | -------- | ------------- |
@@ -382,8 +387,9 @@ curl -s -X POST http://localhost:8080/tts \
 - Each model loads on its first request. At most `--server-max-languages`
   (`server.max_languages`, default 2) stay loaded: the least recently used one
   is unloaded for another language and freed once its running requests finish,
-  so memory can briefly exceed the cap. The 6-layer models hold about 210–235 MB
-  of weights each, the `*_24l` models about 670 MB.
+  so memory can briefly exceed the cap. A loaded model keeps only its decoded
+  float32 weights (the checkpoint bytes are freed after loading): about
+  435–470 MB for the 6-layer models, about 1.34 GB for the `*_24l` models.
 - `--workers` limits concurrent synthesis across all languages; a request
   loads its language's model only once it has a worker slot.
 - A language that is not served gets 400. With `--backend native-onnx` or `cli`,
@@ -405,7 +411,7 @@ The CLI also has a probe command:
 
 ## Web WASM App (Experimental)
 
-This repo includes a GitHub Action that builds a browser app artifact with:
+Try it at <https://cwbudde.github.io/go-pocket-tts/>. This repo includes a GitHub Action that builds a browser app artifact with:
 
 - Go wasm kernel: `web/dist/pockettts-kernel.wasm`
 - Go runtime JS shim: `web/dist/wasm_exec.js`
