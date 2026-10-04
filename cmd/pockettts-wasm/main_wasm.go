@@ -82,6 +82,7 @@ func main() {
 		"normalize":   js.FuncOf(normalizeText),
 		"tokenize":    js.FuncOf(tokenizeText),
 		"synthesize":  js.FuncOf(synthesizeAsync),
+		"cloneVoice":  js.FuncOf(cloneVoiceAsync),
 	}
 
 	js.Global().Set("PocketTTSKernel", js.ValueOf(kernel))
@@ -231,7 +232,76 @@ func loadModel(modelSafetensors, tokenizerBytes []byte, configName string, progr
 	return okResult(map[string]any{
 		"config":      loaded.name,
 		"model_bytes": modelSize,
+		// can_clone is false for an ungated checkpoint, whose Mimi encoder
+		// weights are zeroed; cloneVoice then fails.
+		"can_clone": loaded.canClone(),
 	}), nil
+}
+
+// loadedEngine returns the engine loadModel installed, nil before the first
+// load and after unloadModel.
+func loadedEngine() *nativeEngine {
+	engineMu.RLock()
+	defer engineMu.RUnlock()
+
+	return engine
+}
+
+// cloneVoiceAsync is the JS-facing wrapper of cloneVoice. It expects:
+//
+//	args[0] – Uint8Array: a WAV voice prompt (any sample rate and channel
+//	          count; the first 30 s are used)
+//
+// It resolves to {ok, voice_safetensors: Uint8Array, frames} and rejects when
+// the loaded checkpoint cannot clone (an ungated one) or the WAV is invalid.
+// voice_safetensors is an audio_prompt embedding for synthesize's
+// voiceSafetensors option.
+func cloneVoiceAsync(_ js.Value, args []js.Value) any {
+	promiseCtor := js.Global().Get("Promise")
+	var handler js.Func
+	handler = js.FuncOf(func(_ js.Value, pArgs []js.Value) any {
+		defer handler.Release()
+
+		resolve, reject := pArgs[0], pArgs[1]
+
+		if len(args) < 1 {
+			reject.Invoke("cloneVoice requires WAV bytes")
+			return nil
+		}
+
+		wav, ok := copyJSBytes(args[0])
+		if !ok || len(wav) == 0 {
+			reject.Invoke("voice prompt WAV bytes must be a non-empty Uint8Array/ArrayBuffer")
+			return nil
+		}
+
+		go func() {
+			browserYield() // let the page show the cloning status first
+
+			currentEngine := loadedEngine()
+			if currentEngine == nil {
+				reject.Invoke("model is not loaded; call loadModel first")
+				return
+			}
+
+			blob, frames, err := currentEngine.cloneVoice(wav)
+			if err != nil {
+				reject.Invoke(err.Error())
+				return
+			}
+
+			out := js.Global().Get("Uint8Array").New(len(blob))
+			js.CopyBytesToJS(out, blob)
+			resolve.Invoke(js.ValueOf(okResult(map[string]any{
+				"voice_safetensors": out,
+				"frames":            frames,
+			})))
+		}()
+
+		return nil
+	})
+
+	return promiseCtor.New(handler)
 }
 
 // unloadModel drops the loaded model, so the page can free its memory before
