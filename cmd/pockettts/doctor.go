@@ -13,6 +13,7 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/doctor"
 	"github.com/cwbudde/go-pocket-tts/internal/model"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
 	"github.com/cwbudde/go-pocket-tts/internal/tts"
 	"github.com/spf13/cobra"
 )
@@ -27,35 +28,14 @@ func newDoctorCmd() *cobra.Command {
 				return err
 			}
 
-			exe := cfg.TTS.CLIPath
-			if exe == "" {
-				exe = "pocket-tts"
-			}
-
 			backend, err := config.NormalizeBackend(cfg.TTS.Backend)
 			if err != nil {
 				return err
 			}
 
-			nativeMode := backend == config.BackendNative || backend == config.BackendNativeONNX
 			_, _ = fmt.Fprintf(os.Stdout, "backend: %s\n", backend)
 
-			dcfg := doctor.Config{
-				PocketTTSVersion: func() (string, error) {
-					return probePocketTTSVersion(exe)
-				},
-				SkipPocketTTS: nativeMode,
-				PythonVersion: probePythonVersion,
-				SkipPython:    nativeMode,
-				VoiceFiles:    collectVoiceFiles(cfg.Paths.VoiceManifest),
-			}
-			if backend == config.BackendNative {
-				dcfg.NativeModelPath = cfg.Paths.ModelPath
-				dcfg.TokenizerModelPath = cfg.Paths.TokenizerModel
-				dcfg.ValidateSafetensors = safetensors.ValidateModelKeys
-			}
-
-			result := doctor.Run(dcfg, os.Stdout)
+			result := doctor.Run(newDoctorConfig(cfg, backend), os.Stdout)
 
 			// ONNX model verify as an additional check.
 			// Skip gracefully when no manifest is present (models not yet downloaded).
@@ -105,6 +85,72 @@ func newDoctorCmd() *cobra.Command {
 	}
 
 	return cmd
+}
+
+// newDoctorConfig returns the checks for backend. The native backends check
+// the selected language's files: voice manifest and default voice, and for
+// native-safetensors the model and a tokenizer load against n_bins.
+func newDoctorConfig(cfg config.Config, backend string) doctor.Config {
+	exe := cfg.TTS.CLIPath
+	if exe == "" {
+		exe = "pocket-tts"
+	}
+
+	nativeMode := backend == config.BackendNative || backend == config.BackendNativeONNX
+
+	dcfg := doctor.Config{
+		PocketTTSVersion: func() (string, error) {
+			return probePocketTTSVersion(exe)
+		},
+		SkipPocketTTS: nativeMode,
+		PythonVersion: probePythonVersion,
+		SkipPython:    nativeMode,
+		VoiceFiles:    collectVoiceFiles(cfg.Paths.VoiceManifest),
+		Language:      cfg.TTS.Language,
+	}
+
+	if cfg.TTS.ModelConfigPath != "" {
+		dcfg.Language = "custom model config " + cfg.TTS.ModelConfigPath
+	}
+
+	if !nativeMode {
+		return dcfg
+	}
+
+	dcfg.VoiceManifestPath = cfg.Paths.VoiceManifest
+	dcfg.ResolveVoice = func(id string) (string, error) {
+		vm, err := tts.NewVoiceManager(cfg.Paths.VoiceManifest)
+		if err != nil {
+			return "", err
+		}
+
+		return vm.ResolvePath(id)
+	}
+
+	nBins := 0
+
+	if cfg.Model != nil {
+		nBins = cfg.Model.FlowLM.LookupTable.NBins
+	}
+
+	if backend == config.BackendNative {
+		// Only native falls back to the default voice; the ONNX runtime
+		// rejects the predefined model-state voices.
+		if cfg.Model != nil {
+			dcfg.DefaultVoice = cfg.Model.DefaultVoice
+		}
+
+		dcfg.NativeModelPath = cfg.Paths.ModelPath
+		dcfg.TokenizerModelPath = cfg.Paths.TokenizerModel
+		dcfg.ValidateSafetensors = safetensors.ValidateModelKeys
+		dcfg.LoadTokenizer = func(path string) error {
+			_, err := tokenizer.Load(path, nBins)
+
+			return err
+		}
+	}
+
+	return dcfg
 }
 
 // probePocketTTSVersion runs `pocket-tts --version` and returns its output.

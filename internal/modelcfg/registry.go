@@ -27,6 +27,30 @@ var defaultVoiceForLanguage = []struct{ key, voice string }{
 	{"dutch", "daan"},
 }
 
+// defaultTextForLanguage mirrors upstream DEFAULT_TEXT_FOR_LANGUAGE, in its
+// order, since the first substring match wins. The first entry is the
+// fallback (upstream: DEFAULT_LANGUAGE).
+var defaultTextForLanguage = []struct{ key, text string }{
+	{"english", "Hello world. I am Kyutai's Pocket TTS. " +
+		"I'm fast enough to run on small CPUs. " +
+		"I hope you'll like me."},
+	{"french", "Bonjour le monde. Je suis le TTS de poche de Kyutai. " +
+		"Je suis assez rapide pour fonctionner sur de petits CPU. " +
+		"J'espère que vous m'aimerez."},
+	{"german", "Hallo Welt. Ich bin Pocket TTS von Kyutai. " +
+		"Ich bin schnell genug, um auch auf kleinen CPUs zu laufen. " +
+		"Ich hoffe, ich gefalle dir."},
+	{"portuguese", "Olá mundo. Eu sou o Pocket TTS da Kyutai. " +
+		"Sou rápido o suficiente para rodar em CPUs pequenas. " +
+		"Espero que você goste de mim."},
+	{"italian", "Ciao mondo. Sono il Pocket TTS di Kyutai. " +
+		"Sono abbastanza veloce da funzionare su piccole CPU. " +
+		"Spero che ti piacerò."},
+	{"spanish", "Hola mundo. Soy el Pocket TTS de Kyutai. " +
+		"Soy lo suficientemente rápido para funcionar en pequeñas CPU. " +
+		"Espero que te guste."},
+}
+
 //go:embed configs/*.yaml
 var embeddedConfigs embed.FS
 
@@ -67,6 +91,7 @@ func Lookup(language string) (*ModelConfig, error) {
 	}
 
 	cfg.DefaultVoice = defaultVoiceFor(language)
+	cfg.DefaultText = defaultTextFor(language)
 	cfg.VoicesRevision = VoicesRevision
 
 	return cfg, nil
@@ -74,7 +99,7 @@ func Lookup(language string) (*ModelConfig, error) {
 
 // LoadCustom reads a model config file that is not one of the embedded
 // languages (upstream: --config). Like upstream, its default voice is the
-// fallback voice, which any model can clone.
+// fallback voice, which any model can clone, and its default text English.
 func LoadCustom(path string) (*ModelConfig, error) {
 	cfg, err := Load(path)
 	if err != nil {
@@ -82,6 +107,7 @@ func LoadCustom(path string) (*ModelConfig, error) {
 	}
 
 	cfg.DefaultVoice = defaultVoiceFallback
+	cfg.DefaultText = defaultTextFor("")
 	cfg.VoicesRevision = VoicesRevision
 
 	return cfg, nil
@@ -97,4 +123,16 @@ func defaultVoiceFor(language string) string {
 	}
 
 	return defaultVoiceFallback
+}
+
+// defaultTextFor matches language by substring like upstream
+// get_default_text_for_language and falls back to the first (English) text.
+func defaultTextFor(language string) string {
+	for _, entry := range defaultTextForLanguage {
+		if language != "" && strings.Contains(language, entry.key) {
+			return entry.text
+		}
+	}
+
+	return defaultTextForLanguage[0].text
 }

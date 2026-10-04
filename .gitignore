@@ -72,6 +72,7 @@ __pycache__/
 
 # Voice embeddings (large binary files, downloaded separately)
 voices/*.safetensors
+voices/download-manifest.lock.json
 # Per-language voice downloads (voices/<language>/*.safetensors + manifest.json)
 voices/*/
 

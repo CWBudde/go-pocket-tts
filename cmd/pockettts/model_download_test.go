@@ -1,10 +1,14 @@
 package main
 
 import (
+	"io"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 )
 
 func TestResolveModelDownload(t *testing.T) {
@@ -43,5 +47,90 @@ func TestResolveModelDownload_CustomModelConfig(t *testing.T) {
 	_, _, err := resolveModelDownload(cfg, "models", false)
 	if err == nil {
 		t.Error("resolveModelDownload with --model-config = nil error; want error")
+	}
+}
+
+func TestModelDownloadVoices(t *testing.T) {
+	tests := []struct {
+		name     string
+		language string
+		voices   []string
+		all      bool
+		want     []string
+	}{
+		{"default voice of german", "german", nil, false, []string{"juergen"}},
+		{"default voice of the flat language in another manifest", config.DefaultLanguage, nil, false, []string{"alba"}},
+		{"german_24l shares the german default", "german_24l", nil, false, []string{"juergen"}},
+		{"explicit voices win", "german", []string{"alba", "juergen"}, false, []string{"alba", "juergen"}},
+		{"explicit voices win over all", config.DefaultLanguage, []string{"marius"}, true, []string{"marius"}},
+		{"all voices", "german", nil, true, nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.DefaultConfig()
+			cfg.TTS.Language = tc.language
+
+			mc, err := modelcfg.Lookup(tc.language)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cfg.Model = mc
+
+			got, err := modelDownloadVoices(cfg, tc.voices, tc.all)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if !slices.Equal(got, tc.want) || (got == nil) != (tc.want == nil) {
+				t.Errorf("modelDownloadVoices = %#v; want %#v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestModelDownloadCmd_VoiceFlagsAreExclusive(t *testing.T) {
+	for _, args := range [][]string{
+		{"--no-voices", "--voice", "juergen"},
+		{"--no-voices", "--all-voices"},
+		{"--all-voices", "--voice", "juergen"},
+	} {
+		cmd := newModelDownloadCmd()
+		cmd.SetArgs(args)
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+
+		err := cmd.Execute()
+		if err == nil || !strings.Contains(err.Error(), "none of the others can be") {
+			t.Errorf("model download %v: error = %v; want a mutually exclusive flags error", args, err)
+		}
+	}
+}
+
+// The tracked voices/manifest.json lists every flat-layout voice and is not
+// rewritten, so fetching only the default would leave doctor failing on the
+// rest.
+func TestModelDownloadCmd_FlatManifestGetsEveryVoice(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.TTS.Language = config.DefaultLanguage
+	cfg.Paths.VoiceManifest = config.PathsForLanguage(config.DefaultLanguage).VoiceManifest
+
+	mc, err := modelcfg.Lookup(config.DefaultLanguage)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg.Model = mc
+
+	_, got, err := modelDownloadVoiceTarget(cfg, nil, false)
+	if err != nil || got != nil {
+		t.Errorf("flat layout voices = %#v, %v; want nil (every voice)", got, err)
+	}
+
+	cfg.Paths.VoiceManifest = filepath.Join(t.TempDir(), "manifest.json")
+
+	_, got, err = modelDownloadVoiceTarget(cfg, nil, false)
+	if err != nil || !slices.Equal(got, []string{"alba"}) {
+		t.Errorf("own manifest voices = %#v, %v; want the default voice alba", got, err)
 	}
 }

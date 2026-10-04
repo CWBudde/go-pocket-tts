@@ -47,10 +47,12 @@ type ModelConfig struct {
 	ModelRecommendedFramesAfterEOS *int              `yaml:"model_recommended_frames_after_eos"`
 	DefaultTemperature             float64           `yaml:"default_temperature"`
 
-	// DefaultVoice and VoicesRevision are not part of the upstream YAML
-	// (upstream keeps them in DEFAULT_VOICE_FOR_LANGUAGE and the voice
-	// download code); the language registry fills them in.
+	// DefaultVoice, DefaultText and VoicesRevision are not part of the
+	// upstream YAML (upstream keeps them in DEFAULT_VOICE_FOR_LANGUAGE,
+	// DEFAULT_TEXT_FOR_LANGUAGE and the voice download code); the language
+	// registry fills them in.
 	DefaultVoice   string `yaml:"-"`
+	DefaultText    string `yaml:"-"`
 	VoicesRevision string `yaml:"-"`
 }
 

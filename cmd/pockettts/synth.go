@@ -174,7 +174,7 @@ func synthesizeForBackend(
 			return nil, errors.New("--tts-arg is only supported with --backend cli")
 		}
 
-		resolvedVoice, err := resolveVoiceForNative(cfg.Paths.VoiceManifest, selectedVoice)
+		resolvedVoice, err := resolveNativeVoice(cfg, selectedBackend, selectedVoice)
 		if err != nil {
 			return nil, err
 		}
@@ -431,6 +431,25 @@ func resolveSynthBackend(flagBackend, cfgBackend string) (string, error) {
 	return config.NormalizeBackend(backend)
 }
 
+// resolveNativeVoice resolves voice for the native backends. Without one,
+// native takes the model config's default voice (upstream
+// get_default_voice_for_language), which must then resolve too: generating
+// without a voice ends almost at once. native-onnx gets no default, as its
+// runtime rejects the predefined model-state voices.
+func resolveNativeVoice(cfg config.Config, backend, voice string) (string, error) {
+	if strings.TrimSpace(voice) != "" || backend != config.BackendNative ||
+		cfg.Model == nil || cfg.Model.DefaultVoice == "" {
+		return resolveVoiceForNative(cfg.Paths.VoiceManifest, voice)
+	}
+
+	path, err := resolveVoiceForNative(cfg.Paths.VoiceManifest, cfg.Model.DefaultVoice)
+	if err != nil {
+		return "", fmt.Errorf("no --voice given, so the default voice is used: %w", err)
+	}
+
+	return path, nil
+}
+
 // resolveVoiceForNative resolves a voice identifier to an absolute .safetensors
 // path for the native backend. Unlike resolveVoiceOrPath (which falls back to
 // returning the raw voice string for the CLI), an ID that the manifest cannot
@@ -448,7 +467,7 @@ func resolveVoiceForNative(manifestPath, voice string) (string, error) {
 
 	_, statErr := os.Stat(manifestPath)
 	if os.IsNotExist(statErr) {
-		return "", fmt.Errorf("--voice %q: voice manifest %s not found; run 'pockettts-tools voice download' "+
+		return "", fmt.Errorf("voice %q: voice manifest %s not found; run 'pockettts model download' "+
 			"(same --language) or pass a .safetensors path", voice, manifestPath)
 	} else if statErr != nil {
 		return "", fmt.Errorf("stat voice manifest: %w", statErr)
@@ -466,12 +485,12 @@ func resolveVoiceForNative(manifestPath, voice string) (string, error) {
 			ids = append(ids, v.ID)
 		}
 
-		return "", fmt.Errorf("--voice %q is not in %s (voices: %s)", voice, manifestPath, strings.Join(ids, ", "))
+		return "", fmt.Errorf("voice %q is not in %s (voices: %s)", voice, manifestPath, strings.Join(ids, ", "))
 	}
 
 	path, err := vm.ResolvePath(voice)
 	if err != nil {
-		return "", fmt.Errorf("resolve --voice %q: %w", voice, err)
+		return "", fmt.Errorf("resolve voice %q: %w", voice, err)
 	}
 
 	return path, nil

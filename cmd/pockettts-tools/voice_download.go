@@ -1,11 +1,8 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	"github.com/cwbudde/go-pocket-tts/internal/model"
@@ -29,40 +26,15 @@ func newVoiceDownloadCmd() *cobra.Command {
 				return err
 			}
 
-			target, err := resolveVoiceDownload(cfg, outDir, cmd.Flags().Changed("out-dir"))
+			target, err := model.ResolveVoiceTarget(cfg, outDir, cmd.Flags().Changed("out-dir"))
 			if err != nil {
 				return err
 			}
 
-			manifest, err := model.VoiceManifestForLanguage(target.language, voices)
+			err = model.DownloadVoices(target, voices, os.Stdout)
 			if err != nil {
 				return fmt.Errorf("voice download failed: %w", err)
 			}
-
-			err = model.DownloadManifest(model.DownloadOptions{
-				OutDir: target.dir,
-				Stdout: os.Stdout,
-				Stderr: os.Stderr,
-			}, manifest)
-			if err != nil {
-				return fmt.Errorf("voice download failed: %w", err)
-			}
-
-			if !target.writeIndex {
-				return nil
-			}
-
-			ids := make([]string, 0, len(manifest.Files))
-			for _, f := range manifest.Files {
-				ids = append(ids, strings.TrimSuffix(f.LocalPath, ".safetensors"))
-			}
-
-			err = model.WriteVoiceIndex(target.manifest, ids)
-			if err != nil {
-				return fmt.Errorf("voice download failed: %w", err)
-			}
-
-			_, _ = fmt.Fprintf(os.Stdout, "wrote voice manifest: %s\n", target.manifest)
 
 			return nil
 		},
@@ -72,35 +44,4 @@ func newVoiceDownloadCmd() *cobra.Command {
 	cmd.Flags().StringArrayVar(&voices, "voice", nil, "Predefined voice to download (repeatable; default: all voices of the language)")
 
 	return cmd
-}
-
-// voiceDownloadTarget says where a voice download goes.
-type voiceDownloadTarget struct {
-	language   string // --language whose predefined voices to fetch
-	dir        string // directory for the voice files
-	manifest   string // voice manifest listing them
-	writeIndex bool   // false only for the tracked flat voices/manifest.json
-}
-
-// resolveVoiceDownload targets the configured voice manifest
-// (paths.voice_manifest, which follows --language unless set) and its
-// directory, or dir/manifest.json when --out-dir is set.
-func resolveVoiceDownload(cfg config.Config, outDir string, outDirSet bool) (voiceDownloadTarget, error) {
-	if cfg.TTS.ModelConfigPath != "" {
-		return voiceDownloadTarget{}, errors.New("custom model configs (--model-config) have no predefined voices to download; use --language")
-	}
-
-	manifest := filepath.FromSlash(cfg.Paths.VoiceManifest)
-	if outDirSet {
-		manifest = filepath.Join(outDir, "manifest.json")
-	}
-
-	flatDefault := filepath.FromSlash(config.PathsForLanguage(config.DefaultLanguage).VoiceManifest)
-
-	return voiceDownloadTarget{
-		language:   cfg.TTS.Language,
-		dir:        filepath.Dir(manifest),
-		manifest:   manifest,
-		writeIndex: cfg.TTS.Language != model.FlatLayoutLanguage || filepath.Clean(manifest) != flatDefault,
-	}, nil
 }
