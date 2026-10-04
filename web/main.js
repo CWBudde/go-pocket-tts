@@ -111,6 +111,19 @@ function clonedVoiceIDs(config) {
   return state.clonedVoices.get(config) || [];
 }
 
+// dropClonedVoices forgets every cloned voice: a clone is the output of the
+// loaded checkpoint's voice encoder and speaker projection, so it must not
+// reach a model loaded from another checkpoint.
+function dropClonedVoices() {
+  for (const [config, ids] of state.clonedVoices) {
+    for (const id of ids) {
+      state.voiceBytes.delete(voiceKey(config, id));
+      state.voiceErrors.delete(voiceKey(config, id));
+    }
+  }
+  state.clonedVoices.clear();
+}
+
 function selectedVoiceState() {
   const key = selectedVoiceKey();
   if (!key) return "unavailable";
@@ -474,6 +487,7 @@ async function selectLanguage(config, checkpointFile = null) {
   state.modelError = "";
   state.checkpointName = checkpointFile ? checkpointFile.name : "";
   state.canClone = false;
+  dropClonedVoices();
   applyLanguageDefaults(lang);
   renderInfo();
   setSynthesizeEnabled();
@@ -567,6 +581,9 @@ async function selectLanguage(config, checkpointFile = null) {
 // cloned for, cached like a downloaded voice.
 async function cloneVoiceFromFile(file) {
   const config = state.config;
+  // A checkpoint switch while the clone runs drops cloned voices; the result
+  // of this one would come from the previous checkpoint's encoder.
+  const loadSeq = state.loadSeq;
   if (!modelReady() || !state.canClone) {
     renderInfo();
     return;
@@ -582,11 +599,16 @@ async function cloneVoiceFromFile(file) {
   try {
     const wavBytes = new Uint8Array(await file.arrayBuffer());
     const result = await enqueueKernel(() => {
-      if (state.loadedConfig !== config) throw new Error(`${config} is no longer loaded`);
+      if (state.loadSeq !== loadSeq || state.loadedConfig !== config) {
+        throw new Error(`the ${config} checkpoint is no longer loaded`);
+      }
       return globalThis.PocketTTSKernel.cloneVoice(wavBytes);
     });
     if (!result?.ok) {
       throw new Error(result?.error || "voice cloning failed");
+    }
+    if (state.loadSeq !== loadSeq) {
+      throw new Error("the checkpoint changed while cloning; clone the voice again");
     }
 
     state.voiceBytes.set(voiceKey(config, voiceID), result.voice_safetensors);
