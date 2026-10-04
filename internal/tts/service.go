@@ -241,6 +241,19 @@ func (v voiceConditioning) applyTo(cfg *RuntimeGenerateConfig) {
 	cfg.VoiceModelState = v.modelState
 }
 
+// CheckVoiceFile loads the voice at voicePath (a voice embedding or a
+// model-state voice) the way synthesis does and reports why it cannot be
+// used. serve calls it at startup so a broken default voice fails fast.
+func CheckVoiceFile(voicePath string) error {
+	if strings.TrimSpace(voicePath) == "" {
+		return errors.New("voice path is empty")
+	}
+
+	_, err := loadVoiceConditioning(voicePath)
+
+	return err
+}
+
 func loadVoiceConditioning(voicePath string) (voiceConditioning, error) {
 	if strings.TrimSpace(voicePath) == "" {
 		return voiceConditioning{}, nil

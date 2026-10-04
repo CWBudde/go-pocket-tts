@@ -40,6 +40,7 @@ var keySources = []keySource{
 	{"server.shutdown_timeout_secs", "shutdown-timeout", "11", func(c Config) any { return c.Server.ShutdownTimeout }},
 	{"server.max_text_bytes", "max-text-bytes", "1234", func(c Config) any { return c.Server.MaxTextBytes }},
 	{"server.request_timeout_secs", "request-timeout", "12", func(c Config) any { return c.Server.RequestTimeout }},
+	{"server.default_voice", "default-voice", "/x/voice.safetensors", func(c Config) any { return c.Server.DefaultVoice }},
 	{"tts.backend", "backend", "cli", func(c Config) any { return c.TTS.Backend }},
 	{"tts.voice", "tts-voice", "marius", func(c Config) any { return c.TTS.Voice }},
 	{"tts.cli_path", "tts-cli-path", "/x/pocket-tts", func(c Config) any { return c.TTS.CLIPath }},

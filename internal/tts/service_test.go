@@ -786,3 +786,49 @@ func TestSynthesize_FramesAfterEOS(t *testing.T) {
 		})
 	}
 }
+
+// serve checks its default voice at startup with CheckVoiceFile, so it must
+// accept both voice formats and reject anything it cannot load.
+func TestCheckVoiceFile(t *testing.T) {
+	dir := t.TempDir()
+
+	embedding := filepath.Join(dir, "embedding.safetensors")
+
+	err := safetensors.WriteFile(embedding, []safetensors.Tensor{
+		{Name: "audio_prompt", Shape: []int64{1, 2, 3}, Data: []float32{1, 2, 3, 4, 5, 6}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	modelState := filepath.Join(dir, "state.safetensors")
+
+	err = safetensors.WriteFile(modelState, []safetensors.Tensor{
+		{Name: "transformer.layers.0.self_attn/cache", Shape: []int64{2, 1, 1, 1, 1}, Data: []float32{1, 2}},
+		{Name: "transformer.layers.0.self_attn/offset", Shape: []int64{1}, Data: []float32{1}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	garbage := filepath.Join(dir, "garbage.safetensors")
+
+	err = os.WriteFile(garbage, []byte("voice-data"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, path := range []string{embedding, modelState} {
+		err := CheckVoiceFile(path)
+		if err != nil {
+			t.Errorf("CheckVoiceFile(%s) = %v; want nil", filepath.Base(path), err)
+		}
+	}
+
+	for _, path := range []string{garbage, filepath.Join(dir, "missing.safetensors"), ""} {
+		err := CheckVoiceFile(path)
+		if err == nil {
+			t.Errorf("CheckVoiceFile(%q) = nil; want an error", path)
+		}
+	}
+}
