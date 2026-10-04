@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
@@ -487,5 +488,52 @@ func TestStart_BrokenDefaultVoiceFailsFast(t *testing.T) {
 
 	if ctx.Err() != nil {
 		t.Fatal("Start blocked until the context ended; want an immediate error")
+	}
+}
+
+// Upstream's writer ends every generated file in 0.2 s of silence; /tts does
+// the same for the native backend.
+func TestNativeSynthesizer_AppendsTrailingSilence(t *testing.T) {
+	modelPath := filepath.Join("..", "..", "models", "tts_b6369a24.safetensors")
+	tokPath := filepath.Join("..", "..", "models", "tokenizer.model")
+	voicePath := filepath.Join("..", "..", "voices", "alba.safetensors")
+
+	for _, p := range []string{modelPath, tokPath, voicePath} {
+		_, err := os.Stat(p)
+		if err != nil {
+			t.Skipf("native assets unavailable: %v", err)
+		}
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.TTS.Backend = config.BackendNative
+	cfg.Paths.ModelPath = modelPath
+	cfg.Paths.TokenizerModel = tokPath
+
+	svc, err := tts.NewService(cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	defer svc.Close()
+
+	wav, err := (&nativeSynthesizer{svc: svc}).Synthesize(context.Background(), "Hi.", voicePath)
+	if err != nil {
+		t.Fatalf("Synthesize: %v", err)
+	}
+
+	samples, err := audio.DecodeWAV(wav)
+	if err != nil {
+		t.Fatalf("DecodeWAV: %v", err)
+	}
+
+	silence := audio.ExpectedSampleRate / 5
+	if len(samples) <= silence {
+		t.Fatalf("%d samples; want speech before %d samples of silence", len(samples), silence)
+	}
+
+	for i, s := range samples[len(samples)-silence:] {
+		if s != 0 {
+			t.Fatalf("sample %d of the tail = %v; want silence", i, s)
+		}
 	}
 }

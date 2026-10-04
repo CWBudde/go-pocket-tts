@@ -436,7 +436,22 @@ func (h *handler) streamChunks(
 		flusher.Flush()
 	}
 
-	return totalSamples, <-errCh
+	err = <-errCh
+	if err != nil || ctx.Err() != nil {
+		return totalSamples, err
+	}
+
+	// Upstream's streaming writer ends a finished stream in this silence.
+	silence := audio.AppendTrailingSilence(nil, audio.ExpectedSampleRate)
+
+	_, err = audio.WritePCM16Samples(w, silence)
+	if err != nil {
+		return totalSamples, err
+	}
+
+	flusher.Flush()
+
+	return totalSamples + len(silence), nil
 }
 
 // checkLanguage rejects a language the server does not serve with 400, so
@@ -832,7 +847,7 @@ func (n *nativeSynthesizer) Synthesize(ctx context.Context, text, voice string) 
 		return nil, err
 	}
 
-	return audio.EncodeWAV(samples)
+	return audio.EncodeWAV(audio.AppendTrailingSilence(samples, audio.ExpectedSampleRate))
 }
 
 func (n *nativeSynthesizer) SynthesizeStream(ctx context.Context, text, voice string, out chan<- tts.PCMChunk) error {

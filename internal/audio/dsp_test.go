@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"encoding/binary"
 	"math"
 	"testing"
 )
@@ -299,6 +300,66 @@ func TestChunkFadeIn(t *testing.T) {
 	if want := float32(0.5) * (float32(60) / float32(n-1)); got[60] != want {
 		t.Errorf("sample 60 = %v, want %v", got[60], want)
 	}
+}
+
+// Upstream test_stream_audio_chunks_patches_seekable_wav_header: one second
+// at 24 kHz is written as 28800 frames.
+func TestAppendTrailingSilence(t *testing.T) {
+	const sr = 24000
+
+	speech := make([]float32, sr)
+	for i := range speech {
+		speech[i] = 0.25
+	}
+
+	got := AppendTrailingSilence(speech, sr)
+	if len(got) != 28800 {
+		t.Fatalf("len = %d, want 28800", len(got))
+	}
+
+	for i := range sr {
+		if got[i] != 0.25 {
+			t.Fatalf("sample %d = %v, want the input unchanged", i, got[i])
+		}
+	}
+
+	for i := sr; i < len(got); i++ {
+		if got[i] != 0 {
+			t.Fatalf("sample %d = %v, want silence", i, got[i])
+		}
+	}
+
+	wav, err := EncodeWAV(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rate := binary.LittleEndian.Uint32(wav[24:28]); rate != sr {
+		t.Errorf("header sample rate = %d, want %d", rate, sr)
+	}
+
+	if frames := wavDataFrames(t, wav); frames != 28800 {
+		t.Errorf("header frames = %d, want 28800", frames)
+	}
+}
+
+// wavDataFrames returns the frame count the data chunk header of a mono
+// 16-bit WAV declares.
+func wavDataFrames(t *testing.T, wav []byte) int {
+	t.Helper()
+
+	for off := 12; off+8 <= len(wav); {
+		id, size := string(wav[off:off+4]), int(binary.LittleEndian.Uint32(wav[off+4:off+8]))
+		if id == "data" {
+			return size / 2
+		}
+
+		off += 8 + size + size%2
+	}
+
+	t.Fatal("no data chunk")
+
+	return 0
 }
 
 // Test helpers

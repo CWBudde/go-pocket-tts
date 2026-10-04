@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -110,10 +111,19 @@ func TestTTSStream_ProducesWAVWithChunkedPCM(t *testing.T) {
 	}
 
 	body := rec.Body.Bytes()
-	// Should have 44-byte WAV header + 5 samples * 2 bytes = 54 bytes total
-	expectedLen := 44 + len(samples)*2
+	// 44-byte WAV header + 5 samples, then upstream's 0.2 s of trailing
+	// silence (4800 samples at 24 kHz), 2 bytes each.
+	const silence = 4800
+
+	expectedLen := 44 + (len(samples)+silence)*2
 	if len(body) != expectedLen {
 		t.Fatalf("body length = %d; want %d", len(body), expectedLen)
+	}
+
+	for i := 44 + len(samples)*2; i < len(body); i++ {
+		if body[i] != 0 {
+			t.Fatalf("byte %d = %d; want trailing silence", i, body[i])
+		}
 	}
 
 	// Verify RIFF header
@@ -179,6 +189,22 @@ func TestTTSStream_TextTooLarge(t *testing.T) {
 
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("want 413, got %d", rec.Code)
+	}
+}
+
+func TestTTSStream_ErrorSkipsTrailingSilence(t *testing.T) {
+	samples := []float32{0.1, 0.2}
+	streamer := &stubStreamingSynthesizer{
+		chunks: []tts.PCMChunk{{Samples: samples}},
+		err:    errors.New("generation failed"),
+	}
+	h := server.NewHandler(&stubSynthesizer{}, &stubVoiceLister{}, server.WithStreamer(streamer))
+	rec := postStreamJSON(h, map[string]string{"text": "hello"})
+
+	// The header is already sent; a failed stream just ends, without the
+	// silence that marks a finished one.
+	if got, want := rec.Body.Len(), 44+len(samples)*2; got != want {
+		t.Fatalf("body length = %d; want %d", got, want)
 	}
 }
 

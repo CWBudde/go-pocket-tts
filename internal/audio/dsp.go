@@ -71,6 +71,16 @@ func ChunkFadeIn(samples []float32, sampleRate int) {
 	LinearRamp(samples, sampleRate/200)
 }
 
+// TrailingSilenceSec is the silence upstream's StreamingWAVWriter.finalize
+// appends to every generated file and stream "to ensure proper playback".
+const TrailingSilenceSec = 0.2
+
+// AppendTrailingSilence returns samples followed by TrailingSilenceSec of
+// zeros at sampleRate.
+func AppendTrailingSilence(samples []float32, sampleRate int) []float32 {
+	return append(samples, make([]float32, int(float64(sampleRate)*TrailingSilenceSec))...)
+}
+
 // FadeIn applies a linear fade-in ramp over the given duration in milliseconds.
 // The ramp runs from 0 on the first sample to 1 on the last faded sample.
 func FadeIn(samples []float32, sampleRate int, ms float64) []float32 {

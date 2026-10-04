@@ -115,6 +115,9 @@ type synthDSPOptions struct {
 
 var runChunkSynthesis = synthesizeViaCLI
 
+// runNativeSynthesis is a var so tests can stub out the native model.
+var runNativeSynthesis = synthesizeNative
+
 func runSynthCommand(ctx context.Context, cfg config.Config, opts synthRunOptions, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 	selectedBackend, err := resolveSynthBackend(opts.Backend, cfg.TTS.Backend)
 	if err != nil {
@@ -155,7 +158,32 @@ func runSynthCommand(ctx context.Context, cfg config.Config, opts synthRunOption
 		result = processed
 	}
 
+	// The cli backend's WAV comes from upstream's writer, which already ends
+	// in its silence.
+	if selectedBackend != config.BackendCLI {
+		result, err = appendTrailingSilenceToWAV(result)
+		if err != nil {
+			return err
+		}
+	}
+
 	return writeSynthOutput(opts.Out, result, stdout)
+}
+
+// appendTrailingSilenceToWAV appends upstream's trailing silence after any DSP,
+// as upstream's writer does when it finalizes the file.
+func appendTrailingSilenceToWAV(wavData []byte) ([]byte, error) {
+	samples, err := audio.DecodeWAV(wavData)
+	if err != nil {
+		return nil, fmt.Errorf("decode WAV for trailing silence: %w", err)
+	}
+
+	out, err := audio.EncodeWAV(audio.AppendTrailingSilence(samples, audio.ExpectedSampleRate))
+	if err != nil {
+		return nil, fmt.Errorf("encode WAV with trailing silence: %w", err)
+	}
+
+	return out, nil
 }
 
 func synthesizeForBackend(
@@ -182,7 +210,7 @@ func synthesizeForBackend(
 		nativeCfg := cfg
 		nativeCfg.TTS.Backend = selectedBackend
 
-		return synthesizeNative(ctx, nativeCfg, chunks, resolvedVoice)
+		return runNativeSynthesis(ctx, nativeCfg, chunks, resolvedVoice)
 	case config.BackendCLI:
 		resolvedVoice, err := resolveVoiceOrPath(cfg.Paths.VoiceManifest, selectedVoice)
 		if err != nil {
