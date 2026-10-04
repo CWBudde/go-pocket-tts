@@ -222,6 +222,13 @@ func HasMimiEncoderWeights(path string) (bool, error) {
 		return false, err
 	}
 
+	info, err := f.Stat()
+	if err != nil {
+		return false, fmt.Errorf("stat %s: %w", path, err)
+	}
+
+	fileSize := info.Size()
+
 	var (
 		found bool
 		buf   []byte
@@ -242,6 +249,20 @@ func HasMimiEncoderWeights(path string) (bool, error) {
 		err = validateHeaderEntry(name, entry)
 		if err != nil {
 			return false, err
+		}
+
+		// Bound the range by the file before allocating it, like
+		// OpenStoreFromBytes does for the in-memory checkpoint. Comparing
+		// against the data length cannot overflow: validateHeaderEntry
+		// guarantees 0 <= Offsets[0] <= Offsets[1].
+		if int64(entry.Offsets[1]) > fileSize-dataStart {
+			return false, fmt.Errorf(
+				"safetensors: tensor %q data offsets %v exceed file size %d (data starts at %d)",
+				name,
+				entry.Offsets,
+				fileSize,
+				dataStart,
+			)
 		}
 
 		size := entry.Offsets[1] - entry.Offsets[0]

@@ -808,6 +808,43 @@ func TestHasMimiEncoderWeights(t *testing.T) {
 	}
 }
 
+// TestHasMimiEncoderWeights_RangeBeyondFile checks that a header advertising
+// tensor data past the end of the file is rejected before the range is
+// allocated.
+func TestHasMimiEncoderWeights_RangeBeyondFile(t *testing.T) {
+	headerJSON, err := json.Marshal(map[string]tensorMeta{
+		"mimi.encoder.model.0.conv.weight": {
+			DType:   "F32",
+			Shape:   []int64{16 << 20},
+			Offsets: [2]int{0, 64 << 20},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal header: %v", err)
+	}
+
+	// 8-byte header length, the header, then only 8 bytes of tensor data.
+	data := binary.LittleEndian.AppendUint64(nil, uint64(len(headerJSON)))
+	data = append(data, headerJSON...)
+	data = append(data, float32Bytes([]float32{1, 2})...)
+
+	path := filepath.Join(t.TempDir(), "model.safetensors")
+
+	err = os.WriteFile(path, data, 0o600)
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got, err := HasMimiEncoderWeights(path)
+	if err == nil {
+		t.Fatalf("HasMimiEncoderWeights = %v, want an error", got)
+	}
+
+	if !strings.Contains(err.Error(), "exceed file size") {
+		t.Errorf("error = %q, want it to mention the file size", err)
+	}
+}
+
 // TestHasMimiEncoderWeights_UngatedCheckpoints checks the downloaded
 // kyutai/pocket-tts-without-voice-cloning checkpoints, whose Mimi encoder is
 // zeroed.
