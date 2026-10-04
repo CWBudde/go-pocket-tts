@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
 	"github.com/cwbudde/go-pocket-tts/internal/config"
+	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/spf13/cobra"
@@ -20,7 +22,22 @@ type voiceEncoder interface {
 	Close()
 }
 
+// buildVoiceEncoder returns the native Mimi encoder on the native backend
+// and the ONNX encoder graph otherwise.
 var buildVoiceEncoder = func(cfg config.Config, modelWeightsPath string) (voiceEncoder, error) {
+	backend, err := config.NormalizeBackend(cfg.TTS.Backend)
+	if err != nil {
+		return nil, err
+	}
+
+	if backend == config.BackendNative {
+		return newNativeVoiceEncoder(modelWeightsPath)
+	}
+
+	return newONNXVoiceEncoder(cfg, modelWeightsPath)
+}
+
+func newONNXVoiceEncoder(cfg config.Config, modelWeightsPath string) (voiceEncoder, error) {
 	rcfg := voiceEncoderRunnerConfig(cfg, modelWeightsPath)
 	if rcfg.LibraryPath == "" {
 		info, err := onnx.DetectRuntime(cfg.Runtime)
@@ -38,6 +55,49 @@ var buildVoiceEncoder = func(cfg config.Config, modelWeightsPath string) (voiceE
 
 	return engine, nil
 }
+
+// nativeVoiceEncoder encodes prompts with the pure-Go Mimi encoder; it needs
+// the gated checkpoint, whose encoder weights are not zeroed.
+type nativeVoiceEncoder struct {
+	enc *nativemodel.VoiceEncoder
+}
+
+func newNativeVoiceEncoder(modelWeightsPath string) (*nativeVoiceEncoder, error) {
+	if modelWeightsPath == "" {
+		return nil, errors.New("voice encoder: no model .safetensors (set --model-safetensors or --paths-model-path)")
+	}
+
+	enc, err := nativemodel.LoadVoiceEncoderFromSafetensors(modelWeightsPath, nativemodel.DefaultMimiConfig())
+	if err != nil {
+		return nil, fmt.Errorf("voice encoder: %s: %w", modelWeightsPath, err)
+	}
+
+	return &nativeVoiceEncoder{enc: enc}, nil
+}
+
+// EncodeVoice prepares the prompt like upstream get_state_for_audio_prompt
+// (30 s, 24 kHz, end on a pause) and returns the [1, T, d_model]
+// conditioning, flattened.
+func (n *nativeVoiceEncoder) EncodeVoice(audioPath string) ([]float32, error) {
+	samples, rate, err := audio.ReadVoicePrompt(audioPath)
+	if err != nil {
+		return nil, fmt.Errorf("encode voice: %w", err)
+	}
+
+	samples, err = audio.PrepareVoicePrompt(samples, rate)
+	if err != nil {
+		return nil, fmt.Errorf("encode voice: %w", err)
+	}
+
+	cond, err := n.enc.Encode(samples)
+	if err != nil {
+		return nil, fmt.Errorf("encode voice: %w", err)
+	}
+
+	return cond.RawData(), nil
+}
+
+func (*nativeVoiceEncoder) Close() {}
 
 // voiceEncoderRunnerConfig returns the ONNX runner config for voice encoding.
 // The speaker projection is [d_model, mimi inner_dim] (512 for
@@ -200,7 +260,7 @@ func runExportVoice(ctx context.Context, opts *exportVoiceOptions) error {
 
 		return nil
 	case exportVoiceFormatLegacyEmbedding:
-		// Continue below through the native ONNX voice-embedding path.
+		// Continue below through the audio_prompt embedding path.
 	default:
 		return fmt.Errorf(
 			"unsupported --format %q (supported: %s, %s)",
