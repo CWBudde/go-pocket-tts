@@ -77,5 +77,8 @@ func resolveSynthVoice(cfg config.Config, backend, voice string) (string, func()
 			"run 'pockettts export-voice' and pass the .safetensors instead")
 	}
 
+	// --backend may override the configured backend, which picks the encoder.
+	cfg.TTS.Backend = backend
+
 	return encodeWAVVoice(cfg, voice)
 }

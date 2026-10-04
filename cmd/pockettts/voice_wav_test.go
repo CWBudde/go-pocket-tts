@@ -33,14 +33,18 @@ func fakeWAVEncoder(t *testing.T, frames int, runErr error) (*fakeVoiceEncoder, 
 
 	var weights string
 
-	buildVoiceEncoder = func(_ config.Config, modelWeightsPath string) (voiceEncoder, error) {
+	buildVoiceEncoder = func(cfg config.Config, modelWeightsPath string) (voiceEncoder, error) {
 		weights = modelWeightsPath
+		encoderBackend = cfg.TTS.Backend
 
 		return enc, nil
 	}
 
 	return enc, &weights
 }
+
+// encoderBackend is the backend of the config fakeWAVEncoder's builder saw.
+var encoderBackend string
 
 func wavVoiceConfig() config.Config {
 	cfg := config.DefaultConfig()
@@ -192,4 +196,24 @@ func TestResolveSynthVoice_RealCheckpoints(t *testing.T) {
 			t.Errorf("ungated checkpoint: err = %v; want %v", err, nativemodel.ErrMimiEncoderWeightsZeroed)
 		}
 	})
+}
+
+// TestResolveSynthVoice_BackendOverride: `synth --backend native` with
+// another backend in the config must still pick the native encoder.
+func TestResolveSynthVoice_BackendOverride(t *testing.T) {
+	fakeWAVEncoder(t, 1, nil)
+
+	cfg := wavVoiceConfig()
+	cfg.TTS.Backend = config.BackendNativeONNX
+
+	_, remove, err := resolveSynthVoice(cfg, config.BackendNative, "speaker.wav")
+	if err != nil {
+		t.Fatalf("resolveSynthVoice: %v", err)
+	}
+
+	remove()
+
+	if encoderBackend != config.BackendNative {
+		t.Errorf("encoder built for backend %q, want the selected %q", encoderBackend, config.BackendNative)
+	}
 }
