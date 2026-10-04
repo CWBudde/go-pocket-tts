@@ -54,13 +54,16 @@ type languageEntry struct {
 	err      error
 	refs     int // in-flight requests, the loading one included
 	lastUsed uint64
+	done     bool // the load has finished; a loading entry is never evicted
 	evicted  bool
 }
 
 // languageRegistry loads each language's model on first use and keeps at
 // most max of them. The least recently used model leaves the registry as soon
 // as another language needs room, but is freed only after its in-flight
-// requests finish, so memory can briefly exceed the cap.
+// requests finish, so memory can briefly exceed the cap. Models still loading
+// are not evicted, so later requests join their load; the cap is enforced
+// again once a load finishes.
 type languageRegistry struct {
 	startup string
 	max     int
@@ -87,7 +90,7 @@ func newLanguageRegistry(
 		specs:   specs,
 		log:     log,
 		entries: map[string]*languageEntry{
-			startup: {name: startup, ready: ready, loaded: preloaded},
+			startup: {name: startup, ready: ready, loaded: preloaded, done: true},
 		},
 	}
 }
@@ -123,8 +126,10 @@ func (r *languageRegistry) Acquire(ctx context.Context, language string) (Langua
 		r.free(old)
 	}
 
+	// The load runs on its own, so every request, the one that started it
+	// included, can give up while it runs.
 	if !loaded {
-		r.load(e, spec)
+		go r.load(e, spec)
 	}
 
 	select {
@@ -160,20 +165,31 @@ func (r *languageRegistry) Voices(language string) (VoiceLister, error) {
 }
 
 // load builds e's backend. A failed load leaves the registry, so the next
-// request tries again.
+// request tries again; a successful one evicts what the cap no longer fits.
 func (r *languageRegistry) load(e *languageEntry, spec languageSpec) {
 	start := time.Now()
 	loaded, err := spec.build()
 
 	r.mu.Lock()
 
-	e.loaded, e.err = loaded, err
-	if err != nil && r.entries[e.name] == e {
-		delete(r.entries, e.name)
+	e.loaded, e.err, e.done = loaded, err, true
+
+	var idle []*languageEntry
+
+	if err != nil {
+		if r.entries[e.name] == e {
+			delete(r.entries, e.name)
+		}
+	} else {
+		idle = r.evictLocked(e)
 	}
 
 	r.mu.Unlock()
 	close(e.ready)
+
+	for _, old := range idle {
+		r.free(old)
+	}
 
 	if err != nil {
 		r.log.Error("load language failed", slog.String("language", e.name), slog.String("error", err.Error()))
@@ -184,9 +200,9 @@ func (r *languageRegistry) load(e *languageEntry, spec languageSpec) {
 		slog.Int64("duration_ms", time.Since(start).Milliseconds()))
 }
 
-// evictLocked removes least recently used entries other than keep until the
-// registry fits max, and returns the ones no request uses any more. The
-// others are freed by their last release.
+// evictLocked removes least recently used loaded entries other than keep
+// until the registry fits max, and returns the ones no request uses any more.
+// The others are freed by their last release.
 func (r *languageRegistry) evictLocked(keep *languageEntry) []*languageEntry {
 	var idle []*languageEntry
 
@@ -194,7 +210,7 @@ func (r *languageRegistry) evictLocked(keep *languageEntry) []*languageEntry {
 		var lru *languageEntry
 
 		for _, e := range r.entries {
-			if e != keep && (lru == nil || e.lastUsed < lru.lastUsed) {
+			if e != keep && e.done && (lru == nil || e.lastUsed < lru.lastUsed) {
 				lru = e
 			}
 		}

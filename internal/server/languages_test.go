@@ -340,3 +340,87 @@ func TestLanguageRegistry_NilCloseIsSkipped(t *testing.T) {
 		t.Errorf("served %q; want german", got)
 	}
 }
+
+func TestLanguageRegistry_FirstLoaderCanCancel(t *testing.T) {
+	german := &fakeLanguage{gate: make(chan struct{})}
+	r := newTestRegistry(t, 2, map[string]*fakeLanguage{"english": {}, "german": german})
+
+	// The request that starts the load gives up while the model loads.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+
+	go func() {
+		_, _, err := r.Acquire(ctx, "german")
+		errCh <- err
+	}()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("first Acquire while loading = %v; want the context error", err)
+		}
+	case <-time.After(time.Second):
+		close(german.gate)
+		t.Fatal("first Acquire blocked until the load finished; want it to give up with its context")
+	}
+
+	// The load goes on and serves the next request without a second build.
+	close(german.gate)
+
+	got, release := acquireOK(t, r, "german")
+	release()
+
+	if got != "german" || german.builds.Load() != 1 {
+		t.Errorf("served %q after %d builds; want german after 1", got, german.builds.Load())
+	}
+}
+
+func TestLanguageRegistry_LoadingModelIsNotEvicted(t *testing.T) {
+	german, french := &fakeLanguage{gate: make(chan struct{})}, &fakeLanguage{}
+	r := newTestRegistry(t, 1, map[string]*fakeLanguage{"english": {}, "german": german, "french": french})
+
+	germanDone := make(chan func())
+
+	go func() {
+		_, release, err := r.Acquire(context.Background(), "german")
+		if err != nil {
+			t.Error(err)
+		}
+
+		germanDone <- release
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+
+	// french arrives while german loads: german must stay, so the next
+	// german request joins its load instead of starting another.
+	_, releaseFrench := acquireOK(t, r, "french")
+	releaseFrench()
+
+	joined := make(chan func())
+
+	go func() {
+		_, release, err := r.Acquire(context.Background(), "german")
+		if err != nil {
+			t.Error(err)
+		}
+
+		joined <- release
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	close(german.gate)
+	(<-germanDone)()
+	(<-joined)()
+
+	if n := german.builds.Load(); n != 1 {
+		t.Errorf("german built %d times; want 1 (later requests join the running load)", n)
+	}
+
+	// Once german is loaded the cap holds again: french is unloaded.
+	if n := french.frees.Load(); n != 1 {
+		t.Errorf("french freed %d times; want 1 once german finished loading", n)
+	}
+}
