@@ -179,29 +179,9 @@ func ValidateModelKeys(path string) error {
 		_ = f.Close()
 	}()
 
-	var headerLen uint64
-
-	err = binary.Read(f, binary.LittleEndian, &headerLen)
+	_, header, err := readFileHeader(f)
 	if err != nil {
-		return fmt.Errorf("read header length: %w", err)
-	}
-
-	if headerLen > 100*1024*1024 { // sanity: header should not exceed 100 MB
-		return fmt.Errorf("header length %d exceeds 100 MB limit", headerLen)
-	}
-
-	headerBuf := make([]byte, headerLen)
-
-	_, err = io.ReadFull(f, headerBuf)
-	if err != nil {
-		return fmt.Errorf("read header: %w", err)
-	}
-
-	var header map[string]json.RawMessage
-
-	err = json.Unmarshal(headerBuf, &header)
-	if err != nil {
-		return fmt.Errorf("parse header: %w", err)
+		return err
 	}
 
 	var missing []string
@@ -217,6 +197,106 @@ func ValidateModelKeys(path string) error {
 	}
 
 	return nil
+}
+
+// mimiEncoderPrefix names the Mimi encoder tensors that voice cloning needs.
+const mimiEncoderPrefix = "mimi.encoder."
+
+// HasMimiEncoderWeights reports whether the checkpoint at path can clone
+// voices: the ungated kyutai/pocket-tts-without-voice-cloning checkpoints
+// ship every mimi.encoder.* tensor zeroed, the gated kyutai/pocket-tts ones
+// carry the trained encoder. Only the header and the encoder tensors' bytes
+// are read. A checkpoint without mimi.encoder.* tensors is an error.
+func HasMimiEncoderWeights(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, fmt.Errorf("open %s: %w", path, err)
+	}
+
+	defer func() {
+		_ = f.Close()
+	}()
+
+	dataStart, header, err := readFileHeader(f)
+	if err != nil {
+		return false, err
+	}
+
+	var (
+		found bool
+		buf   []byte
+	)
+
+	for name, raw := range header {
+		if !strings.HasPrefix(name, mimiEncoderPrefix) {
+			continue
+		}
+
+		found = true
+
+		entry, err := parseHeaderEntry(raw)
+		if err != nil {
+			return false, fmt.Errorf("decode header entry %q: %w", name, err)
+		}
+
+		err = validateHeaderEntry(name, entry)
+		if err != nil {
+			return false, err
+		}
+
+		size := entry.Offsets[1] - entry.Offsets[0]
+		if cap(buf) < size {
+			buf = make([]byte, size)
+		}
+
+		buf = buf[:size]
+
+		_, err = f.ReadAt(buf, dataStart+int64(entry.Offsets[0]))
+		if err != nil {
+			return false, fmt.Errorf("read tensor %q: %w", name, err)
+		}
+
+		if slices.ContainsFunc(buf, func(b byte) bool { return b != 0 }) {
+			return true, nil
+		}
+	}
+
+	if !found {
+		return false, fmt.Errorf("no %s* tensors in %s", mimiEncoderPrefix, path)
+	}
+
+	return false, nil
+}
+
+// readFileHeader reads the safetensors header of f and returns the file
+// offset where tensor data starts.
+func readFileHeader(f *os.File) (int64, map[string]json.RawMessage, error) {
+	var headerLen uint64
+
+	err := binary.Read(f, binary.LittleEndian, &headerLen)
+	if err != nil {
+		return 0, nil, fmt.Errorf("read header length: %w", err)
+	}
+
+	if headerLen > 100*1024*1024 { // sanity: header should not exceed 100 MB
+		return 0, nil, fmt.Errorf("header length %d exceeds 100 MB limit", headerLen)
+	}
+
+	headerBuf := make([]byte, headerLen)
+
+	_, err = io.ReadFull(f, headerBuf)
+	if err != nil {
+		return 0, nil, fmt.Errorf("read header: %w", err)
+	}
+
+	var header map[string]json.RawMessage
+
+	err = json.Unmarshal(headerBuf, &header)
+	if err != nil {
+		return 0, nil, fmt.Errorf("parse header: %w", err)
+	}
+
+	return 8 + int64(headerLen), header, nil
 }
 
 func normalizeVoiceEmbeddingShape(tensor *Tensor) ([]float32, []int64, error) {

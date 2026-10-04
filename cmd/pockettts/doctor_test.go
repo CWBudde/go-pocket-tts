@@ -306,7 +306,12 @@ func TestNewDoctorConfig_GermanPasses(t *testing.T) {
 		t.Fatalf("doctor --language german failed: %v\n%s", result.Failures(), out.String())
 	}
 
-	for _, want := range []string{"language: german", "default voice juergen:", "tokenizer load: ok"} {
+	// The downloaded german checkpoint is the ungated one: cloning is reported
+	// as unavailable without failing doctor.
+	for _, want := range []string{
+		"language: german", "default voice juergen:", "tokenizer load: ok",
+		doctor.WarnMark + " voice cloning: unavailable",
+	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())
 		}
@@ -351,5 +356,19 @@ func TestNewDoctorConfig_ONNXSkipsDefaultVoice(t *testing.T) {
 
 	if got := newDoctorConfig(cfg, config.BackendNative).DefaultVoice; got != "juergen" {
 		t.Errorf("native DefaultVoice = %q; want juergen", got)
+	}
+}
+
+// Only native-safetensors checks the checkpoint for the voice-cloning encoder;
+// it is the backend that sets NativeModelPath.
+func TestNewDoctorConfig_VoiceCloningCheckOnNative(t *testing.T) {
+	cfg := config.DefaultConfig()
+
+	if newDoctorConfig(cfg, config.BackendNative).CheckVoiceCloning == nil {
+		t.Error("native: CheckVoiceCloning is nil; want the Mimi encoder check")
+	}
+
+	if newDoctorConfig(cfg, config.BackendNativeONNX).CheckVoiceCloning != nil {
+		t.Error("native-onnx: CheckVoiceCloning is set; want nil")
 	}
 }

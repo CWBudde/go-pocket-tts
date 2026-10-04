@@ -143,6 +143,7 @@ func newDoctorConfig(cfg config.Config, backend string) doctor.Config {
 		dcfg.NativeModelPath = cfg.Paths.ModelPath
 		dcfg.TokenizerModelPath = cfg.Paths.TokenizerModel
 		dcfg.ValidateSafetensors = safetensors.ValidateModelKeys
+		dcfg.CheckVoiceCloning = safetensors.HasMimiEncoderWeights
 		dcfg.LoadTokenizer = func(path string) error {
 			_, err := tokenizer.Load(path, nBins)
 
