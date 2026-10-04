@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/cwbudde/wav"
 )
@@ -59,6 +60,76 @@ func DecodeWAV(data []byte) ([]float32, error) {
 	}
 
 	return buf.Data, nil
+}
+
+// DecodePromptWAV decodes a voice-prompt WAV of any sample rate and channel
+// count, like upstream audio_read: channels are mixed down to mono by their
+// mean and the source rate is returned for resampling. On top of DecodeWAV's
+// formats it reads unsigned 8-bit PCM, scaled like libsndfile as (b−128)/128.
+func DecodePromptWAV(data []byte) ([]float32, int, error) {
+	if len(data) == 0 {
+		return nil, 0, errors.New("empty WAV input")
+	}
+
+	dec := wav.NewDecoder(bytes.NewReader(data))
+	if !dec.IsValidFile() {
+		return nil, 0, errors.New("invalid WAV file")
+	}
+
+	if dec.SampleRate == 0 || dec.NumChans == 0 {
+		return nil, 0, fmt.Errorf("%w: sample rate %d, channels %d", ErrFormatMismatch, dec.SampleRate, dec.NumChans)
+	}
+
+	is8Bit := dec.WavAudioFormat == wavFormatPCM && dec.BitDepth == 8
+	if !is8Bit && !supportedSampleFormat(dec.WavAudioFormat, dec.BitDepth) {
+		return nil, 0, fmt.Errorf("%w: format tag %d with bit depth %d, want 8/16/24/32-bit PCM or 32/64-bit float",
+			ErrFormatMismatch, dec.WavAudioFormat, dec.BitDepth)
+	}
+
+	buf, err := dec.FullPCMBuffer()
+	if err != nil {
+		return nil, 0, fmt.Errorf("reading PCM data: %w", err)
+	}
+
+	interleaved := buf.Data
+	if is8Bit {
+		// cwbudde/wav centres 8-bit samples on 127.5; recover the byte and
+		// re-centre it on 128 so that silence (128) decodes to exactly 0.
+		interleaved = make([]float32, len(buf.Data))
+		for i, v := range buf.Data {
+			b := math.Round(float64(v)*pcm8Half + pcm8Half)
+			interleaved[i] = float32((b - pcm8Center) / pcm8Center)
+		}
+	}
+
+	return downmixMean(interleaved, int(dec.NumChans)), int(dec.SampleRate), nil
+}
+
+// cwbudde/wav decodes unsigned 8-bit PCM as (b−127.5)/127.5; libsndfile, and
+// so upstream, as (b−128)/128.
+const (
+	pcm8Half   = 127.5
+	pcm8Center = 128.0
+)
+
+// downmixMean averages interleaved frames of channels samples into mono, like
+// numpy's mean(axis=1) on float32 data; mono input is returned as is.
+func downmixMean(interleaved []float32, channels int) []float32 {
+	if channels == 1 {
+		return interleaved
+	}
+
+	out := make([]float32, len(interleaved)/channels)
+	for i := range out {
+		var sum float32
+		for _, v := range interleaved[i*channels : (i+1)*channels] {
+			sum += v
+		}
+
+		out[i] = sum / float32(channels)
+	}
+
+	return out
 }
 
 // supportedSampleFormat reports whether DecodeWAV accepts the WAV format tag
