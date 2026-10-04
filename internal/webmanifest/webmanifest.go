@@ -19,10 +19,10 @@ import (
 //go:generate go run ./internal/gen -out ../../web/languages.json
 
 // tooLargeForBrowser lists the configs left out of the catalog because they
-// do not fit in 32-bit WASM memory (4 GB): english_2026-09_24l is a 1.3 GB
-// checkpoint, and synthesis runs out of memory in the Mimi decoder after it
-// loads (measured 2026-10-04; german_24l, 672 MB, fits).
-var tooLargeForBrowser = map[string]bool{"english_2026-09_24l": true}
+// do not fit in 32-bit WASM memory (4 GB). Empty since the engine drops the
+// checkpoint bytes after decoding: english_2026-09_24l (1.3 GB, mostly F32)
+// ran out of memory while they were kept next to the weights.
+var tooLargeForBrowser = map[string]bool{}
 
 // Catalog lists the configs the web app offers.
 type Catalog struct {

@@ -100,8 +100,8 @@ func TestBuild_Values(t *testing.T) {
 		t.Errorf("german_24l layers = %d, want 24", got)
 	}
 
-	if _, ok := byName["english_2026-09_24l"]; ok {
-		t.Error("english_2026-09_24l does not fit in WASM memory but is offered")
+	if got := byName["english_2026-09_24l"].Layers; got != 24 {
+		t.Errorf("english_2026-09_24l layers = %d, want 24 (is it offered?)", got)
 	}
 }
 
