@@ -161,29 +161,13 @@ func runSynthCommand(ctx context.Context, cfg config.Config, opts synthRunOption
 	// The cli backend's WAV comes from upstream's writer, which already ends
 	// in its silence.
 	if selectedBackend != config.BackendCLI {
-		result, err = appendTrailingSilenceToWAV(result)
+		result, err = audio.AppendTrailingSilenceWAV(result)
 		if err != nil {
-			return err
+			return fmt.Errorf("append trailing silence: %w", err)
 		}
 	}
 
 	return writeSynthOutput(opts.Out, result, stdout)
-}
-
-// appendTrailingSilenceToWAV appends upstream's trailing silence after any DSP,
-// as upstream's writer does when it finalizes the file.
-func appendTrailingSilenceToWAV(wavData []byte) ([]byte, error) {
-	samples, err := audio.DecodeWAV(wavData)
-	if err != nil {
-		return nil, fmt.Errorf("decode WAV for trailing silence: %w", err)
-	}
-
-	out, err := audio.EncodeWAV(audio.AppendTrailingSilence(samples, audio.ExpectedSampleRate))
-	if err != nil {
-		return nil, fmt.Errorf("encode WAV with trailing silence: %w", err)
-	}
-
-	return out, nil
 }
 
 func synthesizeForBackend(

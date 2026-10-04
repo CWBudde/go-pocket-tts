@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math"
 	"testing"
@@ -348,6 +349,55 @@ func TestAppendTrailingSilence(t *testing.T) {
 
 	if frames := wavDataFrames(t, wav); frames != 28800 {
 		t.Errorf("header frames = %d, want 28800", frames)
+	}
+}
+
+func TestAppendTrailingSilenceWAV(t *testing.T) {
+	speech := make([]float32, 24000)
+	for i := range speech {
+		speech[i] = 0.25
+	}
+
+	in, err := EncodeWAV(speech)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	orig := bytes.Clone(in)
+
+	got, err := AppendTrailingSilenceWAV(in)
+	if err != nil {
+		t.Fatalf("AppendTrailingSilenceWAV: %v", err)
+	}
+
+	if !bytes.Equal(in, orig) {
+		t.Fatal("AppendTrailingSilenceWAV modified its input")
+	}
+
+	// The same bytes EncodeWAV writes for the padded samples.
+	want, err := EncodeWAV(AppendTrailingSilence(speech, 24000))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("got %d bytes, want the %d bytes of EncodeWAV(AppendTrailingSilence(...))", len(got), len(want))
+	}
+
+	if frames := wavDataFrames(t, got); frames != 28800 {
+		t.Errorf("header frames = %d, want 28800", frames)
+	}
+
+	for name, bad := range map[string][]byte{
+		"not a WAV":          []byte("not a wav file"),
+		"data not last":      append(append([]byte(nil), in...), 'L', 'I', 'S', 'T', 0, 0, 0, 0),
+		"no data chunk":      in[:36],
+		"truncated RIFF tag": in[:8],
+	} {
+		_, err := AppendTrailingSilenceWAV(bad)
+		if err == nil {
+			t.Errorf("%s: want an error", name)
+		}
 	}
 }
 
