@@ -20,14 +20,20 @@
 //   CX   remaining element count
 //   Y0–Y3  four float32×8 accumulators (main 4-wide loop)
 //   Y4–Y7  load temporaries
+//   X8     scalar-tail accumulator
 //
 // Design notes:
 //   The inner loop is unrolled 4× (32 floats/iter) so the CPU can hide the
 //   ~5-cycle FMA latency (Alder Lake P-core) by keeping four independent
 //   dependency chains in flight.  After the main loop the four accumulators
 //   are folded into Y0, then an 8-wide single-step loop drains the remainder
-//   down to < 8 elements, which are handled scalar.
-//   A final horizontal reduction turns Y0 (8 partial sums) into one float32.
+//   down to < 8 elements, which are handled scalar in X8.
+//   A final horizontal reduction turns Y0 (8 partial sums) into one float32,
+//   and the scalar tail is added to it.
+//
+// Gotcha: VEX-encoded scalar ops (VFMADD231SS) zero bits 255:128 of their
+// destination, so the tail must not accumulate into X0/Y0 or the upper four
+// partial sums are lost.
 //
 // Gotcha: FP refs MUST use named form (a+0(FP), not 0(FP)) or go vet fails.
 
@@ -41,6 +47,7 @@ TEXT ·dotF32AVX2(SB), NOSPLIT, $0-28
     VPXOR Y1, Y1, Y1
     VPXOR Y2, Y2, Y2
     VPXOR Y3, Y3, Y3
+    VXORPS X8, X8, X8
 
     // ── Main loop: 32 floats (4×8) per iteration ──────────────────────────
     // VFMADD231PS mem, yreg, acc  →  acc += yreg * mem  (AT&T operand order)
@@ -82,14 +89,14 @@ loop8:
     JGE  loop8
 
     // ── Scalar tail: 0–7 remaining elements ───────────────────────────────
-    // Accumulate directly into X0 (low 32 bits of Y0); other lanes stay put.
+    // Accumulate into X8, added after the reduction (see the gotcha above).
 tail1:
     TESTQ CX, CX
     JZ    reduce
 
 loop1:
     VMOVSS      0(SI), X4
-    VFMADD231SS 0(DI), X4, X0   // X0[31:0] += X4[31:0] * mem[DI]
+    VFMADD231SS 0(DI), X4, X8   // X8[31:0] += X4[31:0] * mem[DI]
     ADDQ $4, SI
     ADDQ $4, DI
     DECQ CX
@@ -97,9 +104,7 @@ loop1:
 
     // ── Horizontal reduce: Y0 (8 float32) → scalar ────────────────────────
     //
-    // After the loops Y0 holds 8 partial sums.  Scalar tail elements landed
-    // in X0[31:0] (the lowest lane of Y0); the remaining lanes retain their
-    // SIMD partials — all are summed correctly by the reduction below.
+    // After the loops Y0 holds 8 partial sums and X8[31:0] the scalar tail.
 reduce:
     // Step 1: fold upper 128 bits into lower 128 bits.
     VEXTRACTF128 $1, Y0, X1    // X1 = Y0[255:128] (upper 4 floats)
@@ -109,7 +114,8 @@ reduce:
     // VHADDPS X0, X0, X0 → X0[0]=X0[1]+X0[0], X0[1]=X0[3]+X0[2], ...
     VHADDPS X0, X0, X0
     // Now X0[0]=a+b, X0[1]=c+d; second VHADDPS finishes the sum.
-    VHADDPS X0, X0, X0         // X0[0] = a+b+c+d = final result
+    VHADDPS X0, X0, X0         // X0[0] = a+b+c+d
+    VADDSS X8, X0, X0          // + scalar tail = final result
 
     VZEROUPPER                  // clear upper YMM bits before returning to SSE
     VMOVSS X0, ret+24(FP)
