@@ -11,9 +11,12 @@ import (
 	"strings"
 )
 
-// Tensor holds a single tensor loaded from a safetensors file.
+// Tensor holds a single tensor loaded from a safetensors file. Data is
+// float32 whatever the file stores; DType names the file's dtype (Store.Tensor
+// sets it, EncodeTensors writes F32 when it is empty).
 type Tensor struct {
 	Name  string
+	DType string
 	Shape []int64
 	Data  []float32
 }
@@ -444,6 +447,7 @@ func loadVoiceModelStateFromStore(store *Store) (*VoiceModelState, error) {
 			tensorKey = "offset"
 			t = &Tensor{
 				Name:  moduleName + "/offset",
+				DType: dtypeI64,
 				Shape: []int64{1},
 				Data:  []float32{float32(firstDim(t.Shape))},
 			}
