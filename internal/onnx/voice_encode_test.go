@@ -2,9 +2,12 @@ package onnx
 
 import (
 	"context"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
 )
 
 func TestProjectSpeakerConditioning_KnownValues(t *testing.T) {
@@ -166,6 +169,74 @@ func TestEncodeVoiceSamples_RunsMimiEncoderAndProjection(t *testing.T) {
 			data[VoiceEmbeddingDim+0],
 			data[VoiceEmbeddingDim+1],
 		)
+	}
+}
+
+// TestEncodeVoice_EndsPromptOnPause checks that the prompt reaches the Mimi
+// encoder ended on a pause (upstream end_on_pause): trailing silence cut, the
+// last 20 ms faded out and 80 ms of zeros appended.
+func TestEncodeVoice_EndsPromptOnPause(t *testing.T) {
+	const speechLen = audio.ExpectedSampleRate / 2 // 0.5 s, 25 whole 20 ms frames
+
+	samples := make([]float32, speechLen+audio.ExpectedSampleRate*3/10) // + 0.3 s of silence
+	for i := range speechLen {
+		samples[i] = float32(0.5 * math.Sin(float64(i)/5))
+	}
+
+	wav, err := audio.EncodeWAV(samples)
+	if err != nil {
+		t.Fatalf("EncodeWAV: %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "prompt.wav")
+
+	err = os.WriteFile(path, wav, 0o600)
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	latent, err := NewTensor(make([]float32, mimiEncoderLatentDim), []int64{1, 1, mimiEncoderLatentDim})
+	if err != nil {
+		t.Fatalf("NewTensor latent: %v", err)
+	}
+
+	var got []float32
+
+	fake := &fakeRunner{
+		name: "mimi_encoder",
+		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+			var extractErr error
+
+			got, extractErr = ExtractFloat32(inputs["audio"])
+			if extractErr != nil {
+				t.Fatalf("ExtractFloat32 audio: %v", extractErr)
+			}
+
+			return map[string]*Tensor{"latent": latent}, nil
+		},
+	}
+
+	e := engineWithFakeRunners(map[string]runnerIface{"mimi_encoder": fake})
+	e.speakerProjWeight = make([]float32, VoiceEmbeddingDim*mimiEncoderLatentDim)
+
+	_, err = e.EncodeVoice(path)
+	if err != nil {
+		t.Fatalf("EncodeVoice: %v", err)
+	}
+
+	const pause = audio.ExpectedSampleRate * 8 / 100
+	if len(got) != speechLen+pause {
+		t.Fatalf("encoder input has %d samples, want %d (speech + 80 ms pause)", len(got), speechLen+pause)
+	}
+
+	if got[speechLen-1] != 0 {
+		t.Errorf("last speech sample = %v, want faded to 0", got[speechLen-1])
+	}
+
+	for i, v := range got[speechLen:] {
+		if v != 0 {
+			t.Fatalf("pause sample %d = %v, want 0", i, v)
+		}
 	}
 }
 

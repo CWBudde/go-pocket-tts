@@ -26,6 +26,10 @@ func (e *Engine) EncodeVoice(audioPath string) ([]float32, error) {
 		return nil, err
 	}
 
+	// Like upstream get_state_for_audio_prompt, end the prompt on a pause:
+	// one that stops on speech makes the model continue that utterance.
+	samples = audio.EndOnPause(samples, audio.ExpectedSampleRate)
+
 	embedding, err := e.encodeVoiceSamples(context.Background(), samples)
 	if err != nil {
 		return nil, err
