@@ -36,9 +36,8 @@ func ConfigFor(mc *modelcfg.ModelConfig) Config {
 }
 
 type Model struct {
-	store *safetensors.Store
-	flow  *FlowLM
-	mimi  *MimiModel
+	flow *FlowLM
+	mimi *MimiModel
 
 	latentToMimiProj *latentToMimiProjector
 }
@@ -48,10 +47,14 @@ func LoadModelFromSafetensors(path string, cfg Config) (*Model, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer store.Close()
 
 	return LoadModelFromStore(store, cfg)
 }
 
+// LoadModelFromStore decodes the model weights from store. The model keeps no
+// reference to store: the caller owns it and can close it once this returns,
+// so the checkpoint bytes are not held next to the decoded weights.
 func LoadModelFromStore(store *safetensors.Store, cfg Config) (*Model, error) {
 	if cfg.FlowLM.DModel == 0 {
 		cfg = DefaultConfig()
@@ -74,14 +77,12 @@ func LoadModelFromStore(store *safetensors.Store, cfg Config) (*Model, error) {
 		return nil, err
 	}
 
-	return &Model{store: store, flow: flow, mimi: mimi, latentToMimiProj: projector}, nil
+	return &Model{flow: flow, mimi: mimi, latentToMimiProj: projector}, nil
 }
 
-func (m *Model) Close() {
-	if m != nil && m.store != nil {
-		m.store.Close()
-	}
-}
+// Close is a no-op kept for the runtimes that release a model: its weights
+// are ordinary Go memory, freed once the model is unreachable.
+func (*Model) Close() {}
 
 func (m *Model) FlowLM() *FlowLM  { return m.flow }
 func (m *Model) Mimi() *MimiModel { return m.mimi }

@@ -4,9 +4,12 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
+	"time"
 
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
@@ -30,6 +33,50 @@ func requireGermanCheckpoint(t *testing.T) string {
 	t.Skipf("german checkpoint not available in any expected location: %v", candidates)
 
 	return ""
+}
+
+// TestLoadModelFromStore_ReleasesCheckpointBytes checks that a loaded model
+// does not keep the checkpoint bytes alive next to its decoded weights: the
+// web app cannot hold both for the 24-layer models in 4 GB of WASM memory.
+func TestLoadModelFromStore_ReleasesCheckpointBytes(t *testing.T) {
+	data, err := os.ReadFile(requireGermanCheckpoint(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	released := make(chan struct{})
+	runtime.AddCleanup(&data[0], func(ch chan struct{}) { close(ch) }, released)
+
+	store, err := safetensors.OpenStoreFromBytes(data, safetensors.StoreOptions{})
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+
+	mc, err := modelcfg.Lookup("german")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	model, err := LoadModelFromStore(store, ConfigFor(mc))
+	if err != nil {
+		t.Fatalf("load model: %v", err)
+	}
+
+	data, store = nil, nil //nolint:wastedassign,ineffassign // drop the test's own references
+
+	for range 20 {
+		runtime.GC()
+
+		select {
+		case <-released:
+			runtime.KeepAlive(model)
+			return
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	runtime.KeepAlive(model)
+	t.Fatal("the loaded model keeps the checkpoint bytes alive")
 }
 
 // Every config except english_2026-01 sets mimi.inner_dim: 32. Only the

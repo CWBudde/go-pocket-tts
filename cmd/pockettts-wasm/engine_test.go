@@ -2,9 +2,11 @@ package main
 
 import (
 	"os"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
@@ -83,4 +85,44 @@ func TestNewEngine_German(t *testing.T) {
 	if !slices.Equal(gotIDs, wantIDs) {
 		t.Errorf("tokens = %v, want %v", gotIDs, wantIDs)
 	}
+}
+
+// TestNewEngine_ReleasesCheckpointBytes checks that the engine drops the
+// checkpoint bytes once the weights are decoded, so the 24-layer models fit in
+// 4 GB of WASM memory.
+func TestNewEngine_ReleasesCheckpointBytes(t *testing.T) {
+	const dir = "../../models/german/"
+
+	modelBytes, err := os.ReadFile(dir + "model.safetensors")
+	if err != nil {
+		t.Skipf("german model not downloaded: %v", err)
+	}
+
+	tokBytes, err := os.ReadFile(dir + "tokenizer.json")
+	if err != nil {
+		t.Skipf("german tokenizer not downloaded: %v", err)
+	}
+
+	released := make(chan struct{})
+	runtime.AddCleanup(&modelBytes[0], func(ch chan struct{}) { close(ch) }, released)
+
+	e, err := newEngine(modelBytes, tokBytes, "german", nil)
+	if err != nil {
+		t.Fatalf("newEngine: %v", err)
+	}
+	defer e.runtime.Close()
+
+	modelBytes = nil //nolint:wastedassign // drop the test's own reference
+
+	for range 20 {
+		runtime.GC()
+
+		select {
+		case <-released:
+			return
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+
+	t.Fatal("the engine keeps the checkpoint bytes alive")
 }
