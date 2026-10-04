@@ -430,6 +430,15 @@ Minimal path (precomputed voices only; needs Phases 1, 3, 4 and Phase 5 byte fal
       ID, pointing at `pockettts-tools voice download`. With the manifest: EOS at steps 26–35 (29–38 frames).
 - [ ] `serve --language german`: one language per process (same as upstream `serve`); add `--default-voice`
       (#271: name | local wav/safetensors | URL, resolved at startup, fail fast)
+      Decided (2026-10-04), its own PR before the multi-language server:
+  - Accept a built-in voice name, a local `.safetensors` file, and `https://` URLs and `hf://` paths (reusing
+    `model.ParseHFRef`). URL voices are downloaded once into `os.UserCacheDir()/pockettts/voices/`; they cannot be
+    checksum-verified.
+  - No WAV yet: the native backend has no Mimi encoder (Phase 7). Leave this item unchecked with a `partial:` note
+    once the rest lands.
+  - Fail fast: on native-safetensors, `serve` refuses to start when the default voice (built-in or
+    `--default-voice`) cannot be loaded, naming `pockettts model download`. Today it starts and only requests
+    without a voice fail. native-onnx keeps no default voice.
 - [x] `doctor` validates the selected language's files
       (2026-10-03) — `doctor` prints the language; on the native backends a missing voice manifest fails (it was
       silently skipped), the default voice must resolve, and native-safetensors loads the tokenizer with the model
@@ -466,7 +475,25 @@ Follow-ups:
       files now resolve next to the manifest too; `TestCollectVoiceFiles_MissingFileResolvedRelativeToManifest`.
 - [ ] Multi-language server: `language` field in `ttsRequest`, `/voices?language=`, and a lazy-loaded
       language → `tts.Service` registry with an LRU cap (each model is ~220 MB of weights)
+      Decided (2026-10-04), after the `--default-voice` item:
+  - `--server-max-languages` (config/env too), default 2; 1 is today's single-language behaviour.
+  - `--server-languages` allow-list; the default is only the startup language, so nothing changes unless it is
+    configured. Other languages get 400.
+  - Eviction refcounts: the least recently used model leaves the registry at once but is freed only after its
+    in-flight requests finish, so memory can briefly exceed the cap.
+  - `--server-workers` stays one shared semaphore across languages.
+  - native-safetensors only; other backends return 400 for a language other than the startup one.
+  - Startup overrides (`--paths-*`, `--default-voice`) bind to the startup language; other languages use
+    `config.PathsForLanguage` and their built-in default voice. `--model-config` (custom model) disables
+    multi-language.
 - [ ] Web/WASM: language picker. `web/main.js` hard-codes the English model and tokenizer URLs.
+      Decided (2026-10-04):
+  - Offer all six embedded configs (`english_2026-01`, `english_2026-09`, `english_2026-09_24l`,
+    `english_drifting_26-09`, `german`, `german_24l`). The `*_24l` models are ~670 MB downloads in the browser.
+  - Fetch model, `tokenizer.json` and voices straight from Hugging Face at the revisions pinned in the language
+    manifests (`huggingface.co/<repo>/resolve/<rev>/…`); no re-hosting.
+  - `tokenizer.json` for every language, English included (closes the Phase 5 `web/main.js` item).
+  - On a switch, drop the previous model from WASM memory; switching back reloads it from the browser's HTTP cache.
 - [ ] `german_24l` support (verify quality and speed; ~3× the weights)
 - [ ] Other upstream languages (french, italian, spanish, portuguese, dutch): only config + manifest work
       once German works
