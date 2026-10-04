@@ -52,10 +52,13 @@ The local `models/tts_b6369a24.safetensors` (checksum OK), `models/tokenizer.mod
         `exclude-newer = "7 days"` and that the dev group is now heavy (torchaudio, transformers, utmos)
   - (2026-10-03) — README "Get Started" voice step + "Development tools", gated/ungated note in Quickstart;
     `docs/INSTALL.md` Homebrew ORT and "Parity setup (Python reference)" sections
-- [ ] Refresh the `original/pockettts` snapshot to the target commit, and `original/xn` if useful (the xn Rust
+- [x] Refresh the `original/pockettts` snapshot to the target commit, and `original/xn` if useful (the xn Rust
       port moved to `gradium-ai/xn-ptts`, #330). (2026-10-03) — deferred to Phase 8: a 3.x snapshot produces
       parity fixtures with tanh GELU etc. that the Go numerics don't match yet. Read upstream files at the
       target commit via `gh api repos/kyutai-labs/pocket-tts/contents/<path>?ref=41cbc84…` until then.
+      (2026-10-04) — `original/pockettts` is at `41cbc84` (upstream `main` is still there; `v3.3.0` + 13 commits)
+      with `UV_PYTHON=3.12 uv sync --no-dev`: upstream's 3.10 scipy wheel does not load on macOS 27. `docs/INSTALL.md`
+      "Parity setup" points there. `original/xn` not refreshed; the fixtures don't need it.
 - [ ] Bump the commit/version pins in `README.md` (says 2.1.0 / `2dff8a2`) and in this file once Phase 8 is green
 - [x] Pin `pocket-tts` in `.github/workflows/test-integration.yml` and `model-export.yml`; both were unpinned
       and would silently pick up new defaults. (2026-10-03) — pinned to `2.1.0` (the synced version;
@@ -611,9 +614,26 @@ Follow-ups:
 - [ ] Fix `scripts/dump_python_parity.py` and `scripts/export_onnx.py` for the new upstream layout:
       `pocket_tts.conditioners.base.TokenizedText` is gone; use `modules/text_conditioner.LUTConditioner`
       (`prepare(str)` → tokens, `forward(tokens)`). Remove the dead beartype shim.
-- [ ] Add `--language` to `dump_python_parity.py`. Generate fixtures for `english_2026-01` and `german`:
+      (2026-10-04) — partial: `dump_python_parity.py` runs on `41cbc84`: `flow_lm.conditioner` (LUTConditioner)
+      instead of `TokenizedText`, and `mimi.decode_from_latent` gets the un-quantized latent, since 3.x quantizes
+      inside it. Remaining: `export_onnx.py` and its beartype shim (with the Phase 9 re-export).
+- [x] Add `--language` to `dump_python_parity.py`. Generate fixtures for `english_2026-01` and `german`:
       tokenizer ids, text embeddings, voice model state, FlowLM prefill/step, latent → mimi → PCM.
       Store small ones in `testdata/` and keep large ones gitignored behind `POCKETTTS_NATIVE_PY_FIXTURE`.
+      (2026-10-04) — `--weights`/`--tokenizer`/`--voice` point upstream at the local files Go reads. Each fixture
+      has the demo text (raw, prepared, token ids, first 3 embedding rows), the voice-less FlowLM prefill + step,
+      a `voice_prefill_step` (voice state, KV cache grown like `_generate`, text prefill, one step) and three Mimi
+      decodes. German uses the `juergen` model state; the flat English voices are 2.x `audio_prompt` embeddings,
+      so the script prompts `alba` as `get_state_for_audio_prompt` does after encoding. Both fixtures
+      (`internal/native/testdata/python_parity/`, ~385 KB each, prettier-formatted, byte-identical on regeneration)
+      are committed; the env var still adds one more. `TestPythonParity` runs one subtest per fixture and case on
+      the local model of the fixture's config (skips without it). All 14 subtests pass. Elements are compared like
+      `numpy.allclose` (decided with the user): `CompareTensor` also needs max rel ≤ 5e-3, which failed on one
+      English hidden element (−7.99e-6 vs −7.41e-6, abs 5.8e-7). Mutations: an erf GELU fails both flow and voice
+      cases in both languages; the German fixture run on the English config fails text, flow and Mimi.
+- [ ] The Mimi parity cases still pass with an erf GELU in place of tanh: the decode tolerance (`Rel: 5e-2`) and
+      the small fixture latents (scale 0.03) hide a decoder-transformer change. Tighten them, or add a case with
+      latents in the generated range. (Found 2026-10-04.)
 - [ ] Port the upstream test tables as Go table tests:
   - `test_split_sentences.py`: decimals, 14 terminal-punctuation cases, `capitalize_first_letter=False`,
     `replace_characters`, Hindi passthrough
