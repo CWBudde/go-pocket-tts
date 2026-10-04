@@ -195,8 +195,13 @@ func existingMatches(path, expected string) (bool, error) {
 }
 
 func downloadWithProgress(client *http.Client, repo string, file ModelFile, token, outPath string, stdout io.Writer) (string, error) {
-	url := resolveURL(repo, file)
+	return downloadURL(client, resolveURL(repo, file), file.Filename, repo, token, outPath, stdout)
+}
 
+// downloadURL streams url to outPath through a temp file, printing progress
+// to stdout, and returns the sha256 of what it wrote. name and repo only
+// label errors; token, when set, is sent as a bearer token.
+func downloadURL(client *http.Client, url, name, repo, token, outPath string, stdout io.Writer) (string, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
@@ -204,7 +209,8 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 
 	setAuth(req, token)
 
-	// #nosec G704 -- URL is built by resolveURL against a fixed Hugging Face host using pinned manifest data.
+	// #nosec G704 -- URL is either built by resolveURL against the fixed Hugging Face host or is an
+	// https:// voice URL the operator passed to serve --default-voice.
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download request failed: %w", err)
@@ -220,7 +226,7 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", fmt.Errorf("download failed for %s: %s", file.Filename, resp.Status)
+		return "", fmt.Errorf("download failed for %s: %s", name, resp.Status)
 	}
 
 	tmp := outPath + ".tmp"
