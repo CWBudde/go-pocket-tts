@@ -34,6 +34,15 @@ type pythonParitySource struct {
 	Upstream string `json:"upstream"`
 	Config   string `json:"config"`
 	Voice    string `json:"voice,omitempty"`
+	// Files names the local files of a custom (--config) fixture, which
+	// cannot be resolved by language name.
+	Files *pythonParityFiles `json:"files,omitempty"`
+}
+
+type pythonParityFiles struct {
+	Weights   string `json:"weights"`
+	Tokenizer string `json:"tokenizer"`
+	Voices    string `json:"voices,omitempty"`
 }
 
 type textPythonParityCase struct {
@@ -77,10 +86,10 @@ type tensorJSON struct {
 // pythonParityLanguage is the model config of a fixture and the local files
 // its checks run on.
 type pythonParityLanguage struct {
-	name      string
-	mc        *modelcfg.ModelConfig
-	paths     config.LanguagePaths
-	modelPath string
+	mc            *modelcfg.ModelConfig
+	modelPath     string
+	tokenizerPath string
+	voiceDir      string
 }
 
 // TestPythonParity runs every fixture in testdata/python_parity/ (plus
@@ -103,7 +112,7 @@ func TestPythonParity(t *testing.T) {
 	for _, path := range paths {
 		t.Run(strings.TrimSuffix(filepath.Base(path), ".json"), func(t *testing.T) {
 			fixture := loadNativePythonParityFixture(t, path)
-			lang := pythonParityLanguageFor(t, fixture.Source.Config)
+			lang := pythonParityLanguageFor(t, fixture.Source)
 
 			m, err := LoadModelFromSafetensors(lang.modelPath, ConfigFor(lang.mc))
 			if err != nil {
@@ -136,23 +145,40 @@ func TestPythonParity(t *testing.T) {
 	}
 }
 
-// pythonParityLanguageFor resolves the embedded config name of a fixture to
-// its config and local model, or skips.
-func pythonParityLanguageFor(t *testing.T, name string) pythonParityLanguage {
+// pythonParityLanguageFor resolves a fixture's config to the model config and
+// the local files to check, or skips when the model is not downloaded. An
+// embedded config name uses the language's local layout; a custom config file
+// uses the files the fixture names.
+func pythonParityLanguageFor(t *testing.T, src pythonParitySource) pythonParityLanguage {
 	t.Helper()
 
-	mc, err := modelcfg.Lookup(name)
-	if err != nil {
-		t.Skipf("fixture config %q is not an embedded model config: %v", name, err)
+	mc, err := modelcfg.Lookup(src.Config)
+	if err == nil {
+		paths := config.PathsForLanguage(src.Config)
+
+		return pythonParityLanguage{
+			mc:            mc,
+			modelPath:     requireRepoFile(t, paths.ModelPath),
+			tokenizerPath: paths.TokenizerModel,
+			voiceDir:      filepath.Dir(paths.VoiceManifest),
+		}
 	}
 
-	paths := config.PathsForLanguage(name)
+	if src.Files == nil {
+		t.Fatalf("fixture config %q is not an embedded model config and the fixture names no local files "+
+			"(dump it with --config --weights --tokenizer)", src.Config)
+	}
+
+	mc, err = modelcfg.LoadCustom(requireRepoFile(t, src.Config))
+	if err != nil {
+		t.Fatalf("load fixture config %q: %v", src.Config, err)
+	}
 
 	return pythonParityLanguage{
-		name:      name,
-		mc:        mc,
-		paths:     paths,
-		modelPath: requireRepoFile(t, paths.ModelPath),
+		mc:            mc,
+		modelPath:     requireRepoFile(t, src.Files.Weights),
+		tokenizerPath: src.Files.Tokenizer,
+		voiceDir:      src.Files.Voices,
 	}
 }
 
@@ -170,7 +196,7 @@ func checkTextParity(t *testing.T, m *Model, lang pythonParityLanguage, tc *text
 		t.Errorf("prepared text = %q, want %q", prepared, tc.Prepared)
 	}
 
-	tok, err := tokenizer.Load(requireRepoFile(t, lang.paths.TokenizerModel), lang.mc.FlowLM.LookupTable.NBins)
+	tok, err := tokenizer.Load(requireRepoFile(t, lang.tokenizerPath), lang.mc.FlowLM.LookupTable.NBins)
 	if err != nil {
 		t.Fatalf("load tokenizer: %v", err)
 	}
@@ -235,7 +261,7 @@ func checkVoicePrefillParity(
 ) {
 	t.Helper()
 
-	voicePath := requireRepoFile(t, filepath.Dir(lang.paths.VoiceManifest), voice+".safetensors")
+	voicePath := requireRepoFile(t, lang.voiceDir, voice+".safetensors")
 
 	textEmb, err := m.TextEmbeddings(tokens)
 	if err != nil {
