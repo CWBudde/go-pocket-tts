@@ -76,6 +76,9 @@ type mimiPythonParityCase struct {
 	Latent       tensorJSON  `json:"latent"`
 	LatentToMimi *tensorJSON `json:"latent_to_mimi,omitempty"`
 	MimiDecode   *tensorJSON `json:"mimi_decode,omitempty"`
+	// MimiDecodeTail holds only the last samples of the decode, for cases too
+	// long to store in full.
+	MimiDecodeTail *tensorJSON `json:"mimi_decode_tail,omitempty"`
 }
 
 type tensorJSON struct {
@@ -372,7 +375,7 @@ func checkMimiParity(t *testing.T, m *Model, tc mimiPythonParityCase) {
 	t.Helper()
 
 	convTol := ops.Tolerance{Abs: 2e-4, Rel: 1e-3}
-	deconvTol := ops.Tolerance{Abs: 2e-4, Rel: 5e-2}
+	deconvTol := ops.Tolerance{Abs: 5e-5, Rel: 5e-3}
 
 	latent, err := tc.Latent.tensor()
 	if err != nil {
@@ -405,6 +408,32 @@ func checkMimiParity(t *testing.T, m *Model, tc mimiPythonParityCase) {
 		}
 
 		assertTensorParity(t, "mimi_decode", audio, want, deconvTol)
+	}
+
+	if tc.MimiDecodeTail != nil {
+		audio, err := m.MimiDecode(mimiLatent)
+		if err != nil {
+			t.Fatalf("mimi_decode: %v", err)
+		}
+
+		want, err := tc.MimiDecodeTail.tensor()
+		if err != nil {
+			t.Fatalf("mimi_decode_tail fixture: %v", err)
+		}
+
+		shape := audio.Shape()
+
+		raw, n := audio.RawData(), want.ElemCount()
+		if len(raw) < n || int64(audio.ElemCount()) != shape[len(shape)-1] {
+			t.Fatalf("mimi_decode shape %v cannot hold a %d-sample tail", audio.Shape(), n)
+		}
+
+		tail, err := tensor.New(raw[len(raw)-n:], want.Shape())
+		if err != nil {
+			t.Fatalf("mimi_decode tail: %v", err)
+		}
+
+		assertTensorParity(t, "mimi_decode_tail", tail, want, deconvTol)
 	}
 }
 
@@ -499,6 +528,17 @@ func assertTensorParity(t *testing.T, name string, got, want *tensor.Tensor, tol
 	}
 
 	gd, wd := got.RawData(), want.RawData()
+
+	// worst is the largest error relative to the allowed one; below 1 passes.
+	worst := 0.0
+
+	for i := range wd {
+		w := float64(wd[i])
+		worst = max(worst, math.Abs(float64(gd[i])-w)/(tol.Abs+tol.Rel*math.Abs(w)))
+	}
+
+	t.Logf("%s: max abs err %g, worst error/tolerance %.3f", name, rep.MaxAbsErr, worst)
+
 	for i := range wd {
 		g, w := float64(gd[i]), float64(wd[i])
 		if math.IsNaN(g) || math.Abs(g-w) > tol.Abs+tol.Rel*math.Abs(w) {

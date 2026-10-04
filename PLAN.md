@@ -631,9 +631,14 @@ Follow-ups:
       `numpy.allclose` (decided with the user): `CompareTensor` also needs max rel ≤ 5e-3, which failed on one
       English hidden element (−7.99e-6 vs −7.41e-6, abs 5.8e-7). Mutations: an erf GELU fails both flow and voice
       cases in both languages; the German fixture run on the English config fails text, flow and Mimi.
-- [ ] The Mimi parity cases still pass with an erf GELU in place of tanh: the decode tolerance (`Rel: 5e-2`) and
+- [x] The Mimi parity cases still pass with an erf GELU in place of tanh: the decode tolerance (`Rel: 5e-2`) and
       the small fixture latents (scale 0.03) hide a decoder-transformer change. Tighten them, or add a case with
       latents in the generated range. (Found 2026-10-04.)
+      (2026-10-04) — Both: a `4_frames_generated_range` case (scale 0.15, values within ±1.65) and the decode
+      tolerance tightened from `{Abs: 2e-4, Rel: 5e-2}` to `{Abs: 5e-5, Rel: 5e-3}`. Measured error ≤ 1e-6 on the
+      short decodes and 1.7e-5 on the long tail (worst 0.21 of the tolerance); `assertTensorParity` now logs that
+      ratio. An erf GELU in the Mimi transformer alone now fails all five Mimi cases in both languages, while flow
+      and voice cases still pass.
 - [ ] Port the upstream test tables as Go table tests:
   - `test_split_sentences.py`: decimals, 14 terminal-punctuation cases, `capitalize_first_letter=False`,
     `replace_characters`, Hindi passthrough
@@ -641,7 +646,14 @@ Follow-ups:
   - `test_tokenizer_backends.py`: JSON vs SentencePiece id equality on the edge-case strings
   - `test_end_on_pause.py`, `test_audio.py` (WAV header frame count), `test_streaming_cancellation.py`
   - `test_utils.py`: every embedded config has `default_temperature == 0.3`
-- [ ] Attention-mask parity tests with offset/context edge cases (carried over)
+- [x] Attention-mask parity tests with offset/context edge cases (carried over)
+      (2026-10-04) — `TestAttentionWithPositionsMaskEdgeCases` checks `AttentionWithPositions` against a
+      per-element transcription of upstream `_build_attention_mask`: window boundary (delta = context−1 vs
+      context), context 1, a step at offset 300 past context 250, keys after the query, invalid and NaN-filled
+      cache slots, no context. The Python fixtures add `130_frames_past_context`: 260 Mimi transformer steps
+      against context 250, comparing the last 3840 audio samples. Mutations `delta <= context`, ignoring the
+      context, `delta <= 0` and `posK < -1` each fail the table test; the first two also fail the long Mimi case
+      (148× and 3885× the tolerance). Not covered: a fully masked row, which cannot occur (each query sees itself).
 - [ ] Bump the `pocket-tts==2.1.0` pin in `test-integration.yml` / `model-export.yml` to the synced version once
       the scripts above work with it
 - [ ] Known caveat: ONNX-backed native parity tests can panic inside `onnxruntime-purego` with

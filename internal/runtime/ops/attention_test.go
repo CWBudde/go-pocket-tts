@@ -90,6 +90,186 @@ func TestAttentionWithPositionsMatchesCausalOffset(t *testing.T) {
 	}
 }
 
+// TestAttentionWithPositionsMaskEdgeCases checks AttentionWithPositions against
+// a per-element transcription of upstream's _build_attention_mask
+// (pocket_tts/modules/attention.py): a key is visible when pos_k >= 0,
+// delta = pos_q - pos_k >= 0 and, with a context, delta < context.
+func TestAttentionWithPositionsMaskEdgeCases(t *testing.T) {
+	nan := float32(math.NaN())
+
+	tests := []struct {
+		name    string
+		posQ    []int64
+		posK    []int64
+		context int64
+		// nanKeys are key slots filled with NaN, like unwritten KV cache slots.
+		nanKeys []int
+	}{
+		{
+			name:    "window boundary",
+			posQ:    []int64{5, 6},
+			posK:    arangeT(7),
+			context: 3,
+		},
+		{
+			name:    "context 1 sees only itself",
+			posQ:    []int64{0, 1, 2, 3},
+			posK:    arangeT(4),
+			context: 1,
+		},
+		{
+			name:    "streaming step past the context",
+			posQ:    []int64{300},
+			posK:    arangeT(301),
+			context: 250,
+		},
+		{
+			name:    "keys after the query",
+			posQ:    []int64{2},
+			posK:    arangeT(6),
+			context: AttentionNoContext,
+		},
+		{
+			name:    "invalid and unwritten cache slots",
+			posQ:    []int64{1, 2},
+			posK:    []int64{-1, -1, 0, 1, 2, 3, 4},
+			context: 250,
+			nanKeys: []int{0, 1, 5, 6},
+		},
+		{
+			name:    "no context",
+			posQ:    []int64{7, 8},
+			posK:    arangeT(9),
+			context: AttentionNoContext,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			const heads, d, dv = 2, 4, 3
+
+			tq, tk := len(tc.posQ), len(tc.posK)
+			q := seqDataT(heads * tq * d)
+			k := seqDataT(heads * tk * d)
+			v := make([]float32, heads*tk*dv)
+
+			// Shift k so its pattern differs from q's.
+			for i := range k {
+				k[i] = k[(i+5)%len(k)]
+			}
+
+			for i := range v {
+				v[i] = float32(i%11) - 5
+			}
+
+			for h := range heads {
+				for _, ki := range tc.nanKeys {
+					for j := range d {
+						k[(h*tk+ki)*d+j] = nan
+					}
+
+					for j := range dv {
+						v[(h*tk+ki)*dv+j] = nan
+					}
+				}
+			}
+
+			out, err := AttentionWithPositions(
+				mustTensorT(t, q, []int64{1, heads, int64(tq), d}),
+				mustTensorT(t, k, []int64{1, heads, int64(tk), d}),
+				mustTensorT(t, v, []int64{1, heads, int64(tk), dv}),
+				tc.posQ, tc.posK, tc.context,
+			)
+			if err != nil {
+				t.Fatalf("AttentionWithPositions: %v", err)
+			}
+
+			want := referencePositionAttention(q, k, v, heads, tq, tk, d, dv, tc.posQ, tc.posK, tc.context)
+
+			got := out.Data()
+			for i := range got {
+				if math.IsNaN(float64(got[i])) {
+					t.Fatalf("output[%d] is NaN", i)
+				}
+			}
+
+			if !equalApprox(got, want, 1e-5) {
+				t.Fatalf("output = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// referencePositionAttention is softmax(q·kᵀ/√d)·v per head with upstream's
+// position mask, in float64.
+func referencePositionAttention(q, k, v []float32, heads, tq, tk, d, dv int, posQ, posK []int64, context int64) []float32 {
+	out := make([]float32, heads*tq*dv)
+
+	for h := range heads {
+		for qi := range tq {
+			weights := make([]float64, tk)
+			maxScore := math.Inf(-1)
+
+			for ki := range tk {
+				delta := posQ[qi] - posK[ki]
+
+				visible := posK[ki] >= 0 && delta >= 0
+				if context != AttentionNoContext {
+					visible = visible && delta < context
+				}
+
+				if !visible {
+					weights[ki] = math.Inf(-1)
+					continue
+				}
+
+				var score float64
+				for j := range d {
+					score += float64(q[(h*tq+qi)*d+j]) * float64(k[(h*tk+ki)*d+j])
+				}
+
+				weights[ki] = score / math.Sqrt(float64(d))
+				maxScore = max(maxScore, weights[ki])
+			}
+
+			var sum float64
+
+			for ki := range tk {
+				if math.IsInf(weights[ki], -1) {
+					weights[ki] = 0
+					continue
+				}
+
+				weights[ki] = math.Exp(weights[ki] - maxScore)
+				sum += weights[ki]
+			}
+
+			for j := range dv {
+				var acc float64
+
+				for ki := range tk {
+					if weights[ki] != 0 {
+						acc += weights[ki] / sum * float64(v[(h*tk+ki)*dv+j])
+					}
+				}
+
+				out[(h*tq+qi)*dv+j] = float32(acc)
+			}
+		}
+	}
+
+	return out
+}
+
+func arangeT(n int) []int64 {
+	out := make([]int64, n)
+	for i := range out {
+		out[i] = int64(i)
+	}
+
+	return out
+}
+
 func TestCausalMaskErrors(t *testing.T) {
 	_, err := CausalMask(nil, 0)
 	if err == nil || !strings.Contains(err.Error(), "is nil") {
