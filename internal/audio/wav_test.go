@@ -37,9 +37,7 @@ func makeWAV(sampleRate uint32, numChannels uint16, bitDepth uint16, numSamples 
 	buf.WriteString("data")
 
 	_ = binary.Write(buf, binary.LittleEndian, dataSize)
-	for range numSamples {
-		_ = binary.Write(buf, binary.LittleEndian, int16(0))
-	}
+	buf.Write(make([]byte, dataSize)) // silence, sized for any bit depth and channel count
 
 	return buf.Bytes()
 }
@@ -121,6 +119,44 @@ func TestDecodeWAV(t *testing.T) {
 		}
 	})
 
+	t.Run("decodes WAVE_FORMAT_EXTENSIBLE PCM and float WAVs", func(t *testing.T) {
+		ramp := make([]float32, 64)
+		for i := range ramp {
+			ramp[i] = float32(i-32) / 40
+		}
+
+		for _, tc := range []struct {
+			name     string
+			bitDepth int
+			format   int
+		}{
+			{"int16", 16, wavFormatPCM},
+			{"int24", 24, wavFormatPCM},
+			{"float32", 32, wavFormatIEEEFloat},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				data := toExtensibleWAV(t, encodeTestWAV(t, ramp, tc.bitDepth, tc.format))
+
+				samples, err := DecodeWAV(data)
+				if err != nil {
+					t.Fatalf("DecodeWAV: %v", err)
+				}
+
+				if len(samples) != len(ramp) {
+					t.Fatalf("got %d samples, want %d", len(samples), len(ramp))
+				}
+
+				// One 16-bit LSB.
+				const tol = 1.0 / (1 << 15)
+				for i, want := range ramp {
+					if math.Abs(float64(samples[i]-want)) > tol {
+						t.Fatalf("sample %d = %v, want %v", i, samples[i], want)
+					}
+				}
+			})
+		}
+	})
+
 	t.Run("rejects 8-bit", func(t *testing.T) {
 		_, err := DecodeWAV(makeWAV(24000, 1, 8, 10))
 		if !errors.Is(err, ErrFormatMismatch) {
@@ -167,6 +203,44 @@ func encodeTestWAV(t *testing.T, samples []float32, bitDepth, format int) []byte
 	}
 
 	return buf.Bytes()
+}
+
+// toExtensibleWAV rewrites the fmt chunk of a WAV from encodeTestWAV as a
+// 40-byte WAVE_FORMAT_EXTENSIBLE chunk whose sub-format GUID carries the
+// original format tag (PCM or IEEE float).
+func toExtensibleWAV(t *testing.T, data []byte) []byte {
+	t.Helper()
+
+	const fmtStart = 12 // after "RIFF", size, "WAVE"
+
+	if len(data) < fmtStart+8+16 || string(data[fmtStart:fmtStart+4]) != "fmt " {
+		t.Fatal("encodeTestWAV output does not start with a fmt chunk")
+	}
+
+	fmtSize := int(binary.LittleEndian.Uint32(data[fmtStart+4:]))
+	body := data[fmtStart+8 : fmtStart+8+16] // the common 16 bytes
+	rest := data[fmtStart+8+fmtSize:]
+
+	format := binary.LittleEndian.Uint16(body[0:2])
+	bitDepth := binary.LittleEndian.Uint16(body[14:16])
+
+	ext := &bytes.Buffer{}
+	ext.WriteString("fmt ")
+	_ = binary.Write(ext, binary.LittleEndian, uint32(40))
+	_ = binary.Write(ext, binary.LittleEndian, uint16(0xfffe)) // WAVE_FORMAT_EXTENSIBLE
+	ext.Write(body[2:16])                                      // channels .. bits per sample
+	_ = binary.Write(ext, binary.LittleEndian, uint16(22))     // cbSize
+	_ = binary.Write(ext, binary.LittleEndian, bitDepth)       // valid bits per sample
+	_ = binary.Write(ext, binary.LittleEndian, uint32(0x4))    // channel mask: front center
+	_ = binary.Write(ext, binary.LittleEndian, format)         // sub-format GUID: tag ...
+	ext.Write([]byte{0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71})
+
+	out := append([]byte{}, data[:fmtStart]...)
+	out = append(out, ext.Bytes()...)
+	out = append(out, rest...)
+	binary.LittleEndian.PutUint32(out[4:8], uint32(len(out)-8))
+
+	return out
 }
 
 func TestEncodeWAV(t *testing.T) {
