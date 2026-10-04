@@ -14,28 +14,28 @@ import (
 )
 
 func TestProjectSpeakerConditioning_KnownValues(t *testing.T) {
-	latentData := make([]float32, 2*mimiEncoderLatentDim)
+	latentData := make([]float32, 2*defaultMimiEncoderLatentDim)
 	latentData[0], latentData[1], latentData[2] = 1, 2, 3
-	latentData[mimiEncoderLatentDim+0], latentData[mimiEncoderLatentDim+1], latentData[mimiEncoderLatentDim+2] = 4, 5, 6
+	latentData[defaultMimiEncoderLatentDim+0], latentData[defaultMimiEncoderLatentDim+1], latentData[defaultMimiEncoderLatentDim+2] = 4, 5, 6
 
-	latent, err := NewTensor(latentData, []int64{1, 2, mimiEncoderLatentDim})
+	latent, err := NewTensor(latentData, []int64{1, 2, defaultMimiEncoderLatentDim})
 	if err != nil {
 		t.Fatalf("NewTensor latent: %v", err)
 	}
 
-	weight := make([]float32, VoiceEmbeddingDim*mimiEncoderLatentDim)
+	weight := make([]float32, VoiceEmbeddingDim*defaultMimiEncoderLatentDim)
 	// Output dim 0 uses [1,0,1].
-	weight[0*mimiEncoderLatentDim+0] = 1
-	weight[0*mimiEncoderLatentDim+2] = 1
+	weight[0*defaultMimiEncoderLatentDim+0] = 1
+	weight[0*defaultMimiEncoderLatentDim+2] = 1
 	// Output dim 1 uses [0.5,0.5,0].
-	weight[1*mimiEncoderLatentDim+0] = 0.5
-	weight[1*mimiEncoderLatentDim+1] = 0.5
+	weight[1*defaultMimiEncoderLatentDim+0] = 0.5
+	weight[1*defaultMimiEncoderLatentDim+1] = 0.5
 	// Output dim 1023 uses [-1,1,1].
-	weight[1023*mimiEncoderLatentDim+0] = -1
-	weight[1023*mimiEncoderLatentDim+1] = 1
-	weight[1023*mimiEncoderLatentDim+2] = 1
+	weight[1023*defaultMimiEncoderLatentDim+0] = -1
+	weight[1023*defaultMimiEncoderLatentDim+1] = 1
+	weight[1023*defaultMimiEncoderLatentDim+2] = 1
 
-	got, err := projectSpeakerConditioning(latent, weight)
+	got, err := projectSpeakerConditioning(latent, weight, defaultMimiEncoderLatentDim)
 	if err != nil {
 		t.Fatalf("projectSpeakerConditioning: %v", err)
 	}
@@ -78,24 +78,24 @@ func TestProjectSpeakerConditioning_KnownValues(t *testing.T) {
 }
 
 func TestNormalizeMimiEncoderLatent_TransposesChannelFirstOutput(t *testing.T) {
-	raw := make([]float32, mimiEncoderLatentDim*2) // [1, 512, 2]
-	for c := range mimiEncoderLatentDim {
+	raw := make([]float32, defaultMimiEncoderLatentDim*2) // [1, 512, 2]
+	for c := range defaultMimiEncoderLatentDim {
 		raw[c*2] = float32(c)
 		raw[c*2+1] = float32(1000 + c)
 	}
 
-	latent, err := NewTensor(raw, []int64{1, mimiEncoderLatentDim, 2})
+	latent, err := NewTensor(raw, []int64{1, defaultMimiEncoderLatentDim, 2})
 	if err != nil {
 		t.Fatalf("NewTensor latent: %v", err)
 	}
 
-	norm, err := normalizeMimiEncoderLatent(latent)
+	norm, err := normalizeMimiEncoderLatent(latent, defaultMimiEncoderLatentDim)
 	if err != nil {
 		t.Fatalf("normalizeMimiEncoderLatent: %v", err)
 	}
 
-	if shape := norm.Shape(); len(shape) != 3 || shape[0] != 1 || shape[1] != 2 || shape[2] != mimiEncoderLatentDim {
-		t.Fatalf("shape = %v, want [1 2 %d]", shape, mimiEncoderLatentDim)
+	if shape := norm.Shape(); len(shape) != 3 || shape[0] != 1 || shape[1] != 2 || shape[2] != defaultMimiEncoderLatentDim {
+		t.Fatalf("shape = %v, want [1 2 %d]", shape, defaultMimiEncoderLatentDim)
 	}
 
 	data, err := ExtractFloat32(norm)
@@ -103,30 +103,30 @@ func TestNormalizeMimiEncoderLatent_TransposesChannelFirstOutput(t *testing.T) {
 		t.Fatalf("ExtractFloat32: %v", err)
 	}
 
-	if data[0] != 0 || data[mimiEncoderLatentDim-1] != float32(mimiEncoderLatentDim-1) {
-		t.Fatalf("first frame data mismatch: got [%v ... %v]", data[0], data[mimiEncoderLatentDim-1])
+	if data[0] != 0 || data[defaultMimiEncoderLatentDim-1] != float32(defaultMimiEncoderLatentDim-1) {
+		t.Fatalf("first frame data mismatch: got [%v ... %v]", data[0], data[defaultMimiEncoderLatentDim-1])
 	}
 
-	if data[mimiEncoderLatentDim] != 1000 || data[mimiEncoderLatentDim*2-1] != float32(1000+mimiEncoderLatentDim-1) {
-		t.Fatalf("second frame data mismatch: got [%v ... %v]", data[mimiEncoderLatentDim], data[mimiEncoderLatentDim*2-1])
+	if data[defaultMimiEncoderLatentDim] != 1000 || data[defaultMimiEncoderLatentDim*2-1] != float32(1000+defaultMimiEncoderLatentDim-1) {
+		t.Fatalf("second frame data mismatch: got [%v ... %v]", data[defaultMimiEncoderLatentDim], data[defaultMimiEncoderLatentDim*2-1])
 	}
 }
 
 func TestEncodeVoiceSamples_RunsMimiEncoderAndProjection(t *testing.T) {
-	latentData := make([]float32, 2*mimiEncoderLatentDim)
+	latentData := make([]float32, 2*defaultMimiEncoderLatentDim)
 	latentData[0], latentData[1] = 2, 3
-	latentData[mimiEncoderLatentDim+0], latentData[mimiEncoderLatentDim+1] = 4, 1
+	latentData[defaultMimiEncoderLatentDim+0], latentData[defaultMimiEncoderLatentDim+1] = 4, 1
 
-	latentTensor, err := NewTensor(latentData, []int64{1, 2, mimiEncoderLatentDim})
+	latentTensor, err := NewTensor(latentData, []int64{1, 2, defaultMimiEncoderLatentDim})
 	if err != nil {
 		t.Fatalf("NewTensor latent: %v", err)
 	}
 
-	weight := make([]float32, VoiceEmbeddingDim*mimiEncoderLatentDim)
-	weight[0*mimiEncoderLatentDim+0] = 1
-	weight[0*mimiEncoderLatentDim+1] = 1
-	weight[1*mimiEncoderLatentDim+0] = 1
-	weight[1*mimiEncoderLatentDim+1] = -1
+	weight := make([]float32, VoiceEmbeddingDim*defaultMimiEncoderLatentDim)
+	weight[0*defaultMimiEncoderLatentDim+0] = 1
+	weight[0*defaultMimiEncoderLatentDim+1] = 1
+	weight[1*defaultMimiEncoderLatentDim+0] = 1
+	weight[1*defaultMimiEncoderLatentDim+1] = -1
 
 	fake := &fakeRunner{
 		name: "mimi_encoder",
@@ -198,7 +198,7 @@ func TestEncodeVoice_EndsPromptOnPause(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	latent, err := NewTensor(make([]float32, mimiEncoderLatentDim), []int64{1, 1, mimiEncoderLatentDim})
+	latent, err := NewTensor(make([]float32, defaultMimiEncoderLatentDim), []int64{1, 1, defaultMimiEncoderLatentDim})
 	if err != nil {
 		t.Fatalf("NewTensor latent: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestEncodeVoice_EndsPromptOnPause(t *testing.T) {
 	}
 
 	e := engineWithFakeRunners(map[string]runnerIface{"mimi_encoder": fake})
-	e.speakerProjWeight = make([]float32, VoiceEmbeddingDim*mimiEncoderLatentDim)
+	e.speakerProjWeight = make([]float32, VoiceEmbeddingDim*defaultMimiEncoderLatentDim)
 
 	_, err = e.EncodeVoice(path)
 	if err != nil {
@@ -294,7 +294,7 @@ func TestEncodeVoice_ResamplesAndDownmixesPrompt(t *testing.T) {
 func captureEncoderInput(t *testing.T, path string) []float32 {
 	t.Helper()
 
-	latent, err := NewTensor(make([]float32, mimiEncoderLatentDim), []int64{1, 1, mimiEncoderLatentDim})
+	latent, err := NewTensor(make([]float32, defaultMimiEncoderLatentDim), []int64{1, 1, defaultMimiEncoderLatentDim})
 	if err != nil {
 		t.Fatalf("NewTensor latent: %v", err)
 	}
@@ -316,7 +316,7 @@ func captureEncoderInput(t *testing.T, path string) []float32 {
 	}
 
 	e := engineWithFakeRunners(map[string]runnerIface{"mimi_encoder": fake})
-	e.speakerProjWeight = make([]float32, VoiceEmbeddingDim*mimiEncoderLatentDim)
+	e.speakerProjWeight = make([]float32, VoiceEmbeddingDim*defaultMimiEncoderLatentDim)
 
 	_, err = e.EncodeVoice(path)
 	if err != nil {
@@ -355,7 +355,7 @@ func stereoWAV16(rate uint32, left, right []int16) []byte {
 
 func TestEncodeVoiceSamples_MissingMimiEncoderGraph(t *testing.T) {
 	e := engineWithFakeRunners(map[string]runnerIface{})
-	e.speakerProjWeight = make([]float32, VoiceEmbeddingDim*mimiEncoderLatentDim)
+	e.speakerProjWeight = make([]float32, VoiceEmbeddingDim*defaultMimiEncoderLatentDim)
 
 	_, err := e.encodeVoiceSamples(context.Background(), []float32{1})
 	if err == nil {

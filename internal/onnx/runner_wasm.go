@@ -14,6 +14,9 @@ type RunnerConfig struct {
 	LibraryPath      string
 	APIVersion       uint32
 	ModelWeightsPath string
+	// EncoderLatentDim is the Mimi encoder latent width for voice encoding
+	// (model config mimi.inner_dim); 0 means 512 (english_2026-01).
+	EncoderLatentDim int
 }
 
 // Runner is unavailable in js/wasm builds. Use NewEngineWithRunners with a

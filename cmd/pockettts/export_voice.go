@@ -21,11 +21,7 @@ type voiceEncoder interface {
 }
 
 var buildVoiceEncoder = func(cfg config.Config, modelWeightsPath string) (voiceEncoder, error) {
-	rcfg := onnx.RunnerConfig{
-		LibraryPath:      cfg.Runtime.ORTLibraryPath,
-		APIVersion:       23,
-		ModelWeightsPath: modelWeightsPath,
-	}
+	rcfg := voiceEncoderRunnerConfig(cfg, modelWeightsPath)
 	if rcfg.LibraryPath == "" {
 		info, err := onnx.DetectRuntime(cfg.Runtime)
 		if err != nil {
@@ -41,6 +37,24 @@ var buildVoiceEncoder = func(cfg config.Config, modelWeightsPath string) (voiceE
 	}
 
 	return engine, nil
+}
+
+// voiceEncoderRunnerConfig returns the ONNX runner config for voice encoding.
+// The speaker projection is [d_model, mimi inner_dim] (512 for
+// english_2026-01, 32 for newer models), so the latent width comes from the
+// model config.
+func voiceEncoderRunnerConfig(cfg config.Config, modelWeightsPath string) onnx.RunnerConfig {
+	rcfg := onnx.RunnerConfig{
+		LibraryPath:      cfg.Runtime.ORTLibraryPath,
+		APIVersion:       23,
+		ModelWeightsPath: modelWeightsPath,
+	}
+
+	if cfg.Model != nil {
+		rcfg.EncoderLatentDim = cfg.Model.MimiInnerDim()
+	}
+
+	return rcfg
 }
 
 var writeVoiceSafetensors = func(path string, data []float32, shape []int64) error {
