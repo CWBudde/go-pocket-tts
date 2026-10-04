@@ -140,48 +140,57 @@ func (l *Linear) forwardIntoTrusted(x, out *tensor.Tensor) error {
 		biasData = l.Bias.RawData()
 	}
 
+	// runBatchRange computes batch rows [lo, hi) against all weight rows.
 	runBatchRange := func(lo, hi int) {
-		for bIdx := lo; bIdx < hi; bIdx++ {
-			xSlice := xData[bIdx*inI : bIdx*inI+inI]
-
-			yBase := bIdx * outI
-			for o := range outI {
-				sum := tensor.DotProduct(xSlice, wData[o*inI:(o+1)*inI])
-				if biasData != nil {
-					sum += biasData[o]
-				}
-
-				outData[yBase+o] = sum
-			}
-		}
+		tensor.MatMulTransB(outData[lo*outI:], outI, xData[lo*inI:hi*inI], wData, hi-lo, outI, inI)
+		addLinearBias(outData, outI, biasData, lo, hi, 0, outI)
 	}
 
-	runOutputRangeSingleRow := func(lo, hi int) {
-		xSlice := xData[:inI]
-		for o := lo; o < hi; o++ {
-			sum := tensor.DotProduct(xSlice, wData[o*inI:(o+1)*inI])
-			if biasData != nil {
-				sum += biasData[o]
-			}
-
-			outData[o] = sum
-		}
+	// runOutputBlocks computes output columns [4*lo, 4*hi) for every batch
+	// row. Ranges are in 4-column blocks so each worker's slice of weight rows
+	// fills whole NEON kernel blocks.
+	runOutputBlocks := func(lo, hi int) {
+		colLo, colHi := lo*4, min(hi*4, outI)
+		tensor.MatMulTransB(outData[colLo:], outI, xData, wData[colLo*inI:colHi*inI], batch, colHi-colLo, inI)
+		addLinearBias(outData, outI, biasData, 0, batch, colLo, colHi)
 	}
 
 	const linearParallelMinFMAs = int64(1 << 18)
 	totalFMAs := int64(batch) * int64(outI) * int64(inI)
 	workers := tensor.Workers()
+	outBlocks := (outI + 3) / 4
+
+	// Below 8 rows per worker, splitting the batch leaves each worker few or
+	// no full 4-row kernel blocks and every worker streams all weights;
+	// splitting the output columns instead measured up to 2× faster there
+	// (BenchmarkNativeLinear) and on par above it.
+	const linearMinRowsPerWorker = 8
 
 	switch {
-	case workers > 1 && totalFMAs >= linearParallelMinFMAs && batch > 1:
-		parallelForByWorkers(batch, workers, runBatchRange)
-	case workers > 1 && totalFMAs >= linearParallelMinFMAs && batch == 1 && outI > 1:
-		parallelForByWorkers(outI, workers, runOutputRangeSingleRow)
-	default:
+	case workers <= 1 || totalFMAs < linearParallelMinFMAs:
 		runBatchRange(0, batch)
+	case batch >= linearMinRowsPerWorker*workers:
+		parallelForByWorkers(batch, workers, runBatchRange)
+	default:
+		parallelForByWorkers(outBlocks, workers, runOutputBlocks)
 	}
 
 	return nil
+}
+
+// addLinearBias adds bias[colLo:colHi] to columns [colLo, colHi) of rows
+// [rowLo, rowHi) of the row-major out (row stride outI). A nil bias is a no-op.
+func addLinearBias(out []float32, outI int, bias []float32, rowLo, rowHi, colLo, colHi int) {
+	if bias == nil {
+		return
+	}
+
+	for r := rowLo; r < rowHi; r++ {
+		row := out[r*outI+colLo : r*outI+colHi]
+		for o, bv := range bias[colLo:colHi] {
+			row[o] += bv
+		}
+	}
 }
 
 type LayerNorm struct {

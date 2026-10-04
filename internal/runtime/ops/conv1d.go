@@ -140,23 +140,45 @@ func fillIm2colRows(
 }
 
 // im2colGEMM computes output channels ocLo..ocHi-1 at positions
-// ox0..ox0+rows-1 from imcol rows 0..rows-1.
+// ox0..ox0+rows-1 from imcol rows 0..rows-1: the kernel rows times the
+// transposed patch rows land straight in the output (row stride outLen),
+// then each channel gets its bias.
 func im2colGEMM(
 	imcol, kernelData, biasData []float32,
 	patchLen, ocLo, ocHi int,
 	out []float32, outLen, ox0, rows int,
 ) {
-	for oc := ocLo; oc < ocHi; oc++ {
-		kernelRow := kernelData[oc*patchLen : (oc+1)*patchLen]
+	m := ocHi - ocLo
+	kRows := kernelData[ocLo*patchLen : ocHi*patchLen]
+	patches := imcol[:rows*patchLen]
 
-		biasVal := float32(0)
-		if biasData != nil {
-			biasVal = biasData[oc]
+	if rows < 4 && m >= 4 {
+		// Too few positions (streaming decode) for MatMulTransB's 4-wide
+		// blocks: let the channels take that role and transpose the result.
+		prod := getScratch(rows * m)
+		tensor.MatMulTransB(prod, m, patches, kRows, rows, m, patchLen)
+
+		for r := range rows {
+			for i, v := range prod[r*m : (r+1)*m] {
+				out[(ocLo+i)*outLen+ox0+r] = v
+			}
 		}
+
+		putScratch(prod)
+	} else {
+		tensor.MatMulTransB(out[ocLo*outLen+ox0:], outLen, kRows, patches, m, rows, patchLen)
+	}
+
+	if biasData == nil {
+		return
+	}
+
+	for oc := ocLo; oc < ocHi; oc++ {
+		bv := biasData[oc]
 
 		outRow := out[oc*outLen+ox0 : oc*outLen+ox0+rows]
 		for r := range outRow {
-			outRow[r] = tensor.DotProduct(kernelRow, imcol[r*patchLen:(r+1)*patchLen]) + biasVal
+			outRow[r] += bv
 		}
 	}
 }

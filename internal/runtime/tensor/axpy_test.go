@@ -62,6 +62,33 @@ func TestAxpy(t *testing.T) {
 	}
 }
 
+// TestAxpyEveryLength covers both sides of the SIMD cutover, the SIMD loops
+// and every tail length, and checks the slack after n stays untouched.
+func TestAxpyEveryLength(t *testing.T) {
+	for n := 1; n <= 70; n++ {
+		dst := make([]float32, n+2)
+		src := make([]float32, n+2)
+
+		for i := range dst {
+			dst[i] = float32(i%7) - 2.5
+			src[i] = float32(i%3) + 0.25
+		}
+
+		want := append([]float32(nil), dst...)
+		for i := range n {
+			want[i] += 0.75 * src[i]
+		}
+
+		Axpy(dst[:n], 0.75, src[:n])
+
+		for i := range dst {
+			if dst[i] != want[i] {
+				t.Fatalf("n=%d: dst[%d] = %v; want %v", n, i, dst[i], want[i])
+			}
+		}
+	}
+}
+
 func BenchmarkAxpy(b *testing.B) {
 	for _, n := range []int{8, 64, 512, 4096} {
 		dst := make([]float32, n)

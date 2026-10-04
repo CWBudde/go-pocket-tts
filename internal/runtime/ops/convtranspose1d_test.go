@@ -1,6 +1,9 @@
 package ops
 
 import (
+	"fmt"
+	"math"
+	"math/rand/v2"
 	"strings"
 	"testing"
 
@@ -332,5 +335,123 @@ func TestConvTranspose1DErrors(t *testing.T) {
 			_, err := ConvTranspose1D(tc.input, tc.kernel, tc.bias, tc.stride, tc.padding, tc.outputPadding, tc.dil, tc.groups)
 			assertErrContains(t, err, tc.wantErr)
 		})
+	}
+}
+
+// naiveConvTranspose1D is the textbook ConvTranspose1d (groups 1) with
+// float64 accumulation; outLen already has outputPadding and the right trim
+// applied.
+func naiveConvTranspose1D(in, kernel, bias []float32, batch, inCh, inLen, outCh, kSize, outLen,
+	stride, padding, dilation int64,
+) []float32 {
+	acc := make([]float64, batch*outCh*outLen)
+
+	for b := range batch {
+		for ic := range inCh {
+			for ix := range inLen {
+				v := float64(in[(b*inCh+ic)*inLen+ix])
+
+				for oc := range outCh {
+					for kx := range kSize {
+						pos := ix*stride - padding + kx*dilation
+						if pos >= 0 && pos < outLen {
+							acc[(b*outCh+oc)*outLen+pos] += v * float64(kernel[(ic*outCh+oc)*kSize+kx])
+						}
+					}
+				}
+			}
+		}
+	}
+
+	out := make([]float32, len(acc))
+	for i, v := range acc {
+		if bias != nil {
+			v += float64(bias[(int64(i)/outLen)%outCh])
+		}
+
+		out[i] = float32(v)
+	}
+
+	return out
+}
+
+// TestConvTranspose1DMatchesNaive covers the GEMM-and-scatter path: strided,
+// padded and dilated taps that fall off both ends, output channels that do
+// not fill a 4-row block, inputs long enough to need several ix tiles or too
+// short for a 4-column block, and the prepacked and right-trimmed entry
+// points.
+func TestConvTranspose1DMatchesNaive(t *testing.T) {
+	cases := []struct {
+		name                         string
+		batch, inCh, inLen           int64
+		outCh, kSize                 int64
+		stride, padding, outPad, dil int64
+		rightTrim                    int64
+		bias                         bool
+	}{
+		{"tiny", 1, 1, 3, 1, 2, 1, 0, 0, 1, 0, false},
+		{"stride 3 pad dil 2 outpad", 2, 6, 37, 7, 5, 3, 2, 1, 2, 0, true},
+		{"pad wider than kernel reach", 1, 9, 20, 5, 3, 2, 7, 1, 1, 0, true},
+		{"many ix tiles", 2, 6, 20000, 7, 5, 3, 2, 1, 2, 0, true},
+		{"mimi upsample right trim", 1, 16, 50, 9, 16, 8, 0, 0, 1, 8, true},
+		{"streaming one frame", 2, 12, 1, 6, 4, 2, 1, 1, 1, 0, true},
+		{"streaming three frames", 1, 16, 3, 9, 16, 8, 3, 0, 2, 5, true},
+	}
+
+	for _, c := range cases {
+		for _, workers := range []int{1, 3} {
+			t.Run(fmt.Sprintf("%s/workers=%d", c.name, workers), func(t *testing.T) {
+				SetConvWorkers(workers)
+				defer SetConvWorkers(0)
+
+				rng := rand.New(rand.NewPCG(uint64(c.inLen), uint64(c.outCh)))
+				in := randDataT(rng, c.batch*c.inCh*c.inLen)
+				kernel := randDataT(rng, c.inCh*c.outCh*c.kSize)
+
+				var (
+					bias  []float32
+					biasT *tensor.Tensor
+				)
+
+				if c.bias {
+					bias = randDataT(rng, c.outCh)
+					biasT = mustTensorT(t, bias, []int64{c.outCh})
+				}
+
+				inT := mustTensorT(t, in, []int64{c.batch, c.inCh, c.inLen})
+				kernelT := mustTensorT(t, kernel, []int64{c.inCh, c.outCh, c.kSize})
+
+				got, err := ConvTranspose1DRightTrim(inT, kernelT, biasT, c.stride, c.padding, c.outPad, c.dil, 1, c.rightTrim)
+				if err != nil {
+					t.Fatalf("convtranspose1d: %v", err)
+				}
+
+				packed, err := ConvTranspose1DPrePackedRightTrim(inT, kernelT, biasT, RepackConvTransposeKernel(kernelT),
+					c.stride, c.padding, c.outPad, c.dil, 1, c.rightTrim)
+				if err != nil {
+					t.Fatalf("convtranspose1d prepacked: %v", err)
+				}
+
+				outLen := got.Shape()[2]
+				if wantLen := (c.inLen-1)*c.stride - 2*c.padding + c.dil*(c.kSize-1) + c.outPad + 1 - c.rightTrim; outLen != wantLen {
+					t.Fatalf("outLen = %d, want %d", outLen, wantLen)
+				}
+
+				want := naiveConvTranspose1D(in, kernel, bias, c.batch, c.inCh, c.inLen, c.outCh, c.kSize, outLen,
+					c.stride, c.padding, c.dil)
+
+				for name, gotData := range map[string][]float32{"plain": got.RawData(), "prepacked": packed.RawData()} {
+					if len(gotData) != len(want) {
+						t.Fatalf("%s: len = %d, want %d", name, len(gotData), len(want))
+					}
+
+					for i := range want {
+						if d := math.Abs(float64(gotData[i] - want[i])); d > 1e-4 {
+							t.Fatalf("%s: out[%d] = %g, want %g (|diff| %.3g)", name, i, gotData[i], want[i], d)
+						}
+					}
+				}
+			})
+		}
 	}
 }

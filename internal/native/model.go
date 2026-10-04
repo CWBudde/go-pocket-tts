@@ -315,14 +315,16 @@ func (p *latentToMimiProjector) Project(latent *tensor.Tensor) (*tensor.Tensor, 
 		latentB := latentData[batchIdx*latentBatchStride : (batchIdx+1)*latentBatchStride]
 		outB := outData[batchIdx*outBatchStride : (batchIdx+1)*outBatchStride]
 
+		// outB rows are output channels and columns are time steps, so the
+		// weight rows are the a operand and the latent frames the b operand.
+		tensor.MatMulTransB(outB[ocLo*steps:], steps, p.weight[ocLo*p.inChannels:ocHi*p.inChannels], latentB, ocHi-ocLo, steps, p.inChannels)
+
 		for oc := ocLo; oc < ocHi; oc++ {
-			wRow := p.weight[oc*p.inChannels : (oc+1)*p.inChannels]
 			outRow := outB[oc*steps : (oc+1)*steps]
 			bv := p.bias[oc]
 
-			for ti := range steps {
-				off := ti * p.inChannels
-				outRow[ti] = tensor.DotProduct(latentB[off:off+p.inChannels], wRow) + bv
+			for ti := range outRow {
+				outRow[ti] += bv
 			}
 		}
 	}

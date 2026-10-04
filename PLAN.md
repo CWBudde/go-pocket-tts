@@ -790,6 +790,22 @@ Note: chunk-level streaming (`/tts/stream`) is already implemented.
 
 - [ ] Memory budgeting for model weights, KV cache and per-request buffers (multi-language registry, 24L)
 - [ ] Im2col tiling for cache-friendliness on large convolutions (res3: 38400×192 im2col = 30 MB, overflows L3)
+      (2026-10-04) — partial: long Conv1D outputs build im2col in 128 KiB tiles per worker (#38,
+      `TestConv1DTiledMatchesFullIm2col`), and each tile runs through `tensor.MatMulTransB`. The decoder's peak
+      memory was not measured.
+- [x] NEON register-blocked matmul for arm64. The NEON dot product took 48–67 % of CPU because convs and Linear
+      computed one `DotProduct` per output. (2026-10-04) — `tensor.MatMulTransB` (`gemm.go`, `gemm_arm64.{go,s}`):
+      4×4 and 1×4 NEON blocks over k&^3, a Go k tail, 128 KiB b panels; other archs keep one `dotF32` per output
+      (bit-identical, checked under docker linux/amd64). `im2colGEMM`, `convTranspose1DGroups1` (per-kx GEMM +
+      scatter-add, kx order kept), `Linear` (batch < 8·workers splits output columns) and the latent projection
+      use it. Tests: `TestMatMulTransB*` (m, n 1..9, k tails, ldc gaps, panels), `TestConvTranspose1DMatchesNaive`,
+      `TestConv1DShortInputMatchesNaive`, `TestLinearForwardMatchesFloat64Reference`,
+      `TestLatentToMimiProjectorProjectMatchesFloat64Reference`; mutations killed. M5 Pro: Mimi encoder 30 s
+      8.8 s → 4.0 s (1 worker), 1.94 s → 1.33 s (8); Mimi decode 490 → 227 ms; full-pipeline bench 801 → 524 ms;
+      german synth with WAV cloning 3.3–3.9 s → 2.0–2.1 s; cloned voice max |diff| vs `main` 3.6e-7. The flow
+      step (13.3 ms, 1 worker) is memory-bound GEMV and did not move; an AVX2 `MatMulTransB` is a follow-up.
+- [ ] AVX2 + FMA kernel for `tensor.MatMulTransB` (amd64 still runs one `dotF32` per output), same 4×4 / 1×4
+      blocking as the NEON one
 - [ ] The native AR loop runs the full flow sampler on the stopping step and drops the frame, because
       `SampleNextLatentStateful` returns the latent and the EOS flag together (upstream does the same). Split
       backbone/EOS from flow sampling, as the ONNX loops do, to save `decodeSteps` flow passes per chunk.

@@ -1,7 +1,9 @@
 package native
 
 import (
+	"fmt"
 	"math"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
@@ -326,4 +328,71 @@ func shapeEqual(a, b []int64) bool {
 	}
 
 	return true
+}
+
+// TestLatentToMimiProjectorProjectMatchesFloat64Reference checks Project's
+// [B,T,in]→[B,out,T] product against float64 at sizes that leave kernel tails
+// in every dimension, sequentially and split over output channels.
+func TestLatentToMimiProjectorProjectMatchesFloat64Reference(t *testing.T) {
+	prevWorkers := tensor.Workers()
+	defer tensor.SetWorkers(prevWorkers)
+
+	rng := rand.New(rand.NewPCG(3, 5))
+
+	const (
+		batch = 2
+		inCh  = 35
+		outCh = 517
+	)
+
+	p := &latentToMimiProjector{
+		inChannels:  inCh,
+		outChannels: outCh,
+		weight:      randTensor(t, rng, outCh, inCh).RawData(),
+		bias:        randTensor(t, rng, outCh).RawData(),
+	}
+
+	for _, steps := range []int{1, 6, 9} {
+		latent := randTensor(t, rng, batch, steps, inCh)
+		lData := latent.RawData()
+
+		want := make([]float64, batch*outCh*steps)
+		tol := make([]float64, len(want))
+
+		for bi := range batch {
+			for oc := range outCh {
+				for ti := range steps {
+					sum := float64(p.bias[oc])
+					mag := math.Abs(sum)
+
+					for ic := range inCh {
+						prod := float64(lData[(bi*steps+ti)*inCh+ic]) * float64(p.weight[oc*inCh+ic])
+						sum += prod
+						mag += math.Abs(prod)
+					}
+
+					idx := (bi*outCh+oc)*steps + ti
+					want[idx] = sum
+					tol[idx] = 1e-5*mag + 1e-6
+				}
+			}
+		}
+
+		for _, workers := range []int{1, 4, 7} {
+			t.Run(fmt.Sprintf("steps=%d/workers=%d", steps, workers), func(t *testing.T) {
+				tensor.SetWorkers(workers)
+
+				got, err := p.Project(latent)
+				if err != nil {
+					t.Fatalf("Project: %v", err)
+				}
+
+				if !shapeEqual(got.Shape(), []int64{batch, outCh, int64(steps)}) {
+					t.Fatalf("shape = %v, want [%d %d %d]", got.Shape(), batch, outCh, steps)
+				}
+
+				assertCloseTol(t, "Project", got.RawData(), want, tol)
+			})
+		}
+	}
 }

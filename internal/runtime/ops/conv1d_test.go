@@ -314,7 +314,10 @@ func TestConv1DLongInputMatchesNaive(t *testing.T) {
 }
 
 // TestConv1DTiledMatchesFullIm2col: the tiled path computes every output from
-// the same patch and kernel row as the full im2col, so they agree bit for bit.
+// the same patch and kernel row as the full im2col. On arm64 an output's sum
+// order depends on whether it lands in a 4×4 NEON block or the dot-product
+// tail, which tile boundaries shift, so they agree to rounding, not bit for
+// bit.
 func TestConv1DTiledMatchesFullIm2col(t *testing.T) {
 	SetConvWorkers(3)
 	defer SetConvWorkers(0)
@@ -336,7 +339,7 @@ func TestConv1DTiledMatchesFullIm2col(t *testing.T) {
 			tiled, tileRows)
 
 		for i := range full {
-			if tiled[i] != full[i] {
+			if d := math.Abs(float64(tiled[i] - full[i])); d > 1e-5 {
 				t.Fatalf("tileRows %d: out[%d] = %g, full im2col %g", tileRows, i, tiled[i], full[i])
 			}
 		}
@@ -360,6 +363,58 @@ func TestConv1DZeroInputChannels(t *testing.T) {
 		if int64(len(data)) != 2*length || data[0] != 0.5 || data[len(data)-1] != -1 {
 			t.Fatalf("length %d: %d outputs, first %g, last %g; want %d outputs of the bias",
 				length, len(data), data[0], data[len(data)-1], 2*length)
+		}
+	}
+}
+
+// TestConv1DShortInputMatchesNaive covers the full-im2col path (one patch
+// matrix, output channels split across workers) with output channel and
+// position counts that do not fill whole 4×4 blocks, down to the 1–3 output
+// positions of a streaming decode step.
+func TestConv1DShortInputMatchesNaive(t *testing.T) {
+	cases := []struct {
+		name                                string
+		batch, inCh, length, outCh, kSize   int64
+		stride, leftPad, rightPad, dilation int64
+	}{
+		{"61 positions", 2, 7, 61, 13, 3, 1, 2, 1, 2},
+		{"1 position", 1, 9, 7, 10, 7, 1, 0, 0, 1},
+		{"2 positions", 2, 5, 9, 10, 7, 2, 0, 1, 1},
+		{"3 positions", 1, 8, 4, 11, 3, 1, 1, 0, 1},
+	}
+
+	for _, c := range cases {
+		rng := rand.New(rand.NewPCG(uint64(c.length), uint64(c.outCh)))
+		in := randDataT(rng, c.batch*c.inCh*c.length)
+		kernel := randDataT(rng, c.outCh*c.inCh*c.kSize)
+		bias := randDataT(rng, c.outCh)
+		want := naiveConv1D(in, kernel, bias, c.batch, c.inCh, c.length, c.outCh, c.kSize,
+			c.stride, c.leftPad, c.rightPad, c.dilation)
+
+		for _, workers := range []int{1, 3, 4, 5} {
+			t.Run(fmt.Sprintf("%s/workers=%d", c.name, workers), func(t *testing.T) {
+				SetConvWorkers(workers)
+				defer SetConvWorkers(0)
+
+				got, err := conv1DWithAsymmetricPadding(
+					mustTensorT(t, in, []int64{c.batch, c.inCh, c.length}),
+					mustTensorT(t, kernel, []int64{c.outCh, c.inCh, c.kSize}),
+					mustTensorT(t, bias, []int64{c.outCh}), c.stride, c.leftPad, c.rightPad, c.dilation, 1)
+				if err != nil {
+					t.Fatalf("conv1d: %v", err)
+				}
+
+				gotData := got.RawData()
+				if len(gotData) != len(want) {
+					t.Fatalf("len = %d, want %d", len(gotData), len(want))
+				}
+
+				for i := range want {
+					if d := math.Abs(float64(gotData[i] - want[i])); d > 1e-4 {
+						t.Fatalf("out[%d] = %g, want %g (|diff| %.3g)", i, gotData[i], want[i], d)
+					}
+				}
+			})
 		}
 	}
 }

@@ -2,9 +2,13 @@
 
 package tensor
 
+// axpyNEONMinLen is the length from which the NEON kernel beats the Go loop
+// (M5 Pro: Go 1.8 ns vs NEON 2.9 ns at n=6, NEON ahead from n=8).
+const axpyNEONMinLen = 8
+
 func axpyF32(dst []float32, alpha float32, src []float32) {
 	n := len(dst)
-	if n >= 4 {
+	if n >= axpyNEONMinLen {
 		n4 := n &^ 3
 		axpyF32NEON(&dst[0], &src[0], alpha, n4)
 
