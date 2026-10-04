@@ -494,6 +494,12 @@ Follow-ups:
     manifests (`huggingface.co/<repo>/resolve/<rev>/…`); no re-hosting.
   - `tokenizer.json` for every language, English included (closes the Phase 5 `web/main.js` item).
   - On a switch, drop the previous model from WASM memory; switching back reloads it from the browser's HTTP cache.
+  - The kernel needs the config: `loadModel` in `cmd/pockettts-wasm/main_wasm.go` always looks up
+    `config.DefaultLanguage`, so JS must pass the selected config name and the engine must be built from it
+    (flow type, BOS-before-voice, text preparation, `n_bins`).
+  - Voice caches are per config: the configs reuse voice IDs (`alba` etc.) with different files, so key
+    `voiceBytes`/`voiceDownloads` in `web/main.js` by config and voice ID (or clear them on a switch and ignore
+    in-flight downloads for the old config).
 - [ ] `german_24l` support (verify quality and speed; ~3× the weights)
 - [ ] Other upstream languages (french, italian, spanish, portuguese, dutch): only config + manifest work
       once German works
