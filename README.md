@@ -347,8 +347,8 @@ It takes a voice ID from the manifest, a local `.safetensors` file, an
 `https://` URL or a pinned `hf://<org>/<repo>/<path>@<revision>` reference. URL
 voices are downloaded once into `<user cache dir>/pockettts/voices/` (for
 example `~/Library/Caches/pockettts/voices/` on macOS) without a checksum
-check; `hf://` downloads send `HF_TOKEN` when it is set. WAV prompts are not
-accepted yet.
+check; redirects must stay on `https://`, and `hf://` downloads send `HF_TOKEN`
+when it is set. WAV prompts are not accepted yet.
 
 ```bash
 ./pockettts serve --language german \
@@ -356,8 +356,10 @@ accepted yet.
 ```
 
 On `native-safetensors`, `serve` loads the default voice at startup and refuses
-to start when it cannot (for example before `pockettts model download`). The
-other backends have no default voice and reject `--default-voice`.
+to start when it cannot (for example before `pockettts model download`) or when
+it does not fit the model (for example a `german` voice state with
+`german_24l`). The other backends have no default voice and reject
+`--default-voice`.
 
 Health check:
 

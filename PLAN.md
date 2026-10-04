@@ -442,13 +442,17 @@ Minimal path (precomputed voices only; needs Phases 1, 3, 4 and Phase 5 byte fal
   - (2026-10-04) — partial: `--default-voice` (`server.default_voice`) takes a manifest ID, a `.safetensors` path,
     an `https://` URL or a pinned `hf://…@rev` reference. `model.FetchVoice` downloads URL voices once into
     `<user cache dir>/pockettts/voices/<hash>-<name>.safetensors`, sending `HF_TOKEN` for `hf://` only. The server
-    resolves the default voice and loads it with `tts.CheckVoiceFile` before the model loads; any failure keeps
-    `serve` from starting. native-onnx and cli reject the flag. `TestVoiceURL`, `TestFetchVoice_*`,
-    `TestCheckVoiceFile`, `TestRuntimeDeps_DefaultVoice`, `TestStart_BrokenDefaultVoiceFailsFast`,
+    resolves the default voice (an exact manifest ID first) and loads it with `tts.CheckVoiceFile` before the model
+    loads, then primes the loaded model with it (`Service.CheckVoice`); any failure keeps `serve` from starting.
+    native-onnx and cli reject the flag. Review fixes: per-download temp files, https-only redirects, the `.wav`
+    check sees through `@rev` and `?query`, and the HF_TOKEN hint is only given for `hf://`. `TestVoiceURL`, `TestFetchVoice_*`,
+    `TestCheckVoiceFile`, `TestServiceCheckVoice_AsksTheRuntime`, `TestCheckVoice_RealGermanCheckpoint`,
+    `TestVoiceRefExt`, `TestRuntimeDeps_DefaultVoice`, `TestStart_BrokenDefaultVoiceFailsFast`,
     `TestResolveServeDefaultVoice`, `TestUserCacheVoiceFetcher_UsesUserCacheDir`. Real runs:
     `serve --language german` and `--default-voice hf://…/anna.safetensors@1e08e6a` answer `POST /tts` without a voice; the second
     start reuses the cached file (sha256 matches the pinned one); a missing, corrupt or unknown voice, a missing
-    manifest, `http://` and `.wav` exit 1 at once. Remaining: WAV voices, which need the native Mimi encoder
+    manifest, `http://` and `.wav` exit 1 at once; `--language german_24l` with the `german` juergen voice exits 1
+    after the model loads (the old build started and answered 500). Remaining: WAV voices, which need the native Mimi encoder
     (Phase 7).
 - [x] `doctor` validates the selected language's files
       (2026-10-03) — `doctor` prints the language; on the native backends a missing voice manifest fails (it was
