@@ -38,7 +38,9 @@ const state = {
   voiceBytes: new Map(),
   voiceDownloads: new Map(),
   voiceErrors: new Map(),
-  defaultTexts: new Set([textArea.value]),
+  // textEdited is set once the user types; their text then survives a switch
+  // (unless they empty the box), even if it equals a demo text.
+  textEdited: false,
   action: "Starting...",
 };
 
@@ -291,12 +293,15 @@ function applyLanguageDefaults(lang) {
   populateVoiceDropdown(lang);
   setTemperature(lang.default_temperature);
 
-  if (state.defaultTexts.has(textArea.value)) {
+  if (!state.textEdited || textArea.value.trim() === "") {
     textArea.value = lang.default_text;
+    state.textEdited = false;
   }
 }
 
-async function ensureVoiceDownloaded(config, voiceID) {
+// ensureVoiceDownloaded fetches a voice once; signal aborts the download
+// (a model switch aborts the previous config's downloads).
+async function ensureVoiceDownloaded(config, voiceID, signal) {
   if (!voiceID) return null;
 
   const key = voiceKey(config, voiceID);
@@ -326,7 +331,7 @@ async function ensureVoiceDownloaded(config, voiceID) {
         lastPct = pct;
         setAction(`Downloading voice ${voiceID} (${pct}%)...`);
       }
-    });
+    }, signal);
     state.voiceBytes.set(key, bytes);
     return bytes;
   })();
@@ -339,7 +344,8 @@ async function ensureVoiceDownloaded(config, voiceID) {
     const bytes = await promise;
     return bytes;
   } catch (err) {
-    state.voiceErrors.set(key, formatError(err));
+    // An aborted download is retried the next time the voice is needed.
+    if (err?.name !== "AbortError") state.voiceErrors.set(key, formatError(err));
     throw err;
   } finally {
     state.voiceDownloads.delete(key);
@@ -366,13 +372,13 @@ async function downloadSelectedVoiceIfNeeded() {
 
   setAction(`Downloading voice ${voiceID}...`);
   try {
-    const bytes = await ensureVoiceDownloaded(config, voiceID);
+    const bytes = await ensureVoiceDownloaded(config, voiceID, state.loadAbort?.signal);
     if (selectedVoiceKey() === key) {
       setAction(`Voice ${voiceID} ready.`);
     }
     return bytes;
   } catch (err) {
-    if (selectedVoiceKey() === key) {
+    if (err?.name !== "AbortError" && selectedVoiceKey() === key) {
       setAction(`Voice ${voiceID} failed: ${formatError(err)}`);
     }
     return null;
@@ -556,9 +562,6 @@ async function loadCatalog() {
   }
 
   state.catalog = catalog;
-  for (const lang of catalog.languages) {
-    state.defaultTexts.add(lang.default_text);
-  }
   populateLanguageDropdown();
 }
 
@@ -585,6 +588,7 @@ async function initApp() {
 
 synthBtn.addEventListener("click", () => handleSynthesize());
 textArea.addEventListener("input", () => {
+  state.textEdited = true;
   if (state.isSynthesizing && !state.textDirty) {
     state.textDirty = true;
     setSynthesizeEnabled();
