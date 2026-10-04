@@ -56,8 +56,11 @@ func newEngine(modelSafetensors, tokenizerBytes []byte, name string, emit emitFu
 	emit("load", 50, 100, "building native model")
 
 	model, err := nativemodel.LoadModelFromStore(store, nativemodel.ConfigFor(mc))
+	// The weights are decoded; drop the checkpoint bytes so they are not held
+	// next to them (WASM memory is capped at 4 GB).
+	store.Close()
+
 	if err != nil {
-		store.Close()
 		return nil, fmt.Errorf("load native model: %w", err)
 	}
 

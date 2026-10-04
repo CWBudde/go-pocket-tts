@@ -549,17 +549,28 @@ Follow-ups:
     kernel calls are queued, so only the last pick loads; voice caches are keyed by config and voice; the picker
     is disabled during a synthesis, and a kernel that stops (out of memory) is reported with a reload hint. The
     Pages workflow no longer downloads or bundles models and voices. Deviation, decided with the user:
-    `english_2026-09_24l` is left out of the catalog (see the follow-up below). `TestBuild_*`,
+    `english_2026-09_24l` was left out of the catalog (offered again since the follow-up below). `TestBuild_*`,
     `TestCatalogFileUpToDate` (fails on a stale pin), `TestNewEngine_*` (`German` fails when the config name is
     ignored). Real browser run (Chromium via Playwright, local static server): `english_2026-01`/alba, `german`/
     juergen (90 frames, 7.2 s 24 kHz WAV, same as the CLI), `english_2026-09`, `english_drifting_26-09` and
     `german_24l` (21 s load, 5.7 s audio) all synthesize; every model, tokenizer and voice request goes to
     `huggingface.co`; switching german → english mid-download only calls `loadModel` for english; five switches
     with three `german_24l` loads still synthesize.
-- [ ] `english_2026-09_24l` in the web app: its checkpoint is 1.3 GB (`german_24l` is 672 MB). It loads, but
+- [x] `english_2026-09_24l` in the web app: its checkpoint is 1.3 GB (`german_24l` is 672 MB). It loads, but
       synthesis runs out of 32-bit WASM memory in the Mimi decoder (4.27 GB in use; after `german_24l` the load
       itself fails). Left out of `web/languages.json` (`tooLargeForBrowser`) until it fits, e.g. by not keeping
       the copied checkpoint bytes alongside the decoded weights. (Found 2026-10-04.)
+      (2026-10-04) — cause: `native.Model` kept its `safetensors.Store`, so the raw checkpoint stayed next to the
+      decoded float32 weights (the checkpoint is mostly F32, 336 M params: 1.3 GB raw + 1.34 GB decoded). The model
+      no longer keeps the store (`LoadModelFromSafetensors` closes it; the native CLI frees 220–672 MB per model too),
+      `newEngine` closes it after the load, and the kernel (0.6.0-wasm) runs a GC after each load with
+      `debug.SetMemoryLimit(3.5 GiB)`. `english_2026-09_24l` is back in the catalog (`tooLargeForBrowser` is
+      empty). `TestLoadModelFromStore_ReleasesCheckpointBytes`, `TestNewEngine_ReleasesCheckpointBytes` (both fail
+      while the model keeps the store), `TestBuild_Values`. `pockettts synth --language german --temperature 0`
+      writes a WAV byte-identical to `main`. Real browser run (Chromium via Playwright, local static server): a fresh
+      page loads `english_2026-09_24l` from Hugging Face in 40 s and synthesizes with alba (29 s); `german_24l` →
+      synthesize → `english_2026-09_24l` → synthesize → `english_2026-01` → synthesize all work (5.4 s, 9.0 s,
+      7.0 s of audio), with no console errors.
 - [ ] `german_24l` support (verify quality and speed; ~3× the weights)
 - [ ] Other upstream languages (french, italian, spanish, portuguese, dutch): only config + manifest work
       once German works

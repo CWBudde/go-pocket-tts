@@ -424,14 +424,15 @@ go generate ./internal/webmanifest/
 
 (`TestCatalogFileUpToDate` fails while it is stale.)
 
-The model picker offers `english_2026-01` (the default), `english_2026-09`,
-`english_drifting_26-09`, `german` and `german_24l`. A switch selects the
-config's default voice, temperature and, unless you typed your own text, its
-demo text. The previous model is dropped from WASM memory first; switching back
-downloads it again, which the browser may serve from its HTTP cache. Each
-6-layer model is a ~220 MB download, `german_24l` ~670 MB.
-`english_2026-09_24l` is left out: its 1.3 GB checkpoint loads, but synthesis
-runs out of 32-bit WASM memory (4 GB).
+The model picker offers all six embedded configs: `english_2026-01` (the
+default), `english_2026-09`, `english_2026-09_24l`, `english_drifting_26-09`,
+`german` and `german_24l`. A switch selects the config's default voice,
+temperature and, unless you typed your own text, its demo text. The previous
+model is dropped from WASM memory first; switching back downloads it again,
+which the browser may serve from its HTTP cache. Each 6-layer model is a
+~220 MB download, `german_24l` ~670 MB and `english_2026-09_24l` 1.3 GB. The
+kernel frees the checkpoint bytes once the weights are decoded, so the 24-layer
+models fit in 32-bit WASM memory (4 GB).
 
 Run/deploy workflow:
 
