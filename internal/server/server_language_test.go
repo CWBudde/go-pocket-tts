@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/cwbudde/go-pocket-tts/internal/server"
 	"github.com/cwbudde/go-pocket-tts/internal/tts"
@@ -36,13 +37,18 @@ func (f *fakeRouter) Acquire(_ context.Context, language string) (server.Languag
 	return backend, func() { f.released.Add(1) }, nil
 }
 
+// Voices serves the languages of backends (and "broken"), listing the
+// voices given for them.
 func (f *fakeRouter) Voices(language string) (server.VoiceLister, error) {
-	voices, ok := f.voices[language]
-	if !ok {
+	if _, ok := f.backends[language]; !ok && language != "broken" {
 		return nil, fmt.Errorf("%w: %q", server.ErrUnknownLanguage, language)
 	}
 
-	return voices, nil
+	if voices, ok := f.voices[language]; ok {
+		return voices, nil
+	}
+
+	return &stubVoiceLister{}, nil
 }
 
 func newLanguageHandler() (http.Handler, *fakeRouter) {
@@ -166,5 +172,59 @@ func TestHandler_LanguageStream(t *testing.T) {
 
 	if n := router.released.Load(); n != 2 {
 		t.Errorf("released %d backends; want 2", n)
+	}
+}
+
+// countingRouter counts Acquire calls of an inner router.
+type countingRouter struct {
+	*fakeRouter
+
+	acquired atomic.Int32
+}
+
+func (c *countingRouter) Acquire(ctx context.Context, language string) (server.LanguageBackend, func(), error) {
+	c.acquired.Add(1)
+	return c.fakeRouter.Acquire(ctx, language)
+}
+
+func TestHandler_LanguageLoadsOnlyWithAWorkerSlot(t *testing.T) {
+	blocked := &blockingSynthesizer{blocked: make(chan struct{}), wav: []byte("english")}
+	router := &countingRouter{fakeRouter: &fakeRouter{backends: map[string]server.LanguageBackend{
+		"":       {Synth: blocked},
+		"german": {Synth: &stubSynthesizer{wav: []byte("german")}},
+	}}}
+	h := server.NewHandler(&stubSynthesizer{}, &stubVoiceLister{}, server.WithLanguages(router), server.WithWorkers(1))
+
+	first := make(chan *httptest.ResponseRecorder)
+	go func() { first <- postTTS(h, "/tts", map[string]string{"text": "hi"}) }()
+
+	for router.acquired.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+
+	// The only worker is busy: a request for another language waits for it
+	// before its model is acquired (and loaded).
+	second := make(chan *httptest.ResponseRecorder)
+	go func() { second <- postTTS(h, "/tts", map[string]string{"text": "hi", "language": "german"}) }()
+
+	time.Sleep(50 * time.Millisecond)
+
+	if n := router.acquired.Load(); n != 1 {
+		t.Fatalf("Acquire called %d times while the only worker was busy; want 1", n)
+	}
+
+	// An unknown language is still rejected without waiting for a worker.
+	if rec := postTTS(h, "/tts", map[string]string{"text": "hi", "language": "french"}); rec.Code != http.StatusBadRequest {
+		t.Errorf("unknown language while busy: %d; want 400", rec.Code)
+	}
+
+	close(blocked.blocked)
+
+	if rec := <-first; rec.Code != http.StatusOK {
+		t.Errorf("first request: %d", rec.Code)
+	}
+
+	if rec := <-second; rec.Code != http.StatusOK || rec.Body.String() != "german" {
+		t.Errorf("second request: %d %q; want 200 german", rec.Code, rec.Body.String())
 	}
 }

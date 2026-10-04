@@ -215,15 +215,9 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req, ok := h.decodeTTSRequest(w, r)
-	if !ok {
+	if !ok || !h.checkLanguage(w, req.Language) {
 		return
 	}
-
-	backend, release, ok := h.acquireLanguage(r.Context(), w, req.Language)
-	if !ok {
-		return
-	}
-	defer release()
 
 	// Acquire a worker slot — honour context cancellation while waiting.
 	if !h.acquireWorker(r.Context(), w) {
@@ -233,6 +227,14 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 	if h.sem != nil {
 		defer func() { <-h.sem }()
 	}
+
+	// Only with a worker slot: loading a model while queued would let
+	// request bursts load more models than workers and the language cap.
+	backend, release, ok := h.acquireLanguage(r.Context(), w, req.Language)
+	if !ok {
+		return
+	}
+	defer release()
 
 	// Apply per-request timeout.
 	ctx, cancel := context.WithTimeout(r.Context(), h.opts.requestTimeout)
@@ -289,8 +291,16 @@ func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req, ok := h.decodeTTSRequest(w, r)
-	if !ok {
+	if !ok || !h.checkLanguage(w, req.Language) {
 		return
+	}
+
+	if !h.acquireWorker(r.Context(), w) {
+		return
+	}
+
+	if h.sem != nil {
+		defer func() { <-h.sem }()
 	}
 
 	backend, release, ok := h.acquireLanguage(r.Context(), w, req.Language)
@@ -302,14 +312,6 @@ func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
 	if backend.Streamer == nil {
 		writeError(w, http.StatusNotImplemented, "streaming not available for this backend")
 		return
-	}
-
-	if !h.acquireWorker(r.Context(), w) {
-		return
-	}
-
-	if h.sem != nil {
-		defer func() { <-h.sem }()
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), h.opts.requestTimeout)
@@ -435,6 +437,28 @@ func (h *handler) streamChunks(
 	}
 
 	return totalSamples, <-errCh
+}
+
+// checkLanguage rejects a language the server does not serve with 400, so
+// such a request does not wait for a worker slot first.
+func (h *handler) checkLanguage(w http.ResponseWriter, language string) bool {
+	if h.opts.router == nil {
+		if language != "" {
+			writeError(w, http.StatusBadRequest, errNoLanguages)
+			return false
+		}
+
+		return true
+	}
+
+	// Voices reads no model; its error is the same as Acquire's.
+	_, err := h.opts.router.Voices(language)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+
+	return true
 }
 
 // acquireLanguage returns the backend for language and the func that ends
