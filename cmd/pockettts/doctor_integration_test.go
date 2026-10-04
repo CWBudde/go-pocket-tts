@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cwbudde/go-pocket-tts/internal/config"
 	"github.com/cwbudde/go-pocket-tts/internal/testutil"
+	"github.com/cwbudde/go-pocket-tts/internal/tts"
 )
 
 // runDoctorCapture executes the doctor command with the given extra args and
@@ -108,19 +110,70 @@ func TestDoctorPasses_Native(t *testing.T) {
 // TestDoctorFails_MissingVoiceFile
 // ---------------------------------------------------------------------------
 
-// TestDoctorFails_MissingVoiceFile points the manifest at a non-existent voice
-// file and asserts exit non-zero with a failure message in output.
+// TestDoctorFails_MissingVoiceFile runs doctor in native mode against the real
+// model and tokenizer with a manifest that lists the real default voice plus a
+// voice whose file does not exist, and asserts that the missing voice file is
+// the only failure. Without the real assets every other check would fail too.
 func TestDoctorFails_MissingVoiceFile(t *testing.T) {
-	// Create a manifest whose voice path does not exist on disk.
-	setupTempVoiceManifest(t, false /* file absent */)
+	modelPath, tokPath := requireNativeSafetensorsAssets(t)
+	defaultVoice := defaultVoiceFor(t, config.DefaultLanguage)
+	vm, err := tts.NewVoiceManager(requireNativeSafetensorsVoices(t, defaultVoice))
+	if err != nil {
+		t.Fatal(err)
+	}
+	voicePath, err := vm.ResolvePath(defaultVoice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	voicePath, err = filepath.Abs(voicePath)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	out, err := runDoctorCapture(t, "--backend", "native")
+	tmp := t.TempDir()
+	missingPath := filepath.Join(tmp, "missing.safetensors")
+	manifest := map[string]any{
+		"voices": []map[string]any{
+			{"id": defaultVoice, "path": voicePath, "license": "CC-BY-4.0"},
+			{"id": "missing", "path": "missing.safetensors", "license": "MIT"},
+		},
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatalf("marshal manifest: %v", err)
+	}
+	manifestPath := filepath.Join(tmp, "manifest.json")
+	if err := os.WriteFile(manifestPath, data, 0o644); err != nil {
+		t.Fatalf("WriteFile manifest: %v", err)
+	}
+
+	out, err := runDoctorCapture(t,
+		"--backend", "native",
+		"--paths-model-path", modelPath,
+		"--paths-tokenizer-model", tokPath,
+		"--paths-voice-manifest", manifestPath,
+	)
 	if err == nil {
 		t.Fatalf("expected doctor to fail with missing voice file, but it passed\noutput:\n%s", out)
 	}
-	lower := strings.ToLower(out)
-	if !strings.Contains(lower, "not found") && !strings.Contains(lower, "fail") {
-		t.Errorf("expected failure message about missing voice file in output, got:\n%s", out)
+	for _, want := range []string{
+		"✗ voice file " + missingPath + ": not found",
+		"✓ default voice " + defaultVoice,
+		"safetensors model validation: ok",
+		"tokenizer load: ok",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, out)
+		}
+	}
+	var failures []string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "FAIL: ") {
+			failures = append(failures, line)
+		}
+	}
+	if len(failures) != 1 || !strings.HasPrefix(failures[0], `FAIL: voice file "`+missingPath+`"`) {
+		t.Errorf("expected the missing voice file as the only failure, got %q\noutput:\n%s", failures, out)
 	}
 }
 
@@ -173,12 +226,12 @@ func setupTempVoiceManifest(t testing.TB, voiceFileExists bool) string {
 		t.Fatalf("MkdirAll voices/: %v", err)
 	}
 
-	voiceRelPath := filepath.Join("voices", "test.safetensors")
-	voiceAbsPath := filepath.Join(tmp, voiceRelPath)
+	// Manifest paths are relative to the manifest directory.
+	voiceAbsPath := filepath.Join(voiceDir, "test.safetensors")
 
 	manifest := map[string]any{
 		"voices": []map[string]any{
-			{"id": "test", "path": voiceRelPath, "license": "MIT"},
+			{"id": "test", "path": "test.safetensors", "license": "MIT"},
 		},
 	}
 	data, err := json.Marshal(manifest)
