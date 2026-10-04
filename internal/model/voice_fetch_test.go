@@ -247,6 +247,11 @@ func TestVoiceRefExt(t *testing.T) {
 		"https://example.com/anna.wav?download=1":   ".wav",
 		"https://example.com/anna.safetensors#frag": ".safetensors",
 		"https://example.com/voices/":               "",
+		// Upstream test_is_safetensors_source_handles_revisions_and_query_strings.
+		"voice.safetensors": ".safetensors",
+		"hf://owner/repo/voices/voice.safetensors@abcdef":  ".safetensors",
+		"https://example.com/voice.safetensors?download=1": ".safetensors",
+		"https://example.com/voice.wav?format=safetensors": ".wav",
 	} {
 		if got := VoiceRefExt(ref); got != want {
 			t.Errorf("VoiceRefExt(%q) = %q; want %q", ref, got, want)

@@ -601,7 +601,8 @@ Follow-ups:
       the same samples as the 16-bit original.
 - [ ] Prompt preprocessing before `end_on_pause`: upstream `get_state_for_audio_prompt` truncates the prompt to 30 s,
       downmixes to mono and resamples to the Mimi rate (`convert_audio`, `resample_poly`); Go rejects anything that
-      isn't 24 kHz mono and never truncates. (Found 2026-10-04.)
+      isn't 24 kHz mono and never truncates. (Found 2026-10-04.) `audio.DecodeWAV` also rejects 8-bit PCM, which
+      upstream's `audio_read` reads (`test_audio.py::test_audio_read_uses_soundfile_for_8_bit_wav`, 8-bit 8 kHz).
 - [ ] Encoder latent dim from config (`mimiEncoderLatentDim = 512` hard-coded in
       `internal/onnx/voice_encode.go`; new models use 32) + `speaker_proj_weight [1024, inner_dim]`
 - [ ] Cloning for new models requires the gated `kyutai/pocket-tts` weights (`weights_path`); the ungated
@@ -639,13 +640,26 @@ Follow-ups:
       short decodes and 1.7e-5 on the long tail (worst 0.21 of the tolerance); `assertTensorParity` now logs that
       ratio. An erf GELU in the Mimi transformer alone now fails all five Mimi cases in both languages, while flow
       and voice cases still pass.
-- [ ] Port the upstream test tables as Go table tests:
+- [x] Port the upstream test tables as Go table tests:
   - `test_split_sentences.py`: decimals, 14 terminal-punctuation cases, `capitalize_first_letter=False`,
     `replace_characters`, Hindi passthrough
   - `test_generation_regressions.py`: `"hi"` → `"        Hi."` for 2026-01, fade-in only on first frame
   - `test_tokenizer_backends.py`: JSON vs SentencePiece id equality on the edge-case strings
   - `test_end_on_pause.py`, `test_audio.py` (WAV header frame count), `test_streaming_cancellation.py`
   - `test_utils.py`: every embedded config has `default_temperature == 0.3`
+  - (2026-10-04) — Most cases were already ported (`internal/text/{split,split_upstream,options,prepare}_test.go`,
+    `internal/tokenizer/hf_golden_test.go` `TestJSONMatchesSentencePiece` with all 8 upstream texts,
+    `internal/audio/end_on_pause_test.go`, `TestRunARLoop_CancelStopsWithinOneStep`). Added: `"hello there"` →
+    `"Hello there."`, `TestChunkFadeIn` checks every sample after the 5 ms ramp, `TestVoiceRefExt` gets the 4
+    `_is_safetensors_source` rows, `TestLookup_EmbeddedConfigsParse` asserts 0.3 on all 6 embedded configs, and
+    `TestTTSStream_ClientDisconnectStopsGeneration` (the abandoned stream stops early; a second request runs with no
+    step from it). `test_audio.py`'s 28800-frame header needed upstream's 0.2 s trailing silence, which Go lacked:
+    `audio.AppendTrailingSilence` now ends `synth` (native backends, after DSP; the cli backend's WAV is upstream's
+    own), `/tts` and finished `/tts/stream` responses. Mutations: dropping each pad fails its test; padding the cli
+    backend fails `TestRunSynthCommand_CLIFromStdinToStdout`; the disconnect test hangs only with both the request
+    context and the write-error cancel removed (either alone stops the generation). Not portable: decode equality (Go
+    never decodes tokens), the worker-payload and `convert_tokenizer` tests, the decoder-thread error queue, the
+    download cache suffix; the 8-bit `audio_read` case went to Phase 7.
 - [x] Attention-mask parity tests with offset/context edge cases (carried over)
       (2026-10-04) — `TestAttentionWithPositionsMaskEdgeCases` checks `AttentionWithPositions` against a
       per-element transcription of upstream `_build_attention_mask`: window boundary (delta = context−1 vs

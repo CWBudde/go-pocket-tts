@@ -63,8 +63,62 @@ func TestRunSynthCommand_CLIFromStdinToStdout(t *testing.T) {
 		t.Fatalf("DecodeWAV(stdout) error: %v", err)
 	}
 
+	// No trailing silence: the cli backend's WAV comes from upstream's writer.
 	if len(decoded) != 2 {
 		t.Fatalf("unexpected sample count: got %d want %d", len(decoded), 2)
+	}
+}
+
+func TestRunSynthCommand_NativeAppendsTrailingSilenceAfterDSP(t *testing.T) {
+	orig := runNativeSynthesis
+
+	t.Cleanup(func() { runNativeSynthesis = orig })
+
+	const speech = 1000
+
+	runNativeSynthesis = func(context.Context, config.Config, []string, string) ([]byte, error) {
+		samples := make([]float32, speech)
+		for i := range samples {
+			samples[i] = 0.5
+		}
+
+		return audio.EncodeWAV(samples)
+	}
+
+	opts := synthRunOptions{
+		Text:      "hello",
+		Out:       "-",
+		Backend:   config.BackendNative,
+		Voice:     filepath.Join("voices", "alba.safetensors"),
+		FadeOutMS: 10,
+	}
+
+	var stdout bytes.Buffer
+
+	err := runSynthCommand(context.Background(), config.DefaultConfig(), opts, nil, &stdout, io.Discard)
+	if err != nil {
+		t.Fatalf("runSynthCommand returned error: %v", err)
+	}
+
+	decoded, err := audio.DecodeWAV(stdout.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeWAV(stdout) error: %v", err)
+	}
+
+	// Upstream's writer appends 0.2 s of silence after everything else.
+	if want := speech + audio.ExpectedSampleRate/5; len(decoded) != want {
+		t.Fatalf("sample count = %d, want %d", len(decoded), want)
+	}
+
+	// The fade-out ends the speech, not the silence.
+	if decoded[speech-1] != 0 || decoded[0] == 0 {
+		t.Errorf("samples 0, %d = %v, %v; want the fade-out to end at the speech", speech-1, decoded[0], decoded[speech-1])
+	}
+
+	for i := speech; i < len(decoded); i++ {
+		if decoded[i] != 0 {
+			t.Fatalf("sample %d = %v, want silence", i, decoded[i])
+		}
 	}
 }
 

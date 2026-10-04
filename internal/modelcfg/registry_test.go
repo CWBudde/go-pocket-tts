@@ -26,6 +26,12 @@ func TestLookup_EmbeddedConfigsParse(t *testing.T) {
 		if cfg.VoicesRevision != "1e08e6a23401048648a9fdcfde2f89348215c2a7" {
 			t.Errorf("Lookup(%q).VoicesRevision = %q", name, cfg.VoicesRevision)
 		}
+
+		// Upstream test_shipped_configs_sample_at_the_tuned_temperature: a
+		// config without the value used to fall back to 0.7 silently (#322).
+		if cfg.DefaultTemperature != 0.3 {
+			t.Errorf("Lookup(%q).DefaultTemperature = %v; want 0.3", name, cfg.DefaultTemperature)
+		}
 	}
 }
 

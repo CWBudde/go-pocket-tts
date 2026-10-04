@@ -1,6 +1,8 @@
 package audio
 
 import (
+	"bytes"
+	"encoding/binary"
 	"math"
 	"testing"
 )
@@ -299,6 +301,123 @@ func TestChunkFadeIn(t *testing.T) {
 	if want := float32(0.5) * (float32(60) / float32(n-1)); got[60] != want {
 		t.Errorf("sample 60 = %v, want %v", got[60], want)
 	}
+
+	// Upstream test_decode_audio_worker_fades_in_only_the_first_decoded_frame:
+	// nothing after the ramp is touched.
+	for i := n; i < len(got); i++ {
+		if got[i] != 0.5 {
+			t.Fatalf("sample %d = %v, want 0.5 (outside the fade-in)", i, got[i])
+		}
+	}
+}
+
+// Upstream test_stream_audio_chunks_patches_seekable_wav_header: one second
+// at 24 kHz is written as 28800 frames.
+func TestAppendTrailingSilence(t *testing.T) {
+	const sr = 24000
+
+	speech := make([]float32, sr)
+	for i := range speech {
+		speech[i] = 0.25
+	}
+
+	got := AppendTrailingSilence(speech, sr)
+	if len(got) != 28800 {
+		t.Fatalf("len = %d, want 28800", len(got))
+	}
+
+	for i := range sr {
+		if got[i] != 0.25 {
+			t.Fatalf("sample %d = %v, want the input unchanged", i, got[i])
+		}
+	}
+
+	for i := sr; i < len(got); i++ {
+		if got[i] != 0 {
+			t.Fatalf("sample %d = %v, want silence", i, got[i])
+		}
+	}
+
+	wav, err := EncodeWAV(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if rate := binary.LittleEndian.Uint32(wav[24:28]); rate != sr {
+		t.Errorf("header sample rate = %d, want %d", rate, sr)
+	}
+
+	if frames := wavDataFrames(t, wav); frames != 28800 {
+		t.Errorf("header frames = %d, want 28800", frames)
+	}
+}
+
+func TestAppendTrailingSilenceWAV(t *testing.T) {
+	speech := make([]float32, 24000)
+	for i := range speech {
+		speech[i] = 0.25
+	}
+
+	in, err := EncodeWAV(speech)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	orig := bytes.Clone(in)
+
+	got, err := AppendTrailingSilenceWAV(in)
+	if err != nil {
+		t.Fatalf("AppendTrailingSilenceWAV: %v", err)
+	}
+
+	if !bytes.Equal(in, orig) {
+		t.Fatal("AppendTrailingSilenceWAV modified its input")
+	}
+
+	// The same bytes EncodeWAV writes for the padded samples.
+	want, err := EncodeWAV(AppendTrailingSilence(speech, 24000))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(got, want) {
+		t.Fatalf("got %d bytes, want the %d bytes of EncodeWAV(AppendTrailingSilence(...))", len(got), len(want))
+	}
+
+	if frames := wavDataFrames(t, got); frames != 28800 {
+		t.Errorf("header frames = %d, want 28800", frames)
+	}
+
+	for name, bad := range map[string][]byte{
+		"not a WAV":          []byte("not a wav file"),
+		"data not last":      append(append([]byte(nil), in...), 'L', 'I', 'S', 'T', 0, 0, 0, 0),
+		"no data chunk":      in[:36],
+		"truncated RIFF tag": in[:8],
+	} {
+		_, err := AppendTrailingSilenceWAV(bad)
+		if err == nil {
+			t.Errorf("%s: want an error", name)
+		}
+	}
+}
+
+// wavDataFrames returns the frame count the data chunk header of a mono
+// 16-bit WAV declares.
+func wavDataFrames(t *testing.T, wav []byte) int {
+	t.Helper()
+
+	for off := 12; off+8 <= len(wav); {
+		id, size := string(wav[off:off+4]), int(binary.LittleEndian.Uint32(wav[off+4:off+8]))
+		if id == "data" {
+			return size / 2
+		}
+
+		off += 8 + size + size%2
+	}
+
+	t.Fatal("no data chunk")
+
+	return 0
 }
 
 // Test helpers
