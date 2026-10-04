@@ -50,34 +50,38 @@ func ResamplePoly(samples []float32, up, down int) ([]float32, error) {
 		return []float32{}, nil
 	}
 
-	nOut := (nIn*up + down - 1) / down
+	// len·up and the zero-stuffed positions below exceed int32 for a 30 s
+	// prompt at a rate like 24001 Hz (about 1.7e10), so they run in int64.
+	up64, down64, nIn64 := int64(up), int64(down), int64(nIn)
+	nOut := (nIn64*up64 + down64 - 1) / down64
 
 	maxRate := max(up, down)
 	halfLen := resamplePolyHalfLenRate * maxRate
 	h := resamplePolyFilter(2*halfLen+1, 1/float64(maxRate), up)
+	hLen := int64(len(h))
 
 	// scipy prepends nPrePad zeros to h so that output samples land on the
 	// filter centre, then drops the first nPreRemove outputs of upfirdn.
-	nPrePad := down - halfLen%down
-	nPreRemove := (halfLen + nPrePad) / down
+	nPrePad := int64(down - halfLen%down)
+	nPreRemove := (int64(halfLen) + nPrePad) / down64
 
 	out := make([]float32, nOut)
 
 	for o := range out {
 		// Position in the zero-stuffed (×up) input, shifted by the pre-pad.
-		pos := (o+nPreRemove)*down - nPrePad
+		pos := (int64(o)+nPreRemove)*down64 - nPrePad
 
 		// Input i contributes tap h[pos-i·up] when 0 ≤ pos-i·up < len(h).
-		iHi := min(pos/up, nIn-1)
+		iHi := min(pos/up64, nIn64-1)
 
-		iLo := 0
-		if lo := pos - len(h) + 1; lo > 0 {
-			iLo = (lo + up - 1) / up
+		iLo := int64(0)
+		if lo := pos - hLen + 1; lo > 0 {
+			iLo = (lo + up64 - 1) / up64
 		}
 
 		var acc float64
 		for i := iLo; i <= iHi; i++ {
-			acc += float64(h[pos-i*up]) * float64(samples[i])
+			acc += float64(h[pos-i*up64]) * float64(samples[i])
 		}
 
 		out[o] = float32(acc)

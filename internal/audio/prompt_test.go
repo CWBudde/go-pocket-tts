@@ -64,7 +64,7 @@ func TestPrepareVoicePrompt_CommonRates(t *testing.T) {
 }
 
 func TestPrepareVoicePrompt_RejectsImpracticalRate(t *testing.T) {
-	for _, rate := range []int{0, -8000, MaxPromptSampleRate + 1, 0xffffffff} {
+	for _, rate := range []int{0, -8000, MaxPromptSampleRate + 1, maxWAVRate} {
 		_, err := PrepareVoicePrompt(make([]float32, 16), rate)
 		if err == nil {
 			t.Errorf("rate %d: want error", rate)
