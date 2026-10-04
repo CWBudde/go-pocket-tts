@@ -11,8 +11,6 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 )
 
-var ErrMimiEncoderNotImplemented = errors.New("native mimi encoder is not implemented")
-
 type MimiConfig struct {
 	SampleRate       int64
 	FrameRate        float64
@@ -41,7 +39,7 @@ type conv1dLayer struct {
 	groups   int64
 }
 
-func loadConv1D(vb *VarBuilder, withBias bool) (*conv1dLayer, error) {
+func loadConv1D(vb *VarBuilder, stride int64, withBias bool) (*conv1dLayer, error) {
 	w, err := vb.Tensor("weight")
 	if err != nil {
 		return nil, err
@@ -63,7 +61,7 @@ func loadConv1D(vb *VarBuilder, withBias bool) (*conv1dLayer, error) {
 		}
 	}
 
-	return &conv1dLayer{weight: w, bias: b, stride: 1, dilation: 1, groups: 1}, nil
+	return &conv1dLayer{weight: w, bias: b, stride: stride, dilation: 1, groups: 1}, nil
 }
 
 func (c *conv1dLayer) forwardStreamingOnce(x *tensor.Tensor) (*tensor.Tensor, error) {
@@ -130,12 +128,12 @@ type seanetResBlock struct {
 }
 
 func loadSEANetResBlock(vb *VarBuilder) (*seanetResBlock, error) {
-	conv1, err := loadConv1D(vb.Path("block", "1", "conv"), true)
+	conv1, err := loadConv1D(vb.Path("block", "1", "conv"), 1, true)
 	if err != nil {
 		return nil, err
 	}
 
-	conv2, err := loadConv1D(vb.Path("block", "3", "conv"), true)
+	conv2, err := loadConv1D(vb.Path("block", "3", "conv"), 1, true)
 	if err != nil {
 		return nil, err
 	}
@@ -475,28 +473,34 @@ func (s *mimiDecodeScratch) ensure(slot **tensor.Tensor, shape []int64) (*tensor
 	return t, nil
 }
 
-func loadMimiDecoderTransformer(vb *VarBuilder, cfg MimiConfig) (*mimiDecoderTransformer, error) {
+// mimiRoPEPositions is the length of the Mimi transformers' RoPE table; the
+// encoder side runs at 200 Hz, so it covers prompts of about 40 s.
+const mimiRoPEPositions = 8192
+
+// loadMimiTransformer loads the transformer at mimi.<name>
+// (decoder_transformer or encoder_transformer); both have the same layout.
+func loadMimiTransformer(vb *VarBuilder, name string, cfg MimiConfig) (*mimiDecoderTransformer, error) {
 	layers := make([]*mimiTransformerLayer, 0, 4)
 
 	for i := 0; ; i++ {
-		layerPath := vb.Path("decoder_transformer", "transformer", "layers", strconv.Itoa(i))
+		layerPath := vb.Path(name, "transformer", "layers", strconv.Itoa(i))
 		if !layerPath.Has("norm1.weight") {
 			break
 		}
 
 		layer, err := loadMimiTransformerLayer(layerPath, cfg.NumHeads, cfg.Context)
 		if err != nil {
-			return nil, fmt.Errorf("native: load mimi transformer layer %d: %w", i, err)
+			return nil, fmt.Errorf("native: load mimi %s layer %d: %w", name, i, err)
 		}
 
 		layers = append(layers, layer)
 	}
 
 	if len(layers) == 0 {
-		return nil, errors.New("native: no mimi decoder transformer layers found")
+		return nil, fmt.Errorf("native: no mimi %s layers found", name)
 	}
 
-	cos, sin, err := buildRoPE(8192, layers[0].headDim, cfg.MaxPeriod)
+	cos, sin, err := buildRoPE(mimiRoPEPositions, layers[0].headDim, cfg.MaxPeriod)
 	if err != nil {
 		return nil, err
 	}
@@ -547,27 +551,13 @@ type MimiModel struct {
 // LoadMimiModel loads the Mimi decoder path. The model config's
 // mimi.inner_dim (512 for english_2026-01, 32 for every newer config) only
 // shapes the encoder side, mimi.downsample and flow_lm.speaker_proj_weight,
-// which the native port does not load yet; the decoder weights are the same.
+// which LoadVoiceEncoder loads; the decoder weights are the same.
 func LoadMimiModel(vb *VarBuilder, cfg MimiConfig) (*MimiModel, error) {
-	if cfg.SampleRate == 0 {
-		cfg = DefaultMimiConfig()
-	}
-
-	if cfg.Context == 0 {
-		cfg.Context = DefaultMimiConfig().Context
-	}
-
-	if cfg.FrameRate == 0 {
-		cfg.FrameRate = DefaultMimiConfig().FrameRate
-	}
-
-	if cfg.EncoderFrameRate == 0 {
-		cfg.EncoderFrameRate = DefaultMimiConfig().EncoderFrameRate
-	}
+	cfg = cfg.withDefaults()
 
 	mimi := vb.Path("mimi")
 
-	quant, err := loadConv1D(mimi.Path("quantizer", "output_proj"), false)
+	quant, err := loadConv1D(mimi.Path("quantizer", "output_proj"), 1, false)
 	if err != nil {
 		return nil, err
 	}
@@ -577,12 +567,12 @@ func LoadMimiModel(vb *VarBuilder, cfg MimiConfig) (*MimiModel, error) {
 		return nil, err
 	}
 
-	transformer, err := loadMimiDecoderTransformer(mimi, cfg)
+	transformer, err := loadMimiTransformer(mimi, "decoder_transformer", cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	initConv, err := loadConv1D(mimi.Path("decoder", "model", "0", "conv"), true)
+	initConv, err := loadConv1D(mimi.Path("decoder", "model", "0", "conv"), 1, true)
 	if err != nil {
 		return nil, err
 	}
@@ -617,7 +607,7 @@ func LoadMimiModel(vb *VarBuilder, cfg MimiConfig) (*MimiModel, error) {
 		return nil, err
 	}
 
-	finalConv, err := loadConv1D(mimi.Path("decoder", "model", "11", "conv"), true)
+	finalConv, err := loadConv1D(mimi.Path("decoder", "model", "11", "conv"), 1, true)
 	if err != nil {
 		return nil, err
 	}
@@ -691,6 +681,29 @@ func (c MimiConfig) MimiStepsPerLatent() int {
 	}
 
 	return steps
+}
+
+// withDefaults fills unset fields from DefaultMimiConfig (all of them when
+// SampleRate is unset).
+func (c MimiConfig) withDefaults() MimiConfig {
+	def := DefaultMimiConfig()
+	if c.SampleRate == 0 {
+		return def
+	}
+
+	if c.Context == 0 {
+		c.Context = def.Context
+	}
+
+	if c.FrameRate == 0 {
+		c.FrameRate = def.FrameRate
+	}
+
+	if c.EncoderFrameRate == 0 {
+		c.EncoderFrameRate = def.EncoderFrameRate
+	}
+
+	return c
 }
 
 // QuantizerProject maps [B, 32, T] -> [B, 512, T].
@@ -773,11 +786,6 @@ func (m *MimiModel) DecodeFromLatent(latent *tensor.Tensor) (*tensor.Tensor, err
 	}
 
 	return x, nil
-}
-
-// EncodeToLatent is intentionally left as a hook for Phase 20 voice encoding.
-func (m *MimiModel) EncodeToLatent(_ *tensor.Tensor) (*tensor.Tensor, error) {
-	return nil, ErrMimiEncoderNotImplemented
 }
 
 func cosf(x float32) float64 { return math.Cos(float64(x)) }

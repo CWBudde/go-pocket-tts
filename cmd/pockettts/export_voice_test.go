@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -301,5 +303,109 @@ func TestVoiceEncoderRunnerConfig_LatentDimFromModel(t *testing.T) {
 
 	if got := voiceEncoderRunnerConfig(config.Config{}, "").EncoderLatentDim; got != 0 {
 		t.Errorf("without a model config EncoderLatentDim = %d, want 0 (engine default)", got)
+	}
+}
+
+// TestBuildVoiceEncoder_PicksEncoderByBackend checks that the native backend
+// loads the pure-Go encoder from the checkpoint (no ORT, no ONNX manifest)
+// and native-onnx keeps the ONNX encoder graph.
+func TestBuildVoiceEncoder_PicksEncoderByBackend(t *testing.T) {
+	dir := t.TempDir()
+
+	// A checkpoint without encoder tensors: the native loader names them.
+	weights := filepath.Join(dir, "model.safetensors")
+
+	err := safetensors.WriteFile(weights, []safetensors.Tensor{{Name: "unrelated", Shape: []int64{1}, Data: []float32{1}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.Paths.ONNXManifest = filepath.Join(dir, "missing-manifest.json")
+	cfg.Runtime.ORTLibraryPath = filepath.Join(dir, "missing-libonnxruntime.so")
+
+	cfg.TTS.Backend = config.BackendNative
+
+	_, err = buildVoiceEncoder(cfg, weights)
+	if err == nil || !strings.Contains(err.Error(), "mimi.encoder") {
+		t.Errorf("native backend: err = %v, want the native loader's missing mimi.encoder tensor", err)
+	}
+
+	_, err = buildVoiceEncoder(cfg, "")
+	if err == nil || !strings.Contains(err.Error(), "--model-safetensors") {
+		t.Errorf("native backend without weights: err = %v, want a --model-safetensors hint", err)
+	}
+
+	cfg.TTS.Backend = config.BackendNativeONNX
+
+	_, err = buildVoiceEncoder(cfg, weights)
+	if err == nil || strings.Contains(err.Error(), "mimi.encoder") || !strings.Contains(err.Error(), "onnx") {
+		t.Errorf("native-onnx backend: err = %v, want the ONNX engine's error", err)
+	}
+}
+
+// TestNativeVoiceEncoder_GatedGerman runs the CLI's native encoder on the
+// parity prompt with the gated german checkpoint and compares its first
+// conditioning frame with upstream's (internal/native/testdata).
+func TestNativeVoiceEncoder_GatedGerman(t *testing.T) {
+	gated := os.Getenv("POCKETTTS_GATED_MODELS")
+	if gated == "" {
+		gated = filepath.Join("..", "..", "models", "gated")
+	}
+
+	weights := filepath.Join(gated, "german", "model.safetensors")
+
+	_, err := os.Stat(weights)
+	if err != nil {
+		t.Skipf("gated german checkpoint not found: %v", err)
+	}
+
+	testdata := filepath.Join("..", "..", "internal", "native", "testdata", "python_parity")
+
+	enc, err := newNativeVoiceEncoder(weights)
+	if err != nil {
+		t.Fatalf("newNativeVoiceEncoder: %v", err)
+	}
+	defer enc.Close()
+
+	got, err := enc.EncodeVoice(filepath.Join(testdata, "voice_prompt.wav"))
+	if err != nil {
+		t.Fatalf("EncodeVoice: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(testdata, "encoder_german.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var fx struct {
+		Latent struct {
+			Shape []int64 `json:"shape"`
+		} `json:"latent"`
+		ConditioningRows struct {
+			Frames []int64   `json:"frames"`
+			Data   []float32 `json:"data"`
+		} `json:"conditioning_rows"`
+	}
+
+	err = json.Unmarshal(raw, &fx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	frames := fx.Latent.Shape[1]
+	if int64(len(got)) != frames*onnx.VoiceEmbeddingDim {
+		t.Fatalf("embedding has %d values, want %d frames × %d", len(got), frames, onnx.VoiceEmbeddingDim)
+	}
+
+	if fx.ConditioningRows.Frames[0] != 0 {
+		t.Fatalf("fixture's first conditioning row is frame %d, want 0", fx.ConditioningRows.Frames[0])
+	}
+
+	for i := range onnx.VoiceEmbeddingDim {
+		want := float64(fx.ConditioningRows.Data[i])
+		if diff := math.Abs(float64(got[i]) - want); diff > 2e-4+1e-3*math.Abs(want) {
+			t.Fatalf("conditioning[0,%d] = %g, upstream %g", i, got[i], want)
+		}
 	}
 }

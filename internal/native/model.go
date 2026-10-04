@@ -438,12 +438,3 @@ func (m *Model) MimiDecode(mimiLatent *tensor.Tensor) (*tensor.Tensor, error) {
 
 	return m.mimi.DecodeFromLatent(mimiLatent)
 }
-
-// EncodeVoiceHook exposes the future voice encoder path (Phase 20 target).
-func (m *Model) EncodeVoiceHook(audio *tensor.Tensor) (*tensor.Tensor, error) {
-	if m == nil || m.mimi == nil {
-		return nil, errors.New("native: model mimi unavailable")
-	}
-
-	return m.mimi.EncodeToLatent(audio)
-}

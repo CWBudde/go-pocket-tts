@@ -877,6 +877,35 @@ func TestHasMimiEncoderWeights_CorruptEntryNextToTrainedOne(t *testing.T) {
 	}
 }
 
+// TestHasMimiEncoderWeights_RangeShorterThanShape checks that an encoder
+// entry whose byte range is shorter than its shape and dtype need is
+// rejected like OpenStore does, even when its bytes are non-zero.
+func TestHasMimiEncoderWeights_RangeShorterThanShape(t *testing.T) {
+	headerJSON, err := json.Marshal(map[string]tensorMeta{
+		// 4 F32 values need 16 bytes; the range holds 8.
+		"mimi.encoder.model.0.conv.weight": {DType: "F32", Shape: []int64{4}, Offsets: [2]int{0, 8}},
+	})
+	if err != nil {
+		t.Fatalf("marshal header: %v", err)
+	}
+
+	data := binary.LittleEndian.AppendUint64(nil, uint64(len(headerJSON)))
+	data = append(data, headerJSON...)
+	data = append(data, float32Bytes([]float32{1, 2})...)
+
+	path := filepath.Join(t.TempDir(), "model.safetensors")
+
+	err = os.WriteFile(path, data, 0o600)
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got, err := HasMimiEncoderWeights(path)
+	if err == nil || !strings.Contains(err.Error(), "needs 16 bytes") {
+		t.Fatalf("HasMimiEncoderWeights = %v, %v; want the byte-length error", got, err)
+	}
+}
+
 // TestHasMimiEncoderWeights_UngatedCheckpoints checks the downloaded
 // kyutai/pocket-tts-without-voice-cloning checkpoints, whose Mimi encoder is
 // zeroed.

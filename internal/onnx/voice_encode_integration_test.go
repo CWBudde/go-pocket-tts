@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/cwbudde/go-pocket-tts/internal/audio"
 )
 
 func modelSafetensorsPath(t *testing.T) string {
@@ -88,9 +90,9 @@ func TestEncodeVoiceIntegration_OutputShape(t *testing.T) {
 		t.Skip("mimi_encoder graph not present in manifest; skipping")
 	}
 
-	samples, _, err := loadVoiceAudioSamples(audioPath)
+	samples, _, err := audio.ReadVoicePrompt(audioPath)
 	if err != nil {
-		t.Fatalf("loadVoiceAudioSamples: %v", err)
+		t.Fatalf("ReadVoicePrompt: %v", err)
 	}
 
 	embedding, err := engine.encodeVoiceSamples(context.Background(), samples)

@@ -317,12 +317,22 @@ export ORT_LIBRARY_PATH=/usr/local/lib/libonnxruntime.so
 ## Export a voice
 
 By default, exports a legacy `audio_prompt` `.safetensors` file from a speaker
-WAV/PCM prompt using the native ONNX `mimi_encoder` + speaker projection path
-and prints a suggested `voices/manifest.json` entry.
+WAV/PCM prompt and prints a suggested `voices/manifest.json` entry. On the
+default `native` backend the Mimi encoder and speaker projection run in pure Go
+from the language's checkpoint, so no ONNX Runtime is needed. This needs the
+gated `kyutai/pocket-tts` weights; the ungated checkpoints have the encoder
+zeroed and `export-voice` refuses them. The `native-onnx` backend uses the ONNX
+`mimi_encoder` graph instead, which exists for `english_2026-01` only.
 
 ```bash
-./pockettts export-voice --input speaker.wav --out voices/my_voice.safetensors --id my-voice --license "CC-BY-4.0"
+export HF_TOKEN=...  # after accepting the terms of kyutai/pocket-tts
+./pockettts model download --language german
+./pockettts export-voice --language german --input speaker.wav --out voices/german/my_voice.safetensors --id my-voice --license "CC-BY-4.0"
+./pockettts synth --language german --voice voices/german/my_voice.safetensors --text "Guten Tag."
 ```
+
+`--model-safetensors` picks another checkpoint for the encoder, e.g. gated
+weights kept next to the ungated ones.
 
 The WAV prompt may have any sample rate up to 384 kHz and any channel count
 (8/16/24/32-bit PCM or 32/64-bit float). Like upstream `export-voice`, it is cut to 30 s, mixed down to

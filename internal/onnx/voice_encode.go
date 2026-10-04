@@ -27,9 +27,9 @@ const (
 // any sample rate up to audio.MaxPromptSampleRate and any channel count; raw
 // PCM must be 24 kHz mono 16-bit.
 func (e *Engine) EncodeVoice(audioPath string) ([]float32, error) {
-	samples, sampleRate, err := loadVoiceAudioSamples(audioPath)
+	samples, sampleRate, err := audio.ReadVoicePrompt(audioPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encode voice: %w", err)
 	}
 
 	// Like upstream get_state_for_audio_prompt with truncate=True (its CLI):
@@ -273,59 +273,4 @@ func (e *Engine) resolveModelWeightsPath() (string, error) {
 	}
 
 	return "", errors.New("speaker projection weights not found; set --model-safetensors, RunnerConfig.ModelWeightsPath, or POCKETTTS_MODEL_SAFETENSORS")
-}
-
-// loadVoiceAudioSamples reads a prompt as mono samples and their sample rate:
-// a .wav of any rate and channel count (mixed down), else raw 24 kHz mono
-// PCM16LE.
-func loadVoiceAudioSamples(audioPath string) ([]float32, int, error) {
-	if strings.TrimSpace(audioPath) == "" {
-		return nil, 0, errors.New("encode voice: audio path must not be empty")
-	}
-
-	data, err := os.ReadFile(audioPath)
-	if err != nil {
-		return nil, 0, fmt.Errorf("encode voice: read audio file %q: %w", audioPath, err)
-	}
-
-	if len(data) == 0 {
-		return nil, 0, fmt.Errorf("encode voice: audio file %q is empty", audioPath)
-	}
-
-	ext := strings.ToLower(filepath.Ext(audioPath))
-	if ext == ".wav" {
-		samples, sampleRate, err := audio.DecodePromptWAV(data)
-		if err != nil {
-			return nil, 0, fmt.Errorf("encode voice: decode WAV %q: %w", audioPath, err)
-		}
-
-		return samples, sampleRate, nil
-	}
-
-	samples, err := decodePCM16LE(data)
-	if err != nil {
-		return nil, 0, fmt.Errorf("encode voice: decode raw PCM16 %q: %w", audioPath, err)
-	}
-
-	return samples, audio.ExpectedSampleRate, nil
-}
-
-func decodePCM16LE(data []byte) ([]float32, error) {
-	if len(data)%2 != 0 {
-		return nil, fmt.Errorf("byte length %d is not a multiple of 2", len(data))
-	}
-
-	if len(data) == 0 {
-		return nil, errors.New("empty PCM buffer")
-	}
-
-	out := make([]float32, len(data)/2)
-	for i := range out {
-		lo := int16(data[i*2])
-		hi := int16(data[i*2+1]) << 8
-		pcm := hi | lo
-		out[i] = float32(pcm) / 32768.0
-	}
-
-	return out, nil
 }

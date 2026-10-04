@@ -227,43 +227,12 @@ func HasMimiEncoderWeights(path string) (bool, error) {
 		return false, fmt.Errorf("stat %s: %w", path, err)
 	}
 
-	fileSize := info.Size()
-
 	// Validate every encoder entry before reading any: the header is a map,
 	// so stopping at the first trained tensor would leave the ranges of the
 	// rest unchecked, depending on iteration order.
-	var ranges [][2]int
-
-	for name, raw := range header {
-		if !strings.HasPrefix(name, mimiEncoderPrefix) {
-			continue
-		}
-
-		entry, err := parseHeaderEntry(raw)
-		if err != nil {
-			return false, fmt.Errorf("decode header entry %q: %w", name, err)
-		}
-
-		err = validateHeaderEntry(name, entry)
-		if err != nil {
-			return false, err
-		}
-
-		// Bound the range by the file before allocating it, like
-		// OpenStoreFromBytes does for the in-memory checkpoint. Comparing
-		// against the data length cannot overflow: validateHeaderEntry
-		// guarantees 0 <= Offsets[0] <= Offsets[1].
-		if int64(entry.Offsets[1]) > fileSize-dataStart {
-			return false, fmt.Errorf(
-				"safetensors: tensor %q data offsets %v exceed file size %d (data starts at %d)",
-				name,
-				entry.Offsets,
-				fileSize,
-				dataStart,
-			)
-		}
-
-		ranges = append(ranges, entry.Offsets)
+	ranges, err := mimiEncoderRanges(header, dataStart, info.Size())
+	if err != nil {
+		return false, err
 	}
 
 	if len(ranges) == 0 {
@@ -291,6 +260,82 @@ func HasMimiEncoderWeights(path string) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// mimiEncoderRanges validates the mimi.encoder.* header entries of a file of
+// fileSize bytes whose tensor data starts at dataStart, and returns their
+// data offsets.
+func mimiEncoderRanges(header map[string]json.RawMessage, dataStart, fileSize int64) ([][2]int, error) {
+	var ranges [][2]int
+
+	for name, raw := range header {
+		if !strings.HasPrefix(name, mimiEncoderPrefix) {
+			continue
+		}
+
+		entry, err := parseHeaderEntry(raw)
+		if err != nil {
+			return nil, fmt.Errorf("decode header entry %q: %w", name, err)
+		}
+
+		err = validateHeaderEntry(name, entry)
+		if err != nil {
+			return nil, err
+		}
+
+		// Bound the range by the file before allocating it, like
+		// OpenStoreFromBytes does for the in-memory checkpoint. Comparing
+		// against the data length cannot overflow: validateHeaderEntry
+		// guarantees 0 <= Offsets[0] <= Offsets[1].
+		if int64(entry.Offsets[1]) > fileSize-dataStart {
+			return nil, fmt.Errorf(
+				"safetensors: tensor %q data offsets %v exceed file size %d (data starts at %d)",
+				name,
+				entry.Offsets,
+				fileSize,
+				dataStart,
+			)
+		}
+
+		// Like OpenStoreFromBytes: the range must hold every element of the
+		// declared shape, or a truncated entry could pass on stray bytes.
+		err = checkEntryByteLength(name, entry)
+		if err != nil {
+			return nil, err
+		}
+
+		ranges = append(ranges, entry.Offsets)
+	}
+
+	return ranges, nil
+}
+
+// checkEntryByteLength reports an entry whose data range is shorter than its
+// shape and dtype need.
+func checkEntryByteLength(name string, entry storeHeaderEntry) error {
+	elemCount, err := shapeElementCount(entry.Shape)
+	if err != nil {
+		return fmt.Errorf("safetensors: tensor %q: %w", name, err)
+	}
+
+	elemBytes, err := dtypeBytes(entry.DType)
+	if err != nil {
+		return fmt.Errorf("safetensors: tensor %q: %w", name, err)
+	}
+
+	actual := int64(entry.Offsets[1] - entry.Offsets[0])
+	if elemCount > actual/int64(elemBytes) {
+		return fmt.Errorf(
+			"safetensors: tensor %q needs %d bytes (%d × %s) but data has %d",
+			name,
+			elemCount*int64(elemBytes),
+			elemCount,
+			entry.DType,
+			actual,
+		)
+	}
+
+	return nil
 }
 
 // readFileHeader reads the safetensors header of f and returns the file
