@@ -76,21 +76,31 @@ func TestDoctorPasses_CLI(t *testing.T) {
 
 // TestDoctorPasses_Native runs pockettts doctor in native mode, which does not
 // require pocket-tts or Python. Asserts exit 0 with "doctor checks passed".
+// native is the alias of native-safetensors, which validates the real model,
+// tokenizer and voice files, so the test skips without them.
 func TestDoctorPasses_Native(t *testing.T) {
-	// Native mode skips pocket-tts and Python checks.
-	// model verify is skipped gracefully when no ONNX manifest is present.
-	// No external dependencies required.
-	setupTempVoiceManifest(t, true)
+	modelPath, tokPath := requireNativeSafetensorsAssets(t)
+	manifestPath := requireNativeSafetensorsVoices(t)
 
-	out, err := runDoctorCapture(t, "--backend", "native")
+	out, err := runDoctorCapture(t,
+		"--backend", "native",
+		"--paths-model-path", modelPath,
+		"--paths-tokenizer-model", tokPath,
+		"--paths-voice-manifest", manifestPath,
+	)
 	if err != nil {
 		t.Fatalf("doctor --backend native failed: %v\noutput:\n%s", err, out)
 	}
-	if !strings.Contains(out, "doctor checks passed") {
-		t.Errorf("expected 'doctor checks passed' in output, got:\n%s", out)
-	}
-	if !strings.Contains(out, "backend: native-onnx") {
-		t.Errorf("expected 'backend: native-onnx' in output, got:\n%s", out)
+	for _, want := range []string{
+		"doctor checks passed",
+		"backend: native-safetensors",
+		"language: english_2026-01",
+		"✓ default voice alba",
+		"tokenizer load: ok",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, out)
+		}
 	}
 }
 
