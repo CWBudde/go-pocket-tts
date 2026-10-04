@@ -119,32 +119,98 @@ func convTranspose1DGroups1(
 		outBase := bI * outChI * outLenI
 		outBatch := outData[outBase : outBase+outChI*outLenI]
 		parallelFor(outChI, getConvWorkers(), func(ocLo, ocHi int) {
+			convTransposeScatterGEMM(kernelT, inputT, outBatch, inChI, inLenI, outChI, kSizeI, outLenI,
+				int(stride), int(padding), int(dilation), ocLo, ocHi)
+
+			if biasData == nil {
+				return
+			}
+
 			for oc := ocLo; oc < ocHi; oc++ {
+				bv := biasData[oc]
+
 				outRow := outBatch[oc*outLenI : (oc+1)*outLenI]
-				for kx := range kSizeI {
-					kOff := (kx*outChI + oc) * inChI
-					kernelTRow := kernelT[kOff : kOff+inChI]
-
-					for ix := range inLenI {
-						outPos := int64(ix)*stride - padding + int64(kx)*dilation
-						if outPos < 0 || outPos >= outLen {
-							continue
-						}
-
-						inputRow := inputT[ix*inChI : (ix+1)*inChI]
-						outRow[outPos] += tensor.DotProduct(kernelTRow, inputRow)
-					}
-				}
-
-				if biasData != nil {
-					bv := biasData[oc]
-					for i := range outRow {
-						outRow[i] += bv
-					}
+				for i := range outRow {
+					outRow[i] += bv
 				}
 			}
 		})
 	}
+}
+
+// convTransposeScatterGEMM adds the contributions of every input position to
+// output channels ocLo..ocHi-1 of one batch item.
+//
+// For each kernel tap kx the rows kernelT[kx, ocLo:ocHi, :] times the
+// transposed input rows inputT[ix, :] give the [oc, ix] values that land at
+// output position ix*stride - padding + kx*dilation. Only the ix range that
+// lands inside the output is multiplied, in tiles of at most convTileFloats
+// products. The kx loop is outermost so every output sums its taps in kx
+// order, as the per-output dot products did before.
+func convTransposeScatterGEMM(
+	kernelT, inputT, outBatch []float32,
+	inCh, inLen, outCh, kSize, outLen, stride, padding, dilation, ocLo, ocHi int,
+) {
+	m := ocHi - ocLo
+	if m <= 0 {
+		return
+	}
+
+	tileIx := min(inLen, max(1, convTileFloats/m))
+	if tileIx >= 4 {
+		tileIx &^= 3 // whole 4-column blocks for MatMulTransB
+	}
+
+	prod := getScratch(m * tileIx)
+	defer putScratch(prod)
+
+	for kx := range kSize {
+		shift := kx*dilation - padding
+		ixLo, ixHi := convTransposeInRange(shift, stride, inLen, outLen)
+		kRows := kernelT[(kx*outCh+ocLo)*inCh : (kx*outCh+ocHi)*inCh]
+
+		for ix0 := ixLo; ix0 < ixHi; ix0 += tileIx {
+			n := min(tileIx, ixHi-ix0)
+			inRows := inputT[ix0*inCh : (ix0+n)*inCh]
+
+			// prod[r*rStep + c*cStep] is the value for channel ocLo+r at ix0+c.
+			// A short input (streaming decode) has too few positions for
+			// MatMulTransB's 4-wide blocks, so the channels take that role.
+			rStep, cStep := n, 1
+			if n < 4 && m >= 4 {
+				rStep, cStep = 1, m
+				tensor.MatMulTransB(prod, m, inRows, kRows, n, m, inCh)
+			} else {
+				tensor.MatMulTransB(prod, n, kRows, inRows, m, n, inCh)
+			}
+
+			for r := range m {
+				outRow := outBatch[(ocLo+r)*outLen : (ocLo+r+1)*outLen]
+				pos := ix0*stride + shift
+
+				for c := range n {
+					outRow[pos] += prod[r*rStep+c*cStep]
+					pos += stride
+				}
+			}
+		}
+	}
+}
+
+// convTransposeInRange returns the input positions [ixLo, ixHi) whose output
+// position ix*stride + shift lies in [0, outLen).
+func convTransposeInRange(shift, stride, inLen, outLen int) (int, int) {
+	ixLo := 0
+	if shift < 0 {
+		ixLo = (-shift + stride - 1) / stride
+	}
+
+	last := outLen - 1 - shift
+	if last < 0 {
+		return 0, 0
+	}
+
+	return ixLo, min(inLen, last/stride+1)
 }
 
 // convTranspose1DFastDepthwise is the fast path for ConvTranspose1D when
