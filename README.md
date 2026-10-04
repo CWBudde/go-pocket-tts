@@ -405,32 +405,61 @@ The CLI also has a probe command:
 
 ## Web WASM App (Experimental)
 
-This repo now includes a GitHub Action that builds a browser app artifact with:
+This repo includes a GitHub Action that builds a browser app artifact with:
 
 - Go wasm kernel: `web/dist/pockettts-kernel.wasm`
 - Go runtime JS shim: `web/dist/wasm_exec.js`
 - Static app: `web/dist/index.html`, `web/dist/main.js`
-- Native safetensors model: `web/dist/models/tts_b6369a24.safetensors`
-- Voice files: `web/dist/voices/*.safetensors` + `web/dist/voices/manifest.json`
+- Language catalog: `web/dist/languages.json`
+
+The page does not bundle models or voices. It fetches the selected config's
+model, `tokenizer.json` and voices straight from Hugging Face
+(`kyutai/pocket-tts-without-voice-cloning`) at the revisions the CLI downloads,
+which `web/languages.json` pins. Regenerate it after a model config or pin
+changes:
+
+```bash
+go generate ./internal/webmanifest/
+```
+
+(`TestCatalogFileUpToDate` fails while it is stale.)
+
+The model picker offers `english_2026-01` (the default), `english_2026-09`,
+`english_drifting_26-09`, `german` and `german_24l`. A switch selects the
+config's default voice, temperature and, unless you typed your own text, its
+demo text. The previous model is dropped from WASM memory first; switching back
+downloads it again, which the browser may serve from its HTTP cache. Each
+6-layer model is a ~220 MB download, `german_24l` ~670 MB.
+`english_2026-09_24l` is left out: its 1.3 GB checkpoint loads, but synthesis
+runs out of 32-bit WASM memory (4 GB).
 
 Run/deploy workflow:
 
 - GitHub Actions -> `Deploy Web App to GitHub Pages` -> `Run workflow`
 - Deployment is handled by `.github/workflows/deploy-pages.yml`.
   - Pushes to `main` build and deploy automatically.
-  - Build includes direct safetensors model download (no ONNX export/conversion step).
+
+To try it locally, build the same files and serve them with any static file
+server:
+
+```bash
+mkdir -p web/dist
+GOOS=js GOARCH=wasm go build -o web/dist/pockettts-kernel.wasm ./cmd/pockettts-wasm
+cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" web/dist/
+cp web/index.html web/main.js web/languages.json web/dist/
+python3 -m http.server -d web/dist 8080
+```
 
 The deployed page provides a single synthesis path:
 
 - `Go WASM kernel` orchestration (`PocketTTSKernel.loadModel` + `PocketTTSKernel.synthesize`) for model boot, text preprocessing/chunking, autoregressive generation, and WAV encoding.
+  `loadModel(model, tokenizer, progress, {config})` builds the engine from the named embedded model config
+  (default `english_2026-01`); `unloadModel()` drops the loaded model.
 - Native safetensors inference runs directly in Go/wasm (no `onnxruntime-web` graph bridge).
 - Optional voice conditioning by passing `.safetensors` voice files into the Go kernel.
 
-At startup the app runs capability checks and only enables synthesis when kernel + model are ready.
-
-Current browser constraints:
-
-- Model download/bundling remains a CI/tooling step (not in-browser conversion).
+At startup the app runs capability checks and only enables synthesis when kernel + model are ready. If the kernel
+stops (for example out of memory), the page says so and asks for a reload.
 
 ## Configuration
 
