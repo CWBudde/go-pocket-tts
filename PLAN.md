@@ -488,7 +488,7 @@ Follow-ups:
       (`collectVoiceFiles` fell back to the raw manifest path), so it reported the wrong path and a file of the
       same name in the CWD hid the missing voice. (Found 2026-10-04 by the test above.) (2026-10-04) — missing
       files now resolve next to the manifest too; `TestCollectVoiceFiles_MissingFileResolvedRelativeToManifest`.
-- [ ] Multi-language server: `language` field in `ttsRequest`, `/voices?language=`, and a lazy-loaded
+- [x] Multi-language server: `language` field in `ttsRequest`, `/voices?language=`, and a lazy-loaded
       language → `tts.Service` registry with an LRU cap (each model is ~220 MB of weights)
       Decided (2026-10-04), after the `--default-voice` item:
   - `--server-max-languages` (config/env too), default 2; 1 is today's single-language behaviour.
@@ -501,6 +501,27 @@ Follow-ups:
   - Startup overrides (`--paths-*`, `--default-voice`) bind to the startup language; other languages use
     `config.PathsForLanguage` and their built-in default voice. `--model-config` (custom model) disables
     multi-language.
+  - (2026-10-04) — `--server-languages` (`server.languages`) and `--server-max-languages` (`server.max_languages`,
+    default 2). `serve` checks each extra language's voice manifest, default voice, model and tokenizer before any
+    weights load (`config.ForLanguage` derives its config; an explicit `--temperature` carries over) and exits 1 with
+    a `model download --language` hint. `server.languageRegistry` loads a model on its first request (once, however
+    many requests wait), keeps a reference count per model and unloads the least recently used one for another
+    language, freeing it after its last request; failed loads are retried. Requests pick a language with
+    `language` on `/tts` and `/tts/stream`, `/voices?language=` reads the manifest without loading the model;
+    unknown languages get 400, a failed load 500. The shared limit is the existing `--workers` semaphore.
+    Review fixes: a request takes its worker slot before it acquires (and maybe loads) a model, so queued
+    requests neither load models nor keep evicted ones alive; loads run on their own, so the request that started
+    one can give up too; a model still loading is never evicted (later requests join its load) and the cap is
+    enforced again when it finishes. `TestHandler_LanguageLoadsOnlyWithAWorkerSlot`,
+    `TestLanguageRegistry_{FirstLoaderCanCancel,LoadingModelIsNotEvicted}`.
+    `TestLanguageRegistry_*` (fail when eviction ignores in-flight requests, when callers don't share a load,
+    when failed loads are cached, or without the allow-list), `TestLanguageSpecs*`,
+    `TestStart_OtherLanguageMissingAssetsFailsFast`, `TestHandler_Language*`, `TestHandler_VoicesByLanguage`,
+    `TestForLanguage*`, `load_sources_test` rows. Real run with
+    `serve --language german --server-languages english_2026-01 --server-max-languages 1`: German, English and
+    German again each return a 24 kHz WAV with load/unload/free logged per switch; a German request still running
+    while English loads is unloaded with `in_flight 1` and freed after it returns 200; `french` gets 400; a missing
+    `german_24l` tokenizer, `cli`, an unknown language and `--server-max-languages 0` exit 1 at startup.
 - [ ] Web/WASM: language picker. `web/main.js` hard-codes the English model and tokenizer URLs.
       Decided (2026-10-04):
   - Offer all six embedded configs (`english_2026-01`, `english_2026-09`, `english_2026-09_24l`,

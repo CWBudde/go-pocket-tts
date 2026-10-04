@@ -188,3 +188,79 @@ func checkLanguagePaths(t *testing.T, cfg Config, want PathsConfig) {
 		t.Errorf("Paths.VoiceManifest = %q; want %q", cfg.Paths.VoiceManifest, want.VoiceManifest)
 	}
 }
+
+func TestForLanguage(t *testing.T) {
+	base := loadWith(t, loadInput{args: []string{
+		"--paths-model-path=/x/model.safetensors",
+		"--paths-voice-manifest=/x/voices.json",
+		"--default-voice=marius",
+	}})
+
+	cfg, err := ForLanguage(base, "german")
+	if err != nil {
+		t.Fatalf("ForLanguage: %v", err)
+	}
+
+	if cfg.TTS.Language != "german" || cfg.Model == nil || cfg.Model.DefaultVoice != "juergen" {
+		t.Fatalf("ForLanguage(german) = language %q, model %+v; want german with default voice juergen",
+			cfg.TTS.Language, cfg.Model)
+	}
+
+	// The startup language's explicit paths and default voice do not carry over.
+	checkLanguagePaths(t, cfg, PathsConfig{
+		ModelPath:      "models/german/model.safetensors",
+		TokenizerModel: "models/german/tokenizer.json",
+		VoiceManifest:  "voices/german/manifest.json",
+	})
+
+	if cfg.Server.DefaultVoice != "" {
+		t.Errorf("Server.DefaultVoice = %q; want empty (other languages use their built-in voice)", cfg.Server.DefaultVoice)
+	}
+
+	if base.Paths.ModelPath != "/x/model.safetensors" || base.Model.DefaultVoice != "alba" {
+		t.Errorf("ForLanguage changed its base: %+v", base.Paths)
+	}
+}
+
+func TestForLanguage_Temperature(t *testing.T) {
+	// Without --temperature, the temperature follows the other model.
+	base := loadWith(t, loadInput{})
+	base.TTS.Temperature = 0.9
+
+	cfg, err := ForLanguage(base, "german")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.TTS.Temperature != cfg.Model.DefaultTemperature {
+		t.Errorf("Temperature = %v; want german's default_temperature %v", cfg.TTS.Temperature, cfg.Model.DefaultTemperature)
+	}
+
+	// An explicit --temperature applies to every language.
+	cfg, err = ForLanguage(loadWith(t, loadInput{args: []string{"--temperature=0.7"}}), "german")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.TTS.Temperature != 0.7 {
+		t.Errorf("Temperature = %v; want the explicit 0.7", cfg.TTS.Temperature)
+	}
+}
+
+func TestForLanguage_Errors(t *testing.T) {
+	_, err := ForLanguage(loadWith(t, loadInput{}), "klingon")
+	if err == nil || !strings.Contains(err.Error(), "unknown language") {
+		t.Errorf("ForLanguage(klingon) error = %v; want an unknown language error", err)
+	}
+
+	custom := loadWith(t, loadInput{args: []string{
+		"--model-config=" + germanModelConfig,
+		"--paths-model-path=/x/model.safetensors",
+		"--paths-tokenizer-model=/x/tok.model",
+	}})
+
+	_, err = ForLanguage(custom, "german")
+	if err == nil || !strings.Contains(err.Error(), "model-config") {
+		t.Errorf("ForLanguage(custom model) error = %v; want a --model-config error", err)
+	}
+}

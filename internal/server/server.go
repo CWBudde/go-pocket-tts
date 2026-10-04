@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
 	"time"
 
@@ -62,6 +64,7 @@ type options struct {
 	requestTimeout time.Duration
 	logger         *slog.Logger
 	streamer       StreamingSynthesizer
+	router         LanguageRouter
 }
 
 func defaultOptions() options {
@@ -100,6 +103,12 @@ func WithLogger(l *slog.Logger) Option {
 // If nil, the streaming endpoint returns 501 Not Implemented.
 func WithStreamer(s StreamingSynthesizer) Option {
 	return func(o *options) { o.streamer = s }
+}
+
+// WithLanguages lets requests pick a language with their language field and
+// /voices?language=. Without it, requests that name a language get 400.
+func WithLanguages(r LanguageRouter) Option {
+	return func(o *options) { o.router = r }
 }
 
 // ---------------------------------------------------------------------------
@@ -158,8 +167,24 @@ func (h *handler) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func (h *handler) handleVoices(w http.ResponseWriter, _ *http.Request) {
-	voices := h.voices.ListVoices()
+func (h *handler) handleVoices(w http.ResponseWriter, r *http.Request) {
+	lister := h.voices
+
+	language := r.URL.Query().Get("language")
+	if h.opts.router != nil {
+		var err error
+
+		lister, err = h.opts.router.Voices(language)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	} else if language != "" {
+		writeError(w, http.StatusBadRequest, errNoLanguages)
+		return
+	}
+
+	voices := lister.ListVoices()
 	if voices == nil {
 		voices = []tts.Voice{}
 	}
@@ -171,7 +196,12 @@ type ttsRequest struct {
 	Text  string `json:"text"`
 	Voice string `json:"voice"`
 	Chunk bool   `json:"chunk"`
+	// Language picks one of the served model configs; empty means the
+	// startup language.
+	Language string `json:"language"`
 }
+
+const errNoLanguages = "this server does not take a language"
 
 func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -184,23 +214,8 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req ttsRequest
-
-	err := json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-		return
-	}
-
-	if req.Text == "" {
-		writeError(w, http.StatusBadRequest, "text field is required")
-		return
-	}
-
-	if len(req.Text) > h.opts.maxTextBytes {
-		writeError(w, http.StatusRequestEntityTooLarge,
-			fmt.Sprintf("text exceeds maximum size of %d bytes", h.opts.maxTextBytes))
-
+	req, ok := h.decodeTTSRequest(w, r)
+	if !ok || !h.checkLanguage(w, req.Language) {
 		return
 	}
 
@@ -213,17 +228,26 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 		defer func() { <-h.sem }()
 	}
 
+	// Only with a worker slot: loading a model while queued would let
+	// request bursts load more models than workers and the language cap.
+	backend, release, ok := h.acquireLanguage(r.Context(), w, req.Language)
+	if !ok {
+		return
+	}
+	defer release()
+
 	// Apply per-request timeout.
 	ctx, cancel := context.WithTimeout(r.Context(), h.opts.requestTimeout)
 	defer cancel()
 
 	start := time.Now()
-	wav, err := h.synth.Synthesize(ctx, req.Text, req.Voice)
+	wav, err := backend.Synth.Synthesize(ctx, req.Text, req.Voice)
 	durationMS := time.Since(start).Milliseconds()
 
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			h.log.WarnContext(r.Context(), "synthesis timed out",
+				slog.String("language", req.Language),
 				slog.String("voice", req.Voice),
 				slog.Int("text_len", len(req.Text)),
 				slog.Int64("duration_ms", durationMS),
@@ -235,6 +259,7 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 		}
 
 		h.log.ErrorContext(r.Context(), "synthesis failed",
+			slog.String("language", req.Language),
 			slog.String("voice", req.Voice),
 			slog.Int("text_len", len(req.Text)),
 			slog.Int64("duration_ms", durationMS),
@@ -246,6 +271,7 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.log.InfoContext(r.Context(), "synthesis complete",
+		slog.String("language", req.Language),
 		slog.String("voice", req.Voice),
 		slog.Int("text_len", len(req.Text)),
 		slog.Int64("duration_ms", durationMS),
@@ -264,8 +290,8 @@ func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req, ok := h.decodeStreamRequest(w, r)
-	if !ok {
+	req, ok := h.decodeTTSRequest(w, r)
+	if !ok || !h.checkLanguage(w, req.Language) {
 		return
 	}
 
@@ -277,15 +303,27 @@ func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
 		defer func() { <-h.sem }()
 	}
 
+	backend, release, ok := h.acquireLanguage(r.Context(), w, req.Language)
+	if !ok {
+		return
+	}
+	defer release()
+
+	if backend.Streamer == nil {
+		writeError(w, http.StatusNotImplemented, "streaming not available for this backend")
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), h.opts.requestTimeout)
 	defer cancel()
 
 	start := time.Now()
 
 	// streamChunks handles the synthesis and streaming, and returns the total number of audio samples sent.
-	totalSamples, err := h.streamChunks(ctx, cancel, w, flusher, req)
+	totalSamples, err := h.streamChunks(ctx, cancel, w, flusher, backend.Streamer, req)
 	if err != nil {
 		h.log.ErrorContext(r.Context(), "streaming synthesis failed",
+			slog.String("language", req.Language),
 			slog.String("voice", req.Voice),
 			slog.Int("text_len", len(req.Text)),
 			slog.Int64("duration_ms", time.Since(start).Milliseconds()),
@@ -296,6 +334,7 @@ func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.log.InfoContext(r.Context(), "streaming synthesis complete",
+		slog.String("language", req.Language),
 		slog.String("voice", req.Voice),
 		slog.Int("text_len", len(req.Text)),
 		slog.Int64("duration_ms", time.Since(start).Milliseconds()),
@@ -309,7 +348,8 @@ func (h *handler) prepareStreamingResponse(w http.ResponseWriter, r *http.Reques
 		return nil, false
 	}
 
-	if h.streamer == nil {
+	// With languages, the language's backend decides after the body is read.
+	if h.streamer == nil && h.opts.router == nil {
 		writeError(w, http.StatusNotImplemented, "streaming not available for this backend")
 		return nil, false
 	}
@@ -328,7 +368,9 @@ func (h *handler) prepareStreamingResponse(w http.ResponseWriter, r *http.Reques
 	return flusher, true
 }
 
-func (h *handler) decodeStreamRequest(w http.ResponseWriter, r *http.Request) (ttsRequest, bool) {
+// decodeTTSRequest reads and validates the body of /tts and /tts/stream. On
+// failure it writes an HTTP error and returns false.
+func (h *handler) decodeTTSRequest(w http.ResponseWriter, r *http.Request) (ttsRequest, bool) {
 	var req ttsRequest
 
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -357,6 +399,7 @@ func (h *handler) streamChunks(
 	cancel context.CancelFunc,
 	w http.ResponseWriter,
 	flusher http.Flusher,
+	streamer StreamingSynthesizer,
 	req ttsRequest,
 ) (int, error) {
 	w.Header().Set("Content-Type", "audio/wav")
@@ -375,7 +418,7 @@ func (h *handler) streamChunks(
 	errCh := make(chan error, 1)
 
 	go func() {
-		errCh <- h.streamer.SynthesizeStream(ctx, req.Text, req.Voice, chunkCh)
+		errCh <- streamer.SynthesizeStream(ctx, req.Text, req.Voice, chunkCh)
 	}()
 
 	totalSamples := 0
@@ -394,6 +437,59 @@ func (h *handler) streamChunks(
 	}
 
 	return totalSamples, <-errCh
+}
+
+// checkLanguage rejects a language the server does not serve with 400, so
+// such a request does not wait for a worker slot first.
+func (h *handler) checkLanguage(w http.ResponseWriter, language string) bool {
+	if h.opts.router == nil {
+		if language != "" {
+			writeError(w, http.StatusBadRequest, errNoLanguages)
+			return false
+		}
+
+		return true
+	}
+
+	// Voices reads no model; its error is the same as Acquire's.
+	_, err := h.opts.router.Voices(language)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+
+	return true
+}
+
+// acquireLanguage returns the backend for language and the func that ends
+// its use. On failure it writes an HTTP error and returns false: 400 for a
+// language the server does not serve, 503 when the request ends while the
+// model loads, 500 when it fails to load.
+func (h *handler) acquireLanguage(ctx context.Context, w http.ResponseWriter, language string) (LanguageBackend, func(), bool) {
+	if h.opts.router == nil {
+		if language != "" {
+			writeError(w, http.StatusBadRequest, errNoLanguages)
+			return LanguageBackend{}, nil, false
+		}
+
+		return LanguageBackend{Synth: h.synth, Streamer: h.streamer}, func() {}, true
+	}
+
+	backend, release, err := h.opts.router.Acquire(ctx, language)
+
+	switch {
+	case err == nil:
+		return backend, release, true
+	case errors.Is(err, ErrUnknownLanguage):
+		writeError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled):
+		writeError(w, http.StatusServiceUnavailable, "request cancelled while loading language")
+	default:
+		h.log.ErrorContext(ctx, "load language failed", slog.String("language", language), slog.String("error", err.Error()))
+		writeError(w, http.StatusInternalServerError, "load language: "+err.Error())
+	}
+
+	return LanguageBackend{}, nil, false
 }
 
 // acquireWorker tries to acquire a worker slot from the semaphore.
@@ -466,15 +562,38 @@ func (s *Server) Start(ctx context.Context) error {
 		return err
 	}
 
+	// The other languages are checked first: that is cheap, while the
+	// startup model takes seconds to load.
+	startup, specs, err := s.languageSpecs(backend)
+	if err != nil {
+		return err
+	}
+
 	synth, voiceLister, workers, streamer, err := s.runtimeDeps(backend)
 	if err != nil {
 		return err
+	}
+
+	specs[startup] = languageSpec{voices: voiceLister, build: func() (loadedLanguage, error) {
+		synth, _, _, streamer, err := s.runtimeDeps(backend)
+		if err != nil {
+			return loadedLanguage{}, err
+		}
+
+		return s.loadedStartup(synth, streamer), nil
+	}}
+
+	router := newLanguageRegistry(startup, s.cfg.Server.MaxLanguages, specs, s.loadedStartup(synth, streamer), slog.Default())
+	if len(specs) > 1 {
+		slog.Info("serving languages", slog.Any("languages", slices.Sorted(maps.Keys(specs))),
+			slog.Int("max_loaded", s.cfg.Server.MaxLanguages))
 	}
 
 	handlerOpts := []Option{
 		WithWorkers(workers),
 		WithMaxTextBytes(s.cfg.Server.MaxTextBytes),
 		WithRequestTimeout(time.Duration(s.cfg.Server.RequestTimeout) * time.Second),
+		WithLanguages(router),
 	}
 	if streamer != nil {
 		handlerOpts = append(handlerOpts, WithStreamer(streamer))
@@ -548,7 +667,7 @@ func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, Str
 		if backend == config.BackendNative {
 			var err error
 
-			defaultVoice, err = s.resolveDefaultVoice(vm)
+			defaultVoice, err = resolveDefaultVoice(s.cfg, vm)
 			if err != nil {
 				return nil, nil, 0, nil, err
 			}
@@ -600,22 +719,25 @@ func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, Str
 	}
 }
 
-// resolveDefaultVoice returns the file of the default voice for requests
+// resolveDefaultVoice returns the file of cfg's default voice for requests
 // without one: --default-voice (a manifest ID or .safetensors path; serve
 // has already downloaded URLs) or else the model config's default voice
 // (upstream get_default_voice_for_language). It loads the file once, so a
 // voice that cannot be used fails at startup rather than per request.
-func (s *Server) resolveDefaultVoice(vm *tts.VoiceManager) (string, error) {
-	source, ref := "--default-voice", strings.TrimSpace(s.cfg.Server.DefaultVoice)
+func resolveDefaultVoice(cfg config.Config, vm *tts.VoiceManager) (string, error) {
+	source, ref := "--default-voice", strings.TrimSpace(cfg.Server.DefaultVoice)
 	if ref == "" {
-		if s.cfg.Model == nil || s.cfg.Model.DefaultVoice == "" {
+		if cfg.Model == nil || cfg.Model.DefaultVoice == "" {
 			return "", nil
 		}
 
-		source, ref = "default voice", s.cfg.Model.DefaultVoice
+		source, ref = "default voice", cfg.Model.DefaultVoice
 	}
 
-	const hint = "run 'pockettts model download' (same --language)"
+	hint := "run 'pockettts model download' (same --language)"
+	if cfg.TTS.ModelConfigPath == "" {
+		hint = "run 'pockettts model download --language " + cfg.TTS.Language + "'"
+	}
 
 	// An exact manifest ID wins, as for request voices; otherwise a value
 	// that looks like a file is a path and anything else must be an ID.
@@ -625,14 +747,14 @@ func (s *Server) resolveDefaultVoice(vm *tts.VoiceManager) (string, error) {
 
 	if fromManifest {
 		if vm == nil {
-			return "", fmt.Errorf("%s %q: voice manifest %s not readable; %s", source, ref, s.cfg.Paths.VoiceManifest, hint)
+			return "", fmt.Errorf("%s %q: voice manifest %s not readable; %s", source, ref, cfg.Paths.VoiceManifest, hint)
 		}
 
 		var err error
 
 		path, err = vm.ResolvePath(ref)
 		if err != nil {
-			return "", fmt.Errorf("%s %q (voice manifest %s): %w; %s", source, ref, s.cfg.Paths.VoiceManifest, err, hint)
+			return "", fmt.Errorf("%s %q (voice manifest %s): %w; %s", source, ref, cfg.Paths.VoiceManifest, err, hint)
 		}
 	}
 

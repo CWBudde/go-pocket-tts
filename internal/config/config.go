@@ -22,6 +22,10 @@ type Config struct {
 	// Model is the model config of TTS.Language, or of TTS.ModelConfigPath
 	// when set. Load resolves it; it is not a config key itself.
 	Model *modelcfg.ModelConfig `mapstructure:"-"`
+
+	// temperatureSet records that the user set TTS.Temperature, so
+	// ForLanguage keeps it instead of the other model's default.
+	temperatureSet bool
 }
 
 type PathsConfig struct {
@@ -52,6 +56,13 @@ type ServerConfig struct {
 	// without one: a voice ID, a .safetensors path, or an https:// or hf://
 	// URL that serve downloads into the user cache.
 	DefaultVoice string `mapstructure:"default_voice"`
+	// Languages lists the model configs serve answers besides TTS.Language;
+	// requests pick one with their language field. Empty means TTS.Language
+	// only.
+	Languages []string `mapstructure:"languages"`
+	// MaxLanguages caps the models serve keeps loaded at once; the least
+	// recently used one is unloaded when another language needs room.
+	MaxLanguages int `mapstructure:"max_languages"`
 }
 
 type TTSConfig struct {
@@ -115,6 +126,7 @@ func DefaultConfig() Config {
 			ShutdownTimeout: 30,
 			MaxTextBytes:    4096,
 			RequestTimeout:  60,
+			MaxLanguages:    2,
 		},
 		TTS: TTSConfig{
 			Backend:            BackendNative,
@@ -163,6 +175,10 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.String("default-voice", defaults.Server.DefaultVoice,
 		"serve: voice for requests without one (ID, .safetensors path, https:// or hf://…@rev URL); "+
 			"defaults to the language's built-in voice")
+	fs.StringSlice("server-languages", defaults.Server.Languages,
+		"serve: further languages requests may pick with their language field (needs native-safetensors)")
+	fs.Int("server-max-languages", defaults.Server.MaxLanguages,
+		"serve: models kept loaded at once; the least recently used one is unloaded for another language")
 	fs.String(
 		"backend",
 		defaults.TTS.Backend,
@@ -264,9 +280,42 @@ func Load(opts LoadOptions) (Config, error) {
 // explicitly from the resolved model config. Upstream: --temperature defaults
 // to None, which means the model's default_temperature.
 func applyModelDefaults(v *viper.Viper, flags *pflag.FlagSet, cfg *Config) {
-	if !isExplicit(v, flags, "tts.temperature") {
+	cfg.temperatureSet = isExplicit(v, flags, "tts.temperature")
+	if !cfg.temperatureSet {
 		cfg.TTS.Temperature = cfg.Model.DefaultTemperature
 	}
+}
+
+// ForLanguage returns base switched to language, the way serve runs a
+// language other than its startup one: the model config, the
+// PathsForLanguage files and the language's built-in default voice. The
+// temperature follows the new model unless the user set it. Explicit paths
+// and --default-voice belong to the startup language and are dropped.
+func ForLanguage(base Config, language string) (Config, error) {
+	if base.TTS.ModelConfigPath != "" {
+		return Config{}, errors.New("a custom --model-config serves only its own model")
+	}
+
+	model, err := modelcfg.Lookup(language)
+	if err != nil {
+		return Config{}, err
+	}
+
+	cfg := base
+	cfg.TTS.Language = language
+	cfg.Model = model
+	cfg.Server.DefaultVoice = ""
+
+	derived := PathsForLanguage(language)
+	cfg.Paths.ModelPath = derived.ModelPath
+	cfg.Paths.TokenizerModel = derived.TokenizerModel
+	cfg.Paths.VoiceManifest = derived.VoiceManifest
+
+	if !cfg.temperatureSet {
+		cfg.TTS.Temperature = model.DefaultTemperature
+	}
+
+	return cfg, nil
 }
 
 // DefaultLanguage is the model config used without --language. It stays the
@@ -412,6 +461,8 @@ func setDefaults(v *viper.Viper, c Config) {
 	v.SetDefault("server.max_text_bytes", c.Server.MaxTextBytes)
 	v.SetDefault("server.request_timeout_secs", c.Server.RequestTimeout)
 	v.SetDefault("server.default_voice", c.Server.DefaultVoice)
+	v.SetDefault("server.languages", c.Server.Languages)
+	v.SetDefault("server.max_languages", c.Server.MaxLanguages)
 	v.SetDefault("tts.backend", c.TTS.Backend)
 	v.SetDefault("tts.language", c.TTS.Language)
 	v.SetDefault("tts.model_config", c.TTS.ModelConfigPath)
@@ -464,6 +515,8 @@ var keyBindings = []keyBinding{
 	{key: "server.max_text_bytes", flag: "max-text-bytes"},
 	{key: "server.request_timeout_secs", flag: "request-timeout"},
 	{key: "server.default_voice", flag: "default-voice"},
+	{key: "server.languages", flag: "server-languages"},
+	{key: "server.max_languages", flag: "server-max-languages"},
 	{key: "tts.backend", flag: "backend"},
 	{key: "tts.language", flag: "language"},
 	{key: "tts.model_config", flag: "model-config"},

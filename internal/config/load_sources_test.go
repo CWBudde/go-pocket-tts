@@ -41,6 +41,8 @@ var keySources = []keySource{
 	{"server.max_text_bytes", "max-text-bytes", "1234", func(c Config) any { return c.Server.MaxTextBytes }},
 	{"server.request_timeout_secs", "request-timeout", "12", func(c Config) any { return c.Server.RequestTimeout }},
 	{"server.default_voice", "default-voice", "/x/voice.safetensors", func(c Config) any { return c.Server.DefaultVoice }},
+	{"server.languages", "server-languages", "german,english_2026-09", func(c Config) any { return strings.Join(c.Server.Languages, ",") }},
+	{"server.max_languages", "server-max-languages", "3", func(c Config) any { return c.Server.MaxLanguages }},
 	{"tts.backend", "backend", "cli", func(c Config) any { return c.TTS.Backend }},
 	{"tts.voice", "tts-voice", "marius", func(c Config) any { return c.TTS.Voice }},
 	{"tts.cli_path", "tts-cli-path", "/x/pocket-tts", func(c Config) any { return c.TTS.CLIPath }},

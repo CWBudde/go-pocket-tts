@@ -361,6 +361,35 @@ it does not fit the model (for example a `german` voice state with
 `german_24l`). The other backends have no default voice and reject
 `--default-voice`.
 
+### Several languages
+
+One process can serve several languages on `native-safetensors`. List the extra
+ones with `--server-languages` (`server.languages`,
+`POCKETTTS_SERVER_LANGUAGES=german,english_2026-01`); requests then pick one
+with a `language` field, and `GET /voices?language=<lang>` lists its voices.
+Requests without a `language` use the startup language (`--language`):
+
+```bash
+./pockettts serve --language german --server-languages english_2026-01
+curl -s -X POST http://localhost:8080/tts \
+  -d '{"text":"Hello there.","language":"english_2026-01"}' -o hello.wav
+```
+
+- The extra languages use their [local layout](#languages) and built-in default
+  voice; `--paths-*` and `--default-voice` apply to the startup language only.
+  `serve` checks their voice manifest, default voice, model and tokenizer at
+  startup and refuses to start when one is missing.
+- Each model loads on its first request. At most `--server-max-languages`
+  (`server.max_languages`, default 2) stay loaded: the least recently used one
+  is unloaded for another language and freed once its running requests finish,
+  so memory can briefly exceed the cap. The 6-layer models hold about 210–235 MB
+  of weights each, the `*_24l` models about 670 MB.
+- `--workers` limits concurrent synthesis across all languages; a request
+  loads its language's model only once it has a worker slot.
+- A language that is not served gets 400. With `--backend native-onnx` or `cli`,
+  or with `--model-config`, only the startup model is served (`--model-config`:
+  requests without a `language`).
+
 Health check:
 
 ```bash
@@ -453,6 +482,9 @@ server:
   grpc_addr: ":9090"
   # Voice for requests without one (ID, .safetensors path, https:// or hf:// URL)
   # default_voice: "juergen"
+  # Further languages requests may pick, and how many models stay loaded
+  # languages: ["english_2026-01"]
+  # max_languages: 2
 
 tts:
   # Backend: native-safetensors (default), native-onnx, or cli
