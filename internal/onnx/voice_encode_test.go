@@ -112,6 +112,46 @@ func TestNormalizeMimiEncoderLatent_TransposesChannelFirstOutput(t *testing.T) {
 	}
 }
 
+// TestNormalizeMimiEncoderLatent_SquareIsChannelFirst checks a prompt whose
+// 32-wide encoder output has exactly 32 frames: [1, 32, 32] is ambiguous by
+// shape, so it must follow the exported graph's channel-first layout.
+func TestNormalizeMimiEncoderLatent_SquareIsChannelFirst(t *testing.T) {
+	const dim = 32
+
+	// Channel-first [1, dim, T=dim]: element (c, t) = 100*c + t.
+	raw := make([]float32, dim*dim)
+	for c := range dim {
+		for frame := range dim {
+			raw[c*dim+frame] = float32(100*c + frame)
+		}
+	}
+
+	latent, err := NewTensor(raw, []int64{1, dim, dim})
+	if err != nil {
+		t.Fatalf("NewTensor latent: %v", err)
+	}
+
+	norm, err := normalizeMimiEncoderLatent(latent, dim)
+	if err != nil {
+		t.Fatalf("normalizeMimiEncoderLatent: %v", err)
+	}
+
+	data, err := ExtractFloat32(norm)
+	if err != nil {
+		t.Fatalf("ExtractFloat32: %v", err)
+	}
+
+	// Frame-major [1, T, dim]: element (t, c) must be the input's (c, t).
+	for _, tc := range []struct{ frame, c int }{{0, 1}, {1, 0}, {5, 17}, {31, 30}} {
+		got := data[tc.frame*dim+tc.c]
+
+		want := float32(100*tc.c + tc.frame)
+		if got != want {
+			t.Errorf("frame %d channel %d = %v, want %v", tc.frame, tc.c, got, want)
+		}
+	}
+}
+
 func TestEncodeVoiceSamples_RunsMimiEncoderAndProjection(t *testing.T) {
 	latentData := make([]float32, 2*defaultMimiEncoderLatentDim)
 	latentData[0], latentData[1] = 2, 3

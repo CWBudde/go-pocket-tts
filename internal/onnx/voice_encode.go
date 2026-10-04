@@ -103,7 +103,10 @@ func (e *Engine) encoderLatentDim() int {
 }
 
 // normalizeMimiEncoderLatent returns latent as [1, T, dim], transposing a
-// channel-first [1, dim, T] encoder output.
+// channel-first [1, dim, T] encoder output. The exported mimi_encoder graph is
+// channel-first (scripts/export_onnx.py declares axis 2 as latent_steps), so a
+// square [1, dim, dim] latent, from a prompt of exactly dim frames, is taken
+// as channel-first too.
 func normalizeMimiEncoderLatent(latent *Tensor, dim int) (*Tensor, error) {
 	shape := latent.Shape()
 	if len(shape) != 3 {
@@ -119,11 +122,7 @@ func normalizeMimiEncoderLatent(latent *Tensor, dim int) (*Tensor, error) {
 		return nil, fmt.Errorf("extract latent: %w", err)
 	}
 
-	if shape[2] == int64(dim) {
-		// Already [1, T, dim].
-		return NewTensor(data, []int64{1, shape[1], int64(dim)})
-	}
-
+	// Channel-first is checked first so the square case follows the graph.
 	if shape[1] == int64(dim) {
 		// [1, dim, T] -> [1, T, dim].
 		T := int(shape[2])
@@ -138,6 +137,11 @@ func normalizeMimiEncoderLatent(latent *Tensor, dim int) (*Tensor, error) {
 		}
 
 		return NewTensor(transposed, []int64{1, shape[2], int64(dim)})
+	}
+
+	if shape[2] == int64(dim) {
+		// Already [1, T, dim].
+		return NewTensor(data, []int64{1, shape[1], int64(dim)})
 	}
 
 	return nil, fmt.Errorf("unexpected latent shape %v (need [1,T,%d] or [1,%d,T])", shape, dim, dim)
