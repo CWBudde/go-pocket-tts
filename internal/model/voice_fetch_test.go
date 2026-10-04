@@ -258,3 +258,57 @@ func TestVoiceRefExt(t *testing.T) {
 		}
 	}
 }
+
+// roundTripFunc serves requests in-process, so hf:// references (whose host
+// is fixed to huggingface.co) can be tested without the network.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// A WAV prompt keeps its .wav name in the cache, so the voice-prompt reader
+// decodes it as WAV rather than as raw PCM; voice files still get .safetensors.
+func TestFetchVoice_CachesWAVPromptAsWAV(t *testing.T) {
+	for ref, want := range map[string]struct {
+		url, suffix, auth string
+	}{
+		"hf://kyutai/tts-voices/alba-mackenna/casual.wav@abc123": {
+			url:    "https://huggingface.co/kyutai/tts-voices/resolve/abc123/alba-mackenna/casual.wav",
+			suffix: "-casual.wav", auth: "Bearer hf_secret",
+		},
+		"https://example.com/prompts/Casual.WAV?download=1": {
+			url:    "https://example.com/prompts/Casual.WAV?download=1",
+			suffix: "-Casual.WAV",
+		},
+		"https://example.com/voices/anna": {
+			url:    "https://example.com/voices/anna",
+			suffix: "-anna.safetensors",
+		},
+	} {
+		var gotURL, gotAuth string
+
+		client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			gotURL, gotAuth = r.URL.String(), r.Header.Get("Authorization")
+
+			return &http.Response{
+				StatusCode: http.StatusOK, Status: "200 OK",
+				Body: io.NopCloser(strings.NewReader("RIFF")), ContentLength: 4, Request: r,
+			}, nil
+		})}
+
+		path, err := FetchVoice(ref, FetchVoiceOptions{
+			Client: client, CacheDir: t.TempDir(), Token: "hf_secret", Stdout: io.Discard,
+		})
+		if err != nil {
+			t.Fatalf("FetchVoice(%q): %v", ref, err)
+		}
+
+		if gotURL != want.url || gotAuth != want.auth {
+			t.Errorf("FetchVoice(%q) requested %q (auth %q); want %q (auth %q)",
+				ref, gotURL, gotAuth, want.url, want.auth)
+		}
+
+		if !strings.HasSuffix(path, want.suffix) {
+			t.Errorf("FetchVoice(%q) cache path = %q; want suffix %q", ref, path, want.suffix)
+		}
+	}
+}
