@@ -6,6 +6,9 @@ import (
 	"errors"
 	"math"
 	"testing"
+
+	"github.com/cwbudde/wav"
+	goaudio "github.com/go-audio/audio"
 )
 
 // makeWAV builds a minimal valid WAV file from parameters for testing.
@@ -81,6 +84,50 @@ func TestDecodeWAV(t *testing.T) {
 		}
 	})
 
+	t.Run("decodes 24/32-bit int and 32/64-bit float WAVs", func(t *testing.T) {
+		ramp := make([]float32, 64)
+		for i := range ramp {
+			ramp[i] = float32(i-32) / 40
+		}
+
+		for _, tc := range []struct {
+			name     string
+			bitDepth int
+			format   int
+		}{
+			{"int24", 24, wavFormatPCM},
+			{"int32", 32, wavFormatPCM},
+			{"float32", 32, wavFormatIEEEFloat},
+			{"float64", 64, wavFormatIEEEFloat},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				samples, err := DecodeWAV(encodeTestWAV(t, ramp, tc.bitDepth, tc.format))
+				if err != nil {
+					t.Fatalf("DecodeWAV: %v", err)
+				}
+
+				if len(samples) != len(ramp) {
+					t.Fatalf("got %d samples, want %d", len(samples), len(ramp))
+				}
+
+				// One 24-bit LSB; 32-bit int and float are closer still.
+				const tol = 1.0 / (1 << 23)
+				for i, want := range ramp {
+					if math.Abs(float64(samples[i]-want)) > tol {
+						t.Fatalf("sample %d = %v, want %v", i, samples[i], want)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("rejects 8-bit", func(t *testing.T) {
+		_, err := DecodeWAV(makeWAV(24000, 1, 8, 10))
+		if !errors.Is(err, ErrFormatMismatch) {
+			t.Errorf("expected ErrFormatMismatch, got %v", err)
+		}
+	})
+
 	t.Run("rejects invalid WAV data", func(t *testing.T) {
 		_, err := DecodeWAV([]byte("not a wav file"))
 		if err == nil {
@@ -94,6 +141,32 @@ func TestDecodeWAV(t *testing.T) {
 			t.Fatal("expected error for nil input")
 		}
 	})
+}
+
+// encodeTestWAV encodes samples as a 24 kHz mono WAV with the given bit depth
+// and WAV format tag (1 = PCM, 3 = IEEE float).
+func encodeTestWAV(t *testing.T, samples []float32, bitDepth, format int) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+
+	enc := wav.NewEncoder(&seekBuffer{buf: &buf}, ExpectedSampleRate, bitDepth, ExpectedChannels, format)
+
+	err := enc.Write(&goaudio.Float32Buffer{
+		Data:           samples,
+		Format:         &goaudio.Format{SampleRate: ExpectedSampleRate, NumChannels: ExpectedChannels},
+		SourceBitDepth: bitDepth,
+	})
+	if err != nil {
+		t.Fatalf("encode %d-bit WAV: %v", bitDepth, err)
+	}
+
+	err = enc.Close()
+	if err != nil {
+		t.Fatalf("close %d-bit WAV: %v", bitDepth, err)
+	}
+
+	return buf.Bytes()
 }
 
 func TestEncodeWAV(t *testing.T) {
