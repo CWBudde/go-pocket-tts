@@ -653,12 +653,36 @@ Follow-ups:
       and dropping the zeroed-weights guard each fail a test. Real run: a German juergen synth (6.2 s) cloned with
       the gated german weights in 1.9 s, then synthesized with the cloned voice (exit 0, 4.2 s of audio; not yet
       judged by ear). The ungated `models/german` exits 1 with the gated-weights hint.
-- [ ] WAV voices without `export-voice`: `synth --voice x.wav` and `serve --default-voice x.wav` (still rejected in
+- [x] WAV voices without `export-voice`: `synth --voice x.wav` and `serve --default-voice x.wav` (still rejected in
       `cmd/pockettts/serve.go` `resolveServeDefaultVoice`) can encode in-process with `native.VoiceEncoder` when the
       loaded checkpoint is gated. (Found 2026-10-04.)
-- [ ] Native encoder speed: a 30 s prompt takes 11 s (376 frames). The encoder transformer runs at 200 Hz (about
+      (2026-10-04) — `encodeWAVVoice` encodes a local `.wav` like `export-voice`, with the checkpoint synthesis loads
+      (`--paths-model-path`), into a temporary `audio_prompt` voice file; `synth` removes it when done, `serve` encodes
+      once at startup and removes it on shutdown. A `.wav` without a slash is a prompt, not a manifest ID.
+      native-onnx `synth` refuses it with an `export-voice` hint, remote `.wav` URLs are refused, an ungated
+      checkpoint fails before the model loads with the gated-weights hint. No persistent cache: each start
+      re-encodes. `TestEncodeWAVVoice_*`, `TestResolveSynthVoice_WAV`, `TestResolveServeDefaultVoice`,
+      `TestResolveSynthVoice_RealCheckpoints` (gated german: 27 frames like upstream; ungated:
+      `ErrMimiEncoderWeightsZeroed`). Mutations: the old serve rejection, never removing the file, encoding on
+      native-onnx, passing remote WAVs to the encoder and ignoring `--paths-model-path` each fail a test. Real runs
+      (gated german, 6.4 s prompt): `synth` exit 0, 3.6 s of audio in 2.1 s; `serve` answers `POST /tts` without a
+      voice (200, 3.2 s), the temp file exists while it runs and is gone after SIGINT (exit 0); ungated exits 1 in
+      0.03 s, a remote `.wav` exits 1.
+- [x] Native encoder speed: a 30 s prompt takes 11 s (376 frames). The encoder transformer runs at 200 Hz (about
       6000 steps) and `ops.AttentionWithPositions` checks every key against the 250-step context; restrict the key
       range per query. (Found 2026-10-04.)
+      (2026-10-04) — the profile (`BenchmarkMimiEncoder30s`, gated german) put attention at 11% and the SEANet convs
+      at 59%: `conv1DFastGroups1` built one ~550 MB im2col on a single goroutine. Long conv outputs are now tiled
+      (128 KiB im2col per tile, one worker per tile); with strictly increasing key positions
+      `attention4DPositions` visits only each query's context window (binary search); both stay bit-identical.
+      `export-voice` also never applied `--conv-workers`/`--runtime-workers` (only `tts.Service` did), so the 11 s
+      were single-threaded; `tts.ApplyNativeWorkers` now serves both. Benchmark: 11.0 → 8.0 s (1 worker),
+      7.0 → 4.3 s (2), 4.4 → 1.7 s (8). `export-voice` on a 30 s prompt: 11.5 → 4.8 s with the defaults, 1.8 s with
+      `--conv-workers 8`, same output bytes. `TestConv1DLongInputMatchesNaive`, `TestConv1DTiledMatchesFullIm2col`,
+      `TestAttentionWithPositionsKeyWindow`, `TestAttentionWithPositionsRingBufferKeys`,
+      `TestBuildVoiceEncoder_NativeAppliesWorkers`; window bounds off by one, the window on unsorted keys, no zeroing
+      of padded taps, a dropped tile row and no worker setup each fail a test. The encoder transformer's linear
+      layers are now the largest share.
 - [ ] Voice cloning in the WASM build (`cmd/pockettts-wasm` accepts voice safetensors only) and a native
       `--format model-state` export (still the Python CLI). (Found 2026-10-04.)
 
