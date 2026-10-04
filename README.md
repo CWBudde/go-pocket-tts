@@ -315,6 +315,11 @@ and prints a suggested `voices/manifest.json` entry.
 ./pockettts export-voice --input speaker.wav --out voices/my_voice.safetensors --id my-voice --license "CC-BY-4.0"
 ```
 
+The WAV prompt may have any sample rate and channel count (8/16/24/32-bit PCM or
+32/64-bit float). Like upstream `export-voice`, it is cut to 30 s, mixed down to
+mono, resampled to 24 kHz and ended on a short pause before encoding. Raw PCM
+input (any other extension) must be 24 kHz mono 16-bit little-endian.
+
 To produce an upstream-compatible full model-state voice file, use the Python
 tooling fallback. Upstream voice `.safetensors` files are serialized prompted
 model state: transformer KV-cache tensors plus offsets such as

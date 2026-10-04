@@ -19,16 +19,21 @@ const (
 )
 
 // EncodeVoice loads a WAV/PCM prompt from audioPath and returns a flattened
-// voice embedding tensor with logical shape [1, T, 1024].
+// voice embedding tensor with logical shape [1, T, 1024]. WAV prompts may have
+// any sample rate and channel count; raw PCM must be 24 kHz mono 16-bit.
 func (e *Engine) EncodeVoice(audioPath string) ([]float32, error) {
-	samples, err := loadVoiceAudioSamples(audioPath)
+	samples, sampleRate, err := loadVoiceAudioSamples(audioPath)
 	if err != nil {
 		return nil, err
 	}
 
-	// Like upstream get_state_for_audio_prompt, end the prompt on a pause:
-	// one that stops on speech makes the model continue that utterance.
-	samples = audio.EndOnPause(samples, audio.ExpectedSampleRate)
+	// Like upstream get_state_for_audio_prompt with truncate=True (its CLI):
+	// keep 30 s, resample to 24 kHz and end the prompt on a pause, since one
+	// that stops on speech makes the model continue that utterance.
+	samples, err = audio.PrepareVoicePrompt(samples, sampleRate)
+	if err != nil {
+		return nil, fmt.Errorf("encode voice: %w", err)
+	}
 
 	embedding, err := e.encodeVoiceSamples(context.Background(), samples)
 	if err != nil {
@@ -245,36 +250,39 @@ func (e *Engine) resolveModelWeightsPath() (string, error) {
 	return "", errors.New("speaker projection weights not found; set --model-safetensors, RunnerConfig.ModelWeightsPath, or POCKETTTS_MODEL_SAFETENSORS")
 }
 
-func loadVoiceAudioSamples(audioPath string) ([]float32, error) {
+// loadVoiceAudioSamples reads a prompt as mono samples and their sample rate:
+// a .wav of any rate and channel count (mixed down), else raw 24 kHz mono
+// PCM16LE.
+func loadVoiceAudioSamples(audioPath string) ([]float32, int, error) {
 	if strings.TrimSpace(audioPath) == "" {
-		return nil, errors.New("encode voice: audio path must not be empty")
+		return nil, 0, errors.New("encode voice: audio path must not be empty")
 	}
 
 	data, err := os.ReadFile(audioPath)
 	if err != nil {
-		return nil, fmt.Errorf("encode voice: read audio file %q: %w", audioPath, err)
+		return nil, 0, fmt.Errorf("encode voice: read audio file %q: %w", audioPath, err)
 	}
 
 	if len(data) == 0 {
-		return nil, fmt.Errorf("encode voice: audio file %q is empty", audioPath)
+		return nil, 0, fmt.Errorf("encode voice: audio file %q is empty", audioPath)
 	}
 
 	ext := strings.ToLower(filepath.Ext(audioPath))
 	if ext == ".wav" {
-		samples, err := audio.DecodeWAV(data)
+		samples, sampleRate, err := audio.DecodePromptWAV(data)
 		if err != nil {
-			return nil, fmt.Errorf("encode voice: decode WAV %q: %w", audioPath, err)
+			return nil, 0, fmt.Errorf("encode voice: decode WAV %q: %w", audioPath, err)
 		}
 
-		return samples, nil
+		return samples, sampleRate, nil
 	}
 
 	samples, err := decodePCM16LE(data)
 	if err != nil {
-		return nil, fmt.Errorf("encode voice: decode raw PCM16 %q: %w", audioPath, err)
+		return nil, 0, fmt.Errorf("encode voice: decode raw PCM16 %q: %w", audioPath, err)
 	}
 
-	return samples, nil
+	return samples, audio.ExpectedSampleRate, nil
 }
 
 func decodePCM16LE(data []byte) ([]float32, error) {

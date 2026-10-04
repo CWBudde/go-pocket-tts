@@ -124,7 +124,7 @@ type exportVoiceOptions struct {
 }
 
 func registerExportVoiceFlags(cmd *cobra.Command, opts *exportVoiceOptions) {
-	cmd.Flags().StringVar(&opts.inputPath, "input", "", "Input speaker audio WAV or raw PCM16 path")
+	cmd.Flags().StringVar(&opts.inputPath, "input", "", "Input speaker audio: WAV (any rate and channel count) or raw 24 kHz mono PCM16 path")
 	cmd.Flags().StringVar(&opts.audioPathAlias, "audio", "", "Alias for --input")
 	cmd.Flags().StringVar(&opts.outPath, "out", "", "Output voice .safetensors path")
 	cmd.Flags().StringVar(

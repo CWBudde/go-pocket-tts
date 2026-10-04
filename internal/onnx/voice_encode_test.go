@@ -1,10 +1,13 @@
 package onnx
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/cwbudde/go-pocket-tts/internal/audio"
@@ -238,6 +241,116 @@ func TestEncodeVoice_EndsPromptOnPause(t *testing.T) {
 			t.Fatalf("pause sample %d = %v, want 0", i, v)
 		}
 	}
+}
+
+// TestEncodeVoice_ResamplesAndDownmixesPrompt checks that a stereo 48 kHz
+// prompt reaches the Mimi encoder as upstream feeds it: channels averaged,
+// resampled to 24 kHz and ended on a pause.
+func TestEncodeVoice_ResamplesAndDownmixesPrompt(t *testing.T) {
+	const (
+		rate      = 48000
+		speechLen = rate / 2 // 0.5 s
+		frames    = speechLen + rate*3/10
+	)
+
+	left := make([]int16, frames)
+	right := make([]int16, frames)
+	mono := make([]float32, frames)
+
+	for i := range speechLen {
+		s := math.Sin(float64(i) / 7)
+		left[i] = int16(math.Round(0.5 * s * 32767))
+		right[i] = int16(math.Round(0.25 * s * 32767))
+		mono[i] = (float32(left[i])/32768 + float32(right[i])/32768) / 2
+	}
+
+	path := filepath.Join(t.TempDir(), "prompt.wav")
+
+	err := os.WriteFile(path, stereoWAV16(rate, left, right), 0o600)
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got := captureEncoderInput(t, path)
+
+	want, err := audio.PrepareVoicePrompt(mono, rate)
+	if err != nil {
+		t.Fatalf("PrepareVoicePrompt: %v", err)
+	}
+
+	if !slices.Equal(got, want) {
+		t.Fatalf("encoder input: %d samples, want %d (mean of both channels, resampled, ended on a pause)",
+			len(got), len(want))
+	}
+
+	const pause = audio.ExpectedSampleRate * 8 / 100
+	if wantLen := audio.ExpectedSampleRate/2 + pause; len(got) != wantLen {
+		t.Errorf("encoder input has %d samples, want %d (0.5 s at 24 kHz + 80 ms pause)", len(got), wantLen)
+	}
+}
+
+// captureEncoderInput runs EncodeVoice on path with a fake mimi_encoder and
+// returns the audio it received.
+func captureEncoderInput(t *testing.T, path string) []float32 {
+	t.Helper()
+
+	latent, err := NewTensor(make([]float32, mimiEncoderLatentDim), []int64{1, 1, mimiEncoderLatentDim})
+	if err != nil {
+		t.Fatalf("NewTensor latent: %v", err)
+	}
+
+	var got []float32
+
+	fake := &fakeRunner{
+		name: "mimi_encoder",
+		fn: func(_ context.Context, inputs map[string]*Tensor) (map[string]*Tensor, error) {
+			var extractErr error
+
+			got, extractErr = ExtractFloat32(inputs["audio"])
+			if extractErr != nil {
+				t.Fatalf("ExtractFloat32 audio: %v", extractErr)
+			}
+
+			return map[string]*Tensor{"latent": latent}, nil
+		},
+	}
+
+	e := engineWithFakeRunners(map[string]runnerIface{"mimi_encoder": fake})
+	e.speakerProjWeight = make([]float32, VoiceEmbeddingDim*mimiEncoderLatentDim)
+
+	_, err = e.EncodeVoice(path)
+	if err != nil {
+		t.Fatalf("EncodeVoice: %v", err)
+	}
+
+	return got
+}
+
+// stereoWAV16 builds a 16-bit stereo PCM WAV from two equally long channels.
+func stereoWAV16(rate uint32, left, right []int16) []byte {
+	const blockAlign = 4
+
+	dataSize := uint32(len(left) * blockAlign)
+
+	buf := &bytes.Buffer{}
+	buf.WriteString("RIFF")
+	_ = binary.Write(buf, binary.LittleEndian, 4+8+16+8+dataSize)
+	buf.WriteString("WAVEfmt ")
+
+	for _, field := range []any{
+		uint32(16), uint16(1), uint16(2), rate, rate * blockAlign, uint16(blockAlign), uint16(16),
+	} {
+		_ = binary.Write(buf, binary.LittleEndian, field)
+	}
+
+	buf.WriteString("data")
+	_ = binary.Write(buf, binary.LittleEndian, dataSize)
+
+	for i := range left {
+		_ = binary.Write(buf, binary.LittleEndian, [2]int16{left[i], right[i]})
+	}
+
+	return buf.Bytes()
 }
 
 func TestEncodeVoiceSamples_MissingMimiEncoderGraph(t *testing.T) {
