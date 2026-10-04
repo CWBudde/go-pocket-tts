@@ -203,6 +203,67 @@ func TestCollectVoiceFiles_PathResolvedRelativeToManifest(t *testing.T) {
 	}
 }
 
+// TestCollectVoiceFiles_MissingFileResolvedRelativeToManifest verifies that a
+// missing voice file is also reported next to the manifest, not relative to
+// the working directory, where a file of the same name would hide it.
+func TestCollectVoiceFiles_MissingFileResolvedRelativeToManifest(t *testing.T) {
+	tmp := t.TempDir()
+
+	voiceDir := filepath.Join(tmp, "voices")
+
+	err := os.MkdirAll(voiceDir, 0o755)
+	if err != nil {
+		t.Fatalf("MkdirAll voiceDir: %v", err)
+	}
+
+	manifest := `{"voices":[{"id":"gone","path":"gone.safetensors","license":"MIT"}]}`
+
+	err = os.WriteFile(filepath.Join(voiceDir, "manifest.json"), []byte(manifest), 0o644)
+	if err != nil {
+		t.Fatalf("WriteFile manifest: %v", err)
+	}
+
+	// A decoy at the working directory that must not satisfy the check.
+	err = os.WriteFile(filepath.Join(tmp, "gone.safetensors"), []byte("dummy"), 0o644)
+	if err != nil {
+		t.Fatalf("WriteFile decoy: %v", err)
+	}
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+
+	t.Cleanup(func() {
+		err := os.Chdir(orig)
+		if err != nil {
+			t.Logf("chdir restore: %v", err)
+		}
+	})
+
+	err = os.Chdir(tmp)
+	if err != nil {
+		t.Fatalf("Chdir: %v", err)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+
+	files := collectVoiceFiles("voices/manifest.json")
+	want := filepath.Join(cwd, "voices", "gone.safetensors")
+
+	if len(files) != 1 || files[0] != want {
+		t.Fatalf("collectVoiceFiles = %v; want [%s]", files, want)
+	}
+
+	_, err = os.Stat(files[0])
+	if !os.IsNotExist(err) {
+		t.Errorf("expected %q to be missing, got err=%v", files[0], err)
+	}
+}
+
 // germanDoctorConfig is the config doctor gets for --language german, with the
 // repo-relative paths seen from this package directory.
 func germanDoctorConfig(t *testing.T) config.Config {
