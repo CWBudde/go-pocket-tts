@@ -617,12 +617,30 @@ Follow-ups:
       ≤ 1.8e-7; upstream's own `audio_read` raises on float WAVs (`wave` rejects format tag 3 before its soundfile
       fallback), Go accepts them. Raw PCM prompts stay 24 kHz mono 16-bit. No end-to-end `export-voice` run: ORT is
       not installed here.
-- [ ] Encoder latent dim from config (`mimiEncoderLatentDim = 512` hard-coded in
+- [x] Encoder latent dim from config (`mimiEncoderLatentDim = 512` hard-coded in
       `internal/onnx/voice_encode.go`; new models use 32) + `speaker_proj_weight [1024, inner_dim]`
-- [ ] Cloning for new models requires the gated `kyutai/pocket-tts` weights (`weights_path`); the ungated
+      (2026-10-04) — `onnx.RunnerConfig.EncoderLatentDim` (0 → 512, english_2026-01) is set by `export-voice` from
+      `ModelConfig.MimiInnerDim()`; latent normalization, projection and the `speaker_proj_weight [1024, dim]` load use
+      it, and a mismatched encoder output names the expected `[1,T,dim] or [1,dim,T]`. `d_model` stays 1024 (every
+      upstream config). `TestEncodeVoiceSamples_LatentDimFromConfig` (channel-first `[1,32,T]` latent, weight from a
+      checkpoint), `TestSpeakerProjectionWeight_ShapeFollowsLatentDim`,
+      `TestEncodeVoiceSamples_LatentDimMismatchNamesShape`, `TestVoiceEncoderRunnerConfig_LatentDimFromModel`
+      (english_2026-01 512, german/english_2026-09 32); ignoring the configured dim or not passing it each fail them.
+      The real `models/german` and `english_drifting_26-09` weights load as `[1024, 32]` only with dim 32,
+      `tts_b6369a24` as `[1024, 512]` only with the default. No ORT run here.
+- [x] Cloning for new models requires the gated `kyutai/pocket-tts` weights (`weights_path`); the ungated
       `weights_path_without_voice_cloning` is enough for precomputed voices only. Make this explicit in `doctor`.
+      (2026-10-04) — the ungated checkpoints ship all 42 `mimi.encoder.*` tensors zeroed (german, english_2026-01
+      checked); `safetensors.HasMimiEncoderWeights` reads only the header and those tensors' bytes. `doctor` (native
+      backend) prints `✓ voice cloning: available` or `! voice cloning: unavailable` with the gated-repo steps; the
+      latter is a note (`doctor.WarnMark`), not a failure, and a read error fails. `TestHasMimiEncoderWeights`
+      (+ the downloaded ungated checkpoints), `TestRun_VoiceCloning`, `TestNewDoctorConfig_VoiceCloningCheckOnNative`,
+      `TestNewDoctorConfig_GermanPasses`; an always-true check or counting the note as a failure each fail them.
+      `pockettts doctor --language german` / default english: the note, exit 0. No gated checkpoint is available
+      here, so the "available" path is covered by a synthetic file only.
 - [ ] `export-voice --language german` (ONNX encoder must be re-exported per language; see Phase 9).
-      The native Mimi encoder is still unimplemented (`internal/native/mimi.go`).
+      The native Mimi encoder is still unimplemented (`internal/native/mimi.go`). With the english_2026-01
+      `mimi_encoder.onnx` (512 wide) a german config now fails with `unexpected latent shape … [1,T,32] or [1,32,T]`.
 
 ## Phase 8 — Parity Fixtures & Tests
 

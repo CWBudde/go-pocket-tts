@@ -153,6 +153,9 @@ export HF_TOKEN=...  # or use --hf-token
 ./pockettts model download --hf-repo kyutai/pocket-tts
 ```
 
+The ungated checkpoints ship the Mimi encoder zeroed, so `pockettts doctor` reports
+`! voice cloning: unavailable` for them: a note, not a failure.
+
 `model download` also fetches the language's default voice next to the voice
 manifest the runtime reads (`--paths-voice-manifest`). For English that is
 the tracked `voices/manifest.json`, which lists all eight voices, so all of
