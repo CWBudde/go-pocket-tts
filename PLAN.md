@@ -443,9 +443,20 @@ Minimal path (precomputed voices only; needs Phases 1, 3, 4 and Phase 5 byte fal
 
 Follow-ups:
 
-- [ ] `TestDoctorPasses_Native` (`-tags integration`) already fails on `main`: it expects `backend: native-onnx`
+- [x] `TestDoctorPasses_Native` (`-tags integration`) already fails on `main`: it expects `backend: native-onnx`
       for `--backend native` (now native-safetensors) and has no model or tokenizer in its temp dir; with the
       default voice check it also reports `alba`. Give it real fixtures or skip without assets. (Found 2026-10-03.)
+      (2026-10-04) — the test now points `doctor --backend native` at the real `models/tts_b6369a24.safetensors`,
+      `models/tokenizer.model` and `voices/manifest.json` (new helper `requireNativeSafetensorsVoices` skips unless
+      the manifest and every voice it lists exist) and asserts `backend: native-safetensors`, the language, `✓ default
+      voice alba` and `tokenizer load: ok`. Passes locally; CI has no assets, so it skips there.
+- [x] `TestSynthNativeSafetensors_ShortText` (`-tags integration`) broke with the default voice fallback: it runs
+      `synth` without `--voice` from `cmd/pockettts/`, where `voices/manifest.json` does not resolve. (Found
+      2026-10-04.) (2026-10-04) — the test passes `--paths-voice-manifest` from `requireNativeSafetensorsVoices`, so it
+      still covers the default voice path. `go test -tags integration ./...` is green locally again.
+- [ ] `TestDoctorFails_MissingVoiceFile` (`-tags integration`) passes for the wrong reason: its temp dir has no
+      model or tokenizer, so doctor fails on those before the missing voice file matters. Point it at the real
+      model/tokenizer and assert the voice-file failure. (Found 2026-10-04.)
 - [ ] Multi-language server: `language` field in `ttsRequest`, `/voices?language=`, and a lazy-loaded
       language → `tts.Service` registry with an LRU cap (each model is ~220 MB of weights)
 - [ ] Web/WASM: language picker. `web/main.js` hard-codes the English model and tokenizer URLs.
