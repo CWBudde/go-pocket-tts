@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Dump upstream Mimi encoder tensors for the native Go voice-encoder parity test.
+"""Dump upstream Mimi encoder tensors and the voice model state for the native Go
+voice-encoder and model-state export parity tests.
 
 The encoder weights are zeroed in the ungated kyutai/pocket-tts-without-voice-cloning
 checkpoints, so this needs the gated kyutai/pocket-tts weights, e.g.
@@ -42,6 +43,9 @@ QUIET_SECONDS = 0.4
 
 # Prepared samples stored at each end of the prompt.
 PREPARED_EDGE_SAMPLES = 16
+
+# safetensors dtype names of the torch dtypes in a voice model state.
+SAFETENSORS_DTYPES = {"torch.float32": "F32", "torch.int64": "I64"}
 
 
 def main() -> int:
@@ -87,6 +91,8 @@ def main() -> int:
     with torch.no_grad():
         latent = model.mimi.encode_to_latent(audio.unsqueeze(0))
         conditioning = model._encode_audio(audio.unsqueeze(0))
+        # What `pocket-tts export-voice` saves (export_model_state).
+        model_state = model.get_state_for_audio_prompt(args.prompt, truncate=True)
 
     if not torch.any(latent != 0):
         print("encoder output is all zero: --weights must be the gated checkpoint", file=sys.stderr)
@@ -110,12 +116,43 @@ def main() -> int:
         },
         "latent": tensor_to_json(latent),
         "conditioning_rows": {"frames": rows, **tensor_to_json(conditioning[0, rows])},
+        "model_state": dump_model_state(model_state),
     }
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(fixture, indent=1) + "\n", encoding="utf-8")
     print(args.output)
     return 0
+
+
+def dump_model_state(model_state: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Per stateful module: the layout of every tensor export_model_state writes,
+    the offset and pad, and the K and V cache rows at the first two and the last
+    cached position."""
+    modules = []
+    positions = None
+    for name, state in model_state.items():
+        cache = state["cache"]
+        steps = cache.shape[2]
+        if positions is None:
+            positions = sorted({0, 1, steps - 1})
+        modules.append(
+            {
+                "module": name,
+                "tensors": {
+                    key: {
+                        "dtype": SAFETENSORS_DTYPES[str(value.dtype)],
+                        "shape": list(value.shape),
+                    }
+                    for key, value in sorted(state.items())
+                },
+                "offset": int(state["offset"].reshape(-1)[0]),
+                "pad": int(state["pad"].reshape(-1)[0]),
+                "k_rows": tensor_to_json(cache[0, 0, positions]),
+                "v_rows": tensor_to_json(cache[1, 0, positions]),
+            }
+        )
+    return {"positions": positions, "modules": modules}
 
 
 def write_prompt(np: Any, path: Path, seed: int) -> None:

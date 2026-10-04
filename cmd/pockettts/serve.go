@@ -69,8 +69,10 @@ func newServeCmd() *cobra.Command {
 // resolveServeDefaultVoice turns --default-voice into what the server takes:
 // a voice ID or .safetensors path passes through (the server resolves and
 // loads it at startup), an https:// or hf:// voice is downloaded by fetch,
-// and a local WAV prompt is cloned once by encode. cleanup removes a cloned
-// voice when the server stops and is a no-op otherwise.
+// and a WAV prompt (local, or downloaded by fetch first like upstream's
+// download_if_necessary) is cloned once by encode. cleanup removes a cloned
+// voice when the server stops, never the cached download, and is a no-op
+// otherwise.
 func resolveServeDefaultVoice(
 	ref string,
 	fetch func(string) (string, error),
@@ -80,17 +82,7 @@ func resolveServeDefaultVoice(
 	noCleanup := func() {}
 
 	if isWAVVoice(ref) {
-		if model.IsRemoteVoice(ref) {
-			return "", nil, fmt.Errorf("--default-voice %q: only local WAV files can be cloned; download it first",
-				ref)
-		}
-
-		path, cleanup, err := encode(ref)
-		if err != nil {
-			return "", nil, fmt.Errorf("--default-voice: %w", err)
-		}
-
-		return path, cleanup, nil
+		return cloneServeDefaultVoice(ref, fetch, encode)
 	}
 
 	if !model.IsRemoteVoice(ref) {
@@ -103,6 +95,36 @@ func resolveServeDefaultVoice(
 	}
 
 	return path, noCleanup, nil
+}
+
+// cloneServeDefaultVoice encodes the WAV prompt ref, downloading a remote one
+// with fetch first. cleanup removes only the encoded voice.
+func cloneServeDefaultVoice(
+	ref string,
+	fetch func(string) (string, error),
+	encode func(string) (string, func(), error),
+) (string, func(), error) {
+	if !model.IsRemoteVoice(ref) {
+		path, cleanup, err := encode(ref)
+		if err != nil {
+			return "", nil, fmt.Errorf("--default-voice: %w", err)
+		}
+
+		return path, cleanup, nil
+	}
+
+	wav, err := fetch(ref)
+	if err != nil {
+		return "", nil, fmt.Errorf("--default-voice: %w", err)
+	}
+
+	path, cleanup, err := encode(wav)
+	if err != nil {
+		// The encoder names the cache file; name the voice asked for too.
+		return "", nil, fmt.Errorf("--default-voice %q: %w", ref, err)
+	}
+
+	return path, cleanup, nil
 }
 
 // userCacheVoiceFetcher downloads URL voices once into

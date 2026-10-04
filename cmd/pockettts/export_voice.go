@@ -13,6 +13,7 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/cwbudde/go-pocket-tts/internal/tts"
 	"github.com/spf13/cobra"
@@ -82,6 +83,19 @@ func newNativeVoiceEncoder(modelWeightsPath string) (*nativeVoiceEncoder, error)
 // (30 s, 24 kHz, end on a pause) and returns the [1, T, d_model]
 // conditioning, flattened.
 func (n *nativeVoiceEncoder) EncodeVoice(audioPath string) ([]float32, error) {
+	cond, err := n.encode(audioPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return cond.RawData(), nil
+}
+
+func (*nativeVoiceEncoder) Close() {}
+
+// encode returns the [1, T, d_model] conditioning of the prompt at audioPath;
+// see EncodeVoice.
+func (n *nativeVoiceEncoder) encode(audioPath string) (*tensor.Tensor, error) {
 	samples, rate, err := audio.ReadVoicePrompt(audioPath)
 	if err != nil {
 		return nil, fmt.Errorf("encode voice: %w", err)
@@ -97,10 +111,8 @@ func (n *nativeVoiceEncoder) EncodeVoice(audioPath string) ([]float32, error) {
 		return nil, fmt.Errorf("encode voice: %w", err)
 	}
 
-	return cond.RawData(), nil
+	return cond, nil
 }
-
-func (*nativeVoiceEncoder) Close() {}
 
 // voiceEncoderRunnerConfig returns the ONNX runner config for voice encoding.
 // The speaker projection is [d_model, mimi inner_dim] (512 for
@@ -135,7 +147,65 @@ const (
 	exportVoiceFormatModelState      = "model-state"
 )
 
-var exportVoiceModelState = func(ctx context.Context, cfg config.Config, audioPath, outPath, language string) error {
+// exportVoiceModelStateNative writes the upstream voice model state of the
+// prompt at audioPath, built in Go like `pocket-tts export-voice`
+// (get_state_for_audio_prompt, then export_model_state): the Mimi encoder
+// conditioning, prefixed with the BOS before the voice when the model config
+// asks for it, prompted into a fresh FlowLM state. It needs the gated
+// checkpoint, whose encoder weights are not zeroed.
+var exportVoiceModelStateNative = func(cfg config.Config, audioPath, outPath, modelWeightsPath string) error {
+	if modelWeightsPath == "" {
+		return errors.New("voice state: no model .safetensors (set --model-safetensors or --paths-model-path)")
+	}
+
+	tts.ApplyNativeWorkers(cfg.Runtime)
+
+	store, err := safetensors.OpenStore(modelWeightsPath, safetensors.StoreOptions{})
+	if err != nil {
+		return fmt.Errorf("voice state: %w", err)
+	}
+	defer store.Close()
+
+	// The encoder first: it fails fast on the ungated checkpoint.
+	enc, err := nativemodel.LoadVoiceEncoder(nativemodel.NewVarBuilder(store), nativemodel.DefaultMimiConfig())
+	if err != nil {
+		return fmt.Errorf("voice encoder: %s: %w", modelWeightsPath, err)
+	}
+
+	model, err := nativemodel.LoadModelFromStore(store, nativemodel.ConfigFor(cfg.Model))
+	if err != nil {
+		return fmt.Errorf("voice state: load model %s: %w", modelWeightsPath, err)
+	}
+
+	// Neither keeps a reference to the checkpoint bytes.
+	store.Close()
+
+	cond, err := (&nativeVoiceEncoder{enc: enc}).encode(audioPath)
+	if err != nil {
+		return err
+	}
+
+	state, err := model.PromptVoice(cond)
+	if err != nil {
+		return fmt.Errorf("voice state: %w", err)
+	}
+
+	voiceState, err := state.VoiceModelState()
+	if err != nil {
+		return fmt.Errorf("voice state: %w", err)
+	}
+
+	err = safetensors.WriteVoiceModelState(outPath, voiceState)
+	if err != nil {
+		return fmt.Errorf("write voice state: %w", err)
+	}
+
+	return nil
+}
+
+// exportVoiceModelStatePython runs the Python pocket-tts export-voice, for
+// the backends without the native model.
+var exportVoiceModelStatePython = func(ctx context.Context, cfg config.Config, audioPath, outPath, language string) error {
 	exe, err := resolvePocketTTSCLI(cfg.TTS.CLIPath)
 	if err != nil {
 		return err
@@ -171,6 +241,21 @@ var exportVoiceModelState = func(ctx context.Context, cfg config.Config, audioPa
 	}
 
 	return nil
+}
+
+// exportVoiceModelState writes the upstream voice model state: natively on
+// the native backend, with the Python CLI otherwise.
+func exportVoiceModelState(ctx context.Context, cfg config.Config, audioPath string, opts *exportVoiceOptions) error {
+	backend, err := config.NormalizeBackend(cfg.TTS.Backend)
+	if err != nil {
+		return err
+	}
+
+	if backend == config.BackendNative {
+		return exportVoiceModelStateNative(cfg, audioPath, opts.outPath, resolveExportVoiceModelPath(cfg, opts.modelWeightsPath))
+	}
+
+	return exportVoiceModelStatePython(ctx, cfg, audioPath, opts.outPath, opts.language)
 }
 
 func newExportVoiceCmd() *cobra.Command {
@@ -214,13 +299,15 @@ func registerExportVoiceFlags(cmd *cobra.Command, opts *exportVoiceOptions) {
 		&opts.format,
 		"format",
 		exportVoiceFormatLegacyEmbedding,
-		"Output format: legacy-embedding or model-state",
+		"Output format: legacy-embedding or model-state (upstream voice state; built natively on the native backend, "+
+			"with the Python pocket-tts CLI otherwise)",
 	)
 	cmd.Flags().StringVar(
 		&opts.language,
 		"language",
 		"english_2026-01",
-		"Python pocket-tts language for --format=model-state when --tts-cli-config-path is not set",
+		"Model language config; on non-native backends also the Python pocket-tts --language for "+
+			"--format=model-state when --tts-cli-config-path is not set",
 	)
 	cmd.Flags().StringVar(&opts.id, "id", "custom-voice", "Voice ID for suggested manifest entry")
 	cmd.Flags().StringVar(&opts.license, "license", "unknown", "License label for suggested manifest entry")
@@ -252,14 +339,12 @@ func runExportVoice(ctx context.Context, opts *exportVoiceOptions) error {
 
 	switch normalizeExportVoiceFormat(opts.format) {
 	case exportVoiceFormatModelState:
-		err = exportVoiceModelState(ctx, cfg, audioPath, opts.outPath, opts.language)
+		err = exportVoiceModelState(ctx, cfg, audioPath, opts)
 		if err != nil {
 			return err
 		}
 
-		_, _ = fmt.Fprintln(os.Stdout, "export-voice completed")
-		_, _ = fmt.Fprintf(os.Stdout, "Suggested manifest entry:\n")
-		_, _ = fmt.Fprintf(os.Stdout, "{\"id\":\"%s\",\"path\":\"%s\",\"license\":\"%s\"}\n", opts.id, opts.outPath, opts.license)
+		printExportVoiceDone(opts)
 
 		return nil
 	case exportVoiceFormatLegacyEmbedding:
@@ -309,11 +394,15 @@ func exportVoiceLegacyEmbedding(cfg config.Config, audioPath string, opts *expor
 		return fmt.Errorf("write voice safetensors: %w", err)
 	}
 
+	printExportVoiceDone(opts)
+
+	return nil
+}
+
+func printExportVoiceDone(opts *exportVoiceOptions) {
 	_, _ = fmt.Fprintln(os.Stdout, "export-voice completed")
 	_, _ = fmt.Fprintf(os.Stdout, "Suggested manifest entry:\n")
 	_, _ = fmt.Fprintf(os.Stdout, "{\"id\":\"%s\",\"path\":\"%s\",\"license\":\"%s\"}\n", opts.id, opts.outPath, opts.license)
-
-	return nil
 }
 
 func normalizeExportVoiceFormat(format string) string {

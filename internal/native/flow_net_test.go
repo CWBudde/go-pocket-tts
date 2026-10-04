@@ -32,27 +32,46 @@ func syntheticFlowNet(t *testing.T, numTimeConds int) *flowNet {
 	seed := 0
 
 	add := func(name string, shape ...int64) {
-		n := int64(1)
-		for _, d := range shape {
-			n *= d
-		}
-
-		vals := make([]float32, n)
-		for i := range vals {
-			vals[i] = float32(0.5 * math.Sin(float64(seed)*1.3+float64(i)*0.7))
-		}
-
-		seed++
-
-		specs["flow_net."+name] = struct {
+		specs[name] = struct {
 			dtype string
 			shape []int64
 			data  []byte
-		}{dtype: "F32", shape: shape, data: f32Bytes(vals)}
+		}{dtype: "F32", shape: shape, data: f32Bytes(syntheticWeights(seed, shape))}
+		seed++
 	}
 
+	addSyntheticFlowNet(add, "flow_net.", numTimeConds, synthLatent, synthCond)
+
+	fn, err := loadFlowNet(NewVarBuilder(mustStore(t, buildSafetensors(t, specs))).Path("flow_net"))
+	if err != nil {
+		t.Fatalf("loadFlowNet(%d time conditions): %v", numTimeConds, err)
+	}
+
+	return fn
+}
+
+// syntheticWeights returns 0.5·sin values for a tensor of shape, varied by
+// seed.
+func syntheticWeights(seed int, shape []int64) []float32 {
+	n := int64(1)
+	for _, d := range shape {
+		n *= d
+	}
+
+	vals := make([]float32, n)
+	for i := range vals {
+		vals[i] = float32(0.5 * math.Sin(float64(seed)*1.3+float64(i)*0.7))
+	}
+
+	return vals
+}
+
+// addSyntheticFlowNet adds the tensors of a one-res-block flow_net with
+// numTimeConds time_embed entries, synthChans channels, latent width latent
+// and condition width cond, named prefix + upstream key.
+func addSyntheticFlowNet(add func(name string, shape ...int64), prefix string, numTimeConds int, latent, cond int64) {
 	for i := range numTimeConds {
-		p := "time_embed." + strconv.Itoa(i) + "."
+		p := prefix + "time_embed." + strconv.Itoa(i) + "."
 		add(p+"freqs", synthFreq/2)
 		add(p+"mlp.0.weight", synthChans, synthFreq)
 		add(p+"mlp.0.bias", synthChans)
@@ -61,29 +80,22 @@ func syntheticFlowNet(t *testing.T, numTimeConds int) *flowNet {
 		add(p+"mlp.3.alpha", synthChans)
 	}
 
-	add("cond_embed.weight", synthChans, synthCond)
-	add("cond_embed.bias", synthChans)
-	add("input_proj.weight", synthChans, synthLatent)
-	add("input_proj.bias", synthChans)
-	add("res_blocks.0.in_ln.weight", synthChans)
-	add("res_blocks.0.in_ln.bias", synthChans)
-	add("res_blocks.0.mlp.0.weight", synthChans, synthChans)
-	add("res_blocks.0.mlp.0.bias", synthChans)
-	add("res_blocks.0.mlp.2.weight", synthChans, synthChans)
-	add("res_blocks.0.mlp.2.bias", synthChans)
-	add("res_blocks.0.adaLN_modulation.1.weight", 3*synthChans, synthChans)
-	add("res_blocks.0.adaLN_modulation.1.bias", 3*synthChans)
-	add("final_layer.linear.weight", synthLatent, synthChans)
-	add("final_layer.linear.bias", synthLatent)
-	add("final_layer.adaLN_modulation.1.weight", 2*synthChans, synthChans)
-	add("final_layer.adaLN_modulation.1.bias", 2*synthChans)
-
-	fn, err := loadFlowNet(NewVarBuilder(mustStore(t, buildSafetensors(t, specs))).Path("flow_net"))
-	if err != nil {
-		t.Fatalf("loadFlowNet(%d time conditions): %v", numTimeConds, err)
-	}
-
-	return fn
+	add(prefix+"cond_embed.weight", synthChans, cond)
+	add(prefix+"cond_embed.bias", synthChans)
+	add(prefix+"input_proj.weight", synthChans, latent)
+	add(prefix+"input_proj.bias", synthChans)
+	add(prefix+"res_blocks.0.in_ln.weight", synthChans)
+	add(prefix+"res_blocks.0.in_ln.bias", synthChans)
+	add(prefix+"res_blocks.0.mlp.0.weight", synthChans, synthChans)
+	add(prefix+"res_blocks.0.mlp.0.bias", synthChans)
+	add(prefix+"res_blocks.0.mlp.2.weight", synthChans, synthChans)
+	add(prefix+"res_blocks.0.mlp.2.bias", synthChans)
+	add(prefix+"res_blocks.0.adaLN_modulation.1.weight", 3*synthChans, synthChans)
+	add(prefix+"res_blocks.0.adaLN_modulation.1.bias", 3*synthChans)
+	add(prefix+"final_layer.linear.weight", latent, synthChans)
+	add(prefix+"final_layer.linear.bias", latent)
+	add(prefix+"final_layer.adaLN_modulation.1.weight", 2*synthChans, synthChans)
+	add(prefix+"final_layer.adaLN_modulation.1.bias", 2*synthChans)
 }
 
 func TestLoadFlowNet_DetectsTimeConds(t *testing.T) {

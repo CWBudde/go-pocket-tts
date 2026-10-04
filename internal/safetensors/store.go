@@ -205,6 +205,7 @@ func (s *Store) Tensor(name string) (*Tensor, error) {
 
 	return &Tensor{
 		Name:  name,
+		DType: entry.DType,
 		Shape: append([]int64(nil), entry.Shape...),
 		Data:  data,
 	}, nil

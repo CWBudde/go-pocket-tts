@@ -174,7 +174,7 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.Int("request-timeout", defaults.Server.RequestTimeout, "Per-request synthesis timeout in seconds")
 	fs.String("default-voice", defaults.Server.DefaultVoice,
 		"serve: voice for requests without one (ID, .safetensors path, https:// or hf://…@rev URL, or a "+
-			"local .wav prompt cloned at startup); "+
+			".wav prompt, local or https:// / hf://…@rev, cloned at startup); "+
 			"defaults to the language's built-in voice")
 	fs.StringSlice("server-languages", defaults.Server.Languages,
 		"serve: further languages requests may pick with their language field (needs native-safetensors)")

@@ -6,11 +6,14 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/cwbudde/go-pocket-tts/internal/audio"
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
 // voiceEncoderFixture is written by scripts/dump_voice_encoder_parity.py.
@@ -32,6 +35,26 @@ type voiceEncoderFixture struct {
 		Shape  []int64   `json:"shape"`
 		Data   []float32 `json:"data"`
 	} `json:"conditioning_rows"`
+	ModelState *voiceModelStateFixture `json:"model_state"`
+}
+
+// voiceModelStateFixture is the state upstream get_state_for_audio_prompt
+// builds from the prompt, as export_model_state writes it: per module the
+// layout of each tensor, the offset and pad, and the K and V cache rows
+// [len(positions), H, Dh] at positions.
+type voiceModelStateFixture struct {
+	Positions []int64 `json:"positions"`
+	Modules   []struct {
+		Module  string `json:"module"`
+		Tensors map[string]struct {
+			DType string  `json:"dtype"`
+			Shape []int64 `json:"shape"`
+		} `json:"tensors"`
+		Offset int64      `json:"offset"`
+		Pad    int64      `json:"pad"`
+		KRows  tensorJSON `json:"k_rows"`
+		VRows  tensorJSON `json:"v_rows"`
+	} `json:"modules"`
 }
 
 // gatedModelsDir holds checkpoints of the gated kyutai/pocket-tts repo, one
@@ -51,10 +74,24 @@ func gatedModelsDir() string {
 func TestPythonParity_MimiEncoder(t *testing.T) {
 	t.Parallel()
 
+	for _, fx := range loadVoiceEncoderFixtures(t) {
+		t.Run(fx.Source.Config, func(t *testing.T) {
+			t.Parallel()
+			checkVoiceEncoderParity(t, fx)
+		})
+	}
+}
+
+// loadVoiceEncoderFixtures reads every testdata/python_parity/encoder_*.json.
+func loadVoiceEncoderFixtures(t *testing.T) []*voiceEncoderFixture {
+	t.Helper()
+
 	paths, err := filepath.Glob(filepath.Join("testdata", "python_parity", "encoder_*.json"))
 	if err != nil || len(paths) == 0 {
 		t.Fatalf("no encoder fixtures: %v", err)
 	}
+
+	fixtures := make([]*voiceEncoderFixture, 0, len(paths))
 
 	for _, path := range paths {
 		var fx voiceEncoderFixture
@@ -69,29 +106,45 @@ func TestPythonParity_MimiEncoder(t *testing.T) {
 			t.Fatalf("decode %s: %v", path, err)
 		}
 
-		t.Run(fx.Source.Config, func(t *testing.T) {
-			t.Parallel()
-			checkVoiceEncoderParity(t, &fx)
-		})
+		fixtures = append(fixtures, &fx)
 	}
+
+	return fixtures
 }
 
-func checkVoiceEncoderParity(t *testing.T, fx *voiceEncoderFixture) {
+// gatedCheckpoint returns the gated checkpoint of config, or skips.
+func gatedCheckpoint(t *testing.T, config string) string {
 	t.Helper()
 
-	weights, _ := filepath.Glob(filepath.Join(gatedModelsDir(), fx.Source.Config, "*.safetensors"))
+	weights, _ := filepath.Glob(filepath.Join(gatedModelsDir(), config, "*.safetensors"))
 	if len(weights) != 1 {
-		t.Skipf("gated %s checkpoint not found in %s (set POCKETTTS_GATED_MODELS)", fx.Source.Config, gatedModelsDir())
+		t.Skipf("gated %s checkpoint not found in %s (set POCKETTTS_GATED_MODELS)", config, gatedModelsDir())
 	}
 
-	enc, err := LoadVoiceEncoderFromSafetensors(weights[0], DefaultMimiConfig())
+	return weights[0]
+}
+
+// loadGatedVoiceEncoder loads the voice encoder of a gated checkpoint, or
+// skips when the checkpoint's encoder is zeroed.
+func loadGatedVoiceEncoder(t *testing.T, vb *VarBuilder, path string) *VoiceEncoder {
+	t.Helper()
+
+	enc, err := LoadVoiceEncoder(vb, DefaultMimiConfig())
 	if errors.Is(err, ErrMimiEncoderWeightsZeroed) {
-		t.Skipf("%s is not a gated checkpoint: %v", weights[0], err)
+		t.Skipf("%s is not a gated checkpoint: %v", path, err)
 	}
 
 	if err != nil {
 		t.Fatalf("load voice encoder: %v", err)
 	}
+
+	return enc
+}
+
+// preparedFixturePrompt reads the fixture's prompt WAV and prepares it like
+// get_state_for_audio_prompt.
+func preparedFixturePrompt(t *testing.T, fx *voiceEncoderFixture) []float32 {
+	t.Helper()
 
 	wav, err := os.ReadFile(filepath.Join("testdata", "python_parity", fx.Source.Prompt))
 	if err != nil {
@@ -108,6 +161,23 @@ func checkVoiceEncoderParity(t *testing.T, fx *voiceEncoderFixture) {
 		t.Fatalf("prepare prompt: %v", err)
 	}
 
+	return prepared
+}
+
+func checkVoiceEncoderParity(t *testing.T, fx *voiceEncoderFixture) {
+	t.Helper()
+
+	weights := gatedCheckpoint(t, fx.Source.Config)
+
+	store, err := safetensors.OpenStore(weights, safetensors.StoreOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	enc := loadGatedVoiceEncoder(t, NewVarBuilder(store), weights)
+	store.Close()
+
+	prepared := preparedFixturePrompt(t, fx)
 	checkPreparedPrompt(t, prepared, fx)
 
 	latent, err := enc.EncodeToLatent(prepared)
@@ -188,4 +258,147 @@ func conditioningRows(t *testing.T, cond *tensor.Tensor, frames []int64) *tensor
 	}
 
 	return rows
+}
+
+// TestPythonParity_VoiceModelState builds the voice model state from the
+// fixture prompt like export-voice --format model-state and compares the file
+// it writes with upstream get_state_for_audio_prompt + export_model_state:
+// the modules, every tensor's dtype and shape, the offsets and pads, and the
+// K and V cache rows. It needs the gated checkpoints, like
+// TestPythonParity_MimiEncoder.
+func TestPythonParity_VoiceModelState(t *testing.T) {
+	t.Parallel()
+
+	for _, fx := range loadVoiceEncoderFixtures(t) {
+		t.Run(fx.Source.Config, func(t *testing.T) {
+			t.Parallel()
+
+			if fx.ModelState == nil {
+				t.Fatal("fixture has no model_state; regenerate it with scripts/dump_voice_encoder_parity.py")
+			}
+
+			checkVoiceModelStateParity(t, fx)
+		})
+	}
+}
+
+func checkVoiceModelStateParity(t *testing.T, fx *voiceEncoderFixture) {
+	t.Helper()
+
+	weights := gatedCheckpoint(t, fx.Source.Config)
+
+	mc, err := modelcfg.Lookup(fx.Source.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := safetensors.OpenStore(weights, safetensors.StoreOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	enc := loadGatedVoiceEncoder(t, NewVarBuilder(store), weights)
+
+	m, err := LoadModelFromStore(store, ConfigFor(mc))
+	if err != nil {
+		t.Fatalf("load model: %v", err)
+	}
+
+	store.Close()
+
+	cond, err := enc.Encode(preparedFixturePrompt(t, fx))
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+
+	state, err := m.PromptVoice(cond)
+	if err != nil {
+		t.Fatalf("PromptVoice: %v", err)
+	}
+
+	vs, err := state.VoiceModelState()
+	if err != nil {
+		t.Fatalf("VoiceModelState: %v", err)
+	}
+
+	blob, err := safetensors.EncodeVoiceModelState(vs)
+	if err != nil {
+		t.Fatalf("EncodeVoiceModelState: %v", err)
+	}
+
+	exported, err := safetensors.OpenStoreFromBytes(blob, safetensors.StoreOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer exported.Close()
+
+	var wantNames []string
+
+	for _, mod := range fx.ModelState.Modules {
+		for key := range mod.Tensors {
+			wantNames = append(wantNames, mod.Module+"/"+key)
+		}
+	}
+
+	slices.Sort(wantNames)
+
+	if got := exported.Names(); !slices.Equal(got, wantNames) {
+		t.Fatalf("exported tensors %v, upstream %v", got, wantNames)
+	}
+
+	// The cache holds the K/V of 6 transformer layers on top of the
+	// encoder's output, so it carries about the encoder's error.
+	tol := ops.Tolerance{Abs: 2e-4, Rel: 1e-3}
+
+	for _, mod := range fx.ModelState.Modules {
+		tensors := make(map[string]*safetensors.Tensor, len(mod.Tensors))
+
+		for key, want := range mod.Tensors {
+			got, err := exported.Tensor(mod.Module + "/" + key)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got.DType != want.DType || !slices.Equal(got.Shape, want.Shape) {
+				t.Fatalf("%s/%s = %s %v, upstream %s %v", mod.Module, key, got.DType, got.Shape, want.DType, want.Shape)
+			}
+
+			tensors[key] = got
+		}
+
+		if got := tensors["offset"].Data[0]; int64(got) != mod.Offset {
+			t.Fatalf("%s offset = %v, upstream %d", mod.Module, got, mod.Offset)
+		}
+
+		if got := tensors["pad"].Data[0]; int64(got) != mod.Pad {
+			t.Fatalf("%s pad = %v, upstream %d", mod.Module, got, mod.Pad)
+		}
+
+		for kv, rows := range []tensorJSON{mod.KRows, mod.VRows} {
+			want, err := rows.tensor()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			name := mod.Module + []string{" K", " V"}[kv]
+			assertTensorParity(t, name, cacheRows(t, tensors["cache"], kv, fx.ModelState.Positions), want, tol)
+		}
+	}
+}
+
+// cacheRows picks positions of half kv (0 = K, 1 = V) of an upstream
+// [2, 1, T, H, Dh] cache as [len(positions), H, Dh].
+func cacheRows(t *testing.T, cache *safetensors.Tensor, kv int, positions []int64) *tensor.Tensor {
+	t.Helper()
+
+	steps, heads, headDim := cache.Shape[2], cache.Shape[3], cache.Shape[4]
+	row := heads * headDim
+	half := cache.Data[int64(kv)*steps*row : int64(kv+1)*steps*row]
+	out := make([]float32, 0, int64(len(positions))*row)
+
+	for _, p := range positions {
+		out = append(out, half[p*row:(p+1)*row]...)
+	}
+
+	return mustTensorN(t, out, []int64{int64(len(positions)), heads, headDim})
 }

@@ -29,9 +29,10 @@ func IsRemoteVoice(ref string) bool {
 }
 
 // FetchVoice downloads the voice at ref (https:// or a pinned
-// hf://<org>/<repo>/<path>@<revision>) into opts.CacheDir once and returns
-// the cached file. A cached file is reused without a request. Remote voices
-// have no pinned checksum, so the caller must load the file to validate it.
+// hf://<org>/<repo>/<path>@<revision>), a .safetensors voice or a .wav
+// prompt, into opts.CacheDir once and returns the cached file. A cached file
+// is reused without a request. Remote voices have no pinned checksum, so the
+// caller must load (or encode) the file to validate it.
 func FetchVoice(ref string, opts FetchVoiceOptions) (string, error) {
 	rawURL, isHF, err := voiceURL(ref)
 	if err != nil {
@@ -165,7 +166,8 @@ func voiceURL(ref string) (string, bool, error) {
 }
 
 // voiceFileName returns the base name of rawURL's path with a .safetensors
-// extension, so the cached file is recognised as a voice file.
+// extension, so the cached file is recognised as a voice file. A .wav prompt
+// keeps its name: the voice-prompt reader picks the WAV decoder by extension.
 func voiceFileName(rawURL string) string {
 	name := "voice"
 
@@ -176,7 +178,7 @@ func voiceFileName(rawURL string) string {
 		}
 	}
 
-	if !strings.HasSuffix(name, ".safetensors") {
+	if !strings.HasSuffix(name, ".safetensors") && !strings.EqualFold(path.Ext(name), ".wav") {
 		name += ".safetensors"
 	}
 

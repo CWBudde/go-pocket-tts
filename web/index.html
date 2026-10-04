@@ -194,13 +194,45 @@
       button.synthesizing .btn-spinner {
         display: block;
       }
+
+      .file-pick {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+      }
+
+      input[type="file"] {
+        color: var(--muted);
+        font: inherit;
+        max-width: 260px;
+      }
+
+      input[type="file"]::file-selector-button {
+        background: #0f1c33;
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 0.45rem 0.7rem;
+        margin-right: 0.5rem;
+        font: inherit;
+      }
+
+      input[type="file"][disabled] {
+        opacity: 0.6;
+      }
+
+      .hint {
+        margin: 0.5rem 0 0;
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
     </style>
   </head>
   <body>
     <main>
       <section class="panel">
         <h1>PocketTTS Web Demo</h1>
-        <p class="subtitle">Go WASM + native safetensors pipeline. Models load from Hugging Face.</p>
+        <p class="subtitle">Go WASM + native safetensors pipeline. Models load from Hugging Face, or from a checkpoint you pick locally.</p>
 
         <textarea id="text" placeholder="Type text here">Hello from PocketTTS in the browser.</textarea>
 
@@ -222,6 +254,15 @@
             <span id="btn-label">Synthesize</span>
           </button>
         </div>
+
+        <div class="controls-row">
+          <label class="file-pick" for="checkpoint">Use local checkpoint</label>
+          <input type="file" id="checkpoint" accept=".safetensors" disabled />
+
+          <label class="file-pick" for="clone-wav">Clone voice from WAV</label>
+          <input type="file" id="clone-wav" accept=".wav,audio/wav,audio/x-wav" disabled />
+        </div>
+        <p id="clone-hint" class="hint"></p>
 
         <div id="progress-wrap" class="progress-wrap">
           <div class="progress-label" id="progress-label">Loading model...</div>
