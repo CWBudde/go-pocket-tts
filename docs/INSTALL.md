@@ -93,9 +93,16 @@ original/pockettts/.venv/bin/python scripts/dump_python_parity.py \
 prettier -w internal/native/testdata/python_parity/german.json
 ```
 
-For `english_2026-01` use `models/tts_b6369a24.safetensors`,
-`models/tokenizer.json` and `voices/alba.safetensors`. A fixture outside
-`testdata/` runs too when `POCKETTTS_NATIVE_PY_FIXTURE` points at it.
+For `english_2026-01` pass `--weights models/tts_b6369a24.safetensors` and
+`--voice voices/alba.safetensors`, but no `--tokenizer`: the flat install only
+has the SentencePiece `models/tokenizer.model`, while upstream's config uses the
+JSON tokenizer, so the script loads its pinned `tokenizer.json`. The fixture's
+text case still checks Go's token ids against it.
+
+A fixture outside `testdata/` runs too when `POCKETTTS_NATIVE_PY_FIXTURE`
+points at it. One made with `--config <file.yaml>` instead of `--language` needs
+`--weights` and `--tokenizer`; the fixture records those paths so the Go test can
+load the same files.
 
 Notes:
 
