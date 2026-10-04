@@ -215,8 +215,9 @@ Write the WAV to stdout:
 ## Languages
 
 `--language` (`tts.language`, `POCKETTTS_TTS_LANGUAGE`) selects one of the
-embedded upstream model configs. One `serve` process can host several of them;
-see [Several languages](#several-languages).
+embedded upstream model configs. With the `native-safetensors` backend, one
+`serve` process can host several of them; see
+[Several languages](#several-languages).
 
 | `--language`             | Layers | Sampler  | Default voice |
 | ------------------------ | ------ | -------- | ------------- |
