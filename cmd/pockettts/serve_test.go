@@ -22,7 +22,10 @@ func TestResolveServeDefaultVoice(t *testing.T) {
 		}
 	}
 
-	for _, ref := range []string{"prompt.wav", "/x/Prompt.WAV"} {
+	for _, ref := range []string{
+		"prompt.wav", "/x/Prompt.WAV",
+		"hf://org/repo/prompt.wav@rev", "https://example.com/prompt.wav?download=1",
+	} {
 		_, err := resolveServeDefaultVoice(ref, noFetch)
 		if err == nil || !strings.Contains(err.Error(), "WAV") {
 			t.Errorf("resolveServeDefaultVoice(%q) error = %v; want a WAV error", ref, err)

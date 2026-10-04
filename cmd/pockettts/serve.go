@@ -68,7 +68,7 @@ func newServeCmd() *cobra.Command {
 func resolveServeDefaultVoice(ref string, fetch func(string) (string, error)) (string, error) {
 	ref = strings.TrimSpace(ref)
 
-	if strings.EqualFold(filepath.Ext(ref), ".wav") {
+	if model.VoiceRefExt(ref) == ".wav" {
 		return "", fmt.Errorf("--default-voice %q: WAV voices are not supported yet (the native backend has no "+
 			"Mimi encoder); pass a .safetensors voice, e.g. from 'pockettts export-voice'", ref)
 	}

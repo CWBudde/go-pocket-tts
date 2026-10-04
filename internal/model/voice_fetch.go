@@ -59,29 +59,81 @@ func FetchVoice(ref string, opts FetchVoiceOptions) (string, error) {
 		return "", fmt.Errorf("create voice cache dir: %w", err)
 	}
 
-	client := opts.Client
-	if client == nil {
-		client = http.DefaultClient
-	}
+	client := httpsOnlyClient(opts.Client)
 
 	stdout := opts.Stdout
 	if stdout == nil {
 		stdout = io.Discard
 	}
 
-	token := ""
+	token, deniedHint := "", ""
 	if isHF {
-		token = opts.Token
+		token, deniedHint = opts.Token, hfTokenHint
 	}
 
 	_, _ = fmt.Fprintf(stdout, "download voice %s -> %s\n", ref, cachePath)
 
-	_, err = downloadURL(client, rawURL, ref, ref, token, cachePath, stdout)
+	_, err = downloadURL(client, rawURL, ref, ref, token, deniedHint, cachePath, stdout)
 	if err != nil {
 		return "", fmt.Errorf("download voice %s: %w", ref, err)
 	}
 
 	return cachePath, nil
+}
+
+// maxVoiceRedirects matches the redirect limit of net/http's default policy.
+const maxVoiceRedirects = 10
+
+// httpsOnlyClient returns a copy of client (nil means http.DefaultClient)
+// that refuses redirects to anything but https://, so a redirect cannot
+// undo voiceURL's scheme check. The client's own redirect policy still runs.
+func httpsOnlyClient(client *http.Client) *http.Client {
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	c := *client
+	next := client.CheckRedirect
+
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.URL.Scheme != "https" {
+			return fmt.Errorf("voice download redirected to %s; only https:// is allowed", req.URL.Redacted())
+		}
+
+		if next != nil {
+			return next(req, via)
+		}
+
+		if len(via) >= maxVoiceRedirects {
+			return fmt.Errorf("stopped after %d redirects", maxVoiceRedirects)
+		}
+
+		return nil
+	}
+
+	return &c
+}
+
+// VoiceRefExt returns the lower-case extension of the file a voice reference
+// names: the file path of an hf:// reference (without @revision), the URL
+// path of an https:// voice (without query or fragment), else the local path.
+func VoiceRefExt(ref string) string {
+	name, ext := ref, filepath.Ext
+
+	switch {
+	case strings.HasPrefix(ref, "hf://"):
+		_, file, _, err := ParseHFRef(ref)
+		if err == nil {
+			name, ext = file, path.Ext
+		}
+	case IsRemoteVoice(ref):
+		u, err := url.Parse(ref)
+		if err == nil {
+			name, ext = u.Path, path.Ext
+		}
+	}
+
+	return strings.ToLower(ext(name))
 }
 
 // voiceURL maps ref to the URL to download and reports whether it is an
