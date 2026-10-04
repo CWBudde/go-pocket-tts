@@ -13,6 +13,7 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
@@ -341,6 +342,25 @@ func TestBuildVoiceEncoder_PicksEncoderByBackend(t *testing.T) {
 	_, err = buildVoiceEncoder(cfg, weights)
 	if err == nil || strings.Contains(err.Error(), "mimi.encoder") || !strings.Contains(err.Error(), "onnx") {
 		t.Errorf("native-onnx backend: err = %v, want the ONNX engine's error", err)
+	}
+}
+
+// TestBuildVoiceEncoder_NativeAppliesWorkers: the native encoder runs
+// without a tts.Service, so it must apply --conv-workers / --runtime-workers
+// itself; without them every kernel ran single-threaded.
+func TestBuildVoiceEncoder_NativeAppliesWorkers(t *testing.T) {
+	defer tensor.SetWorkers(tensor.Workers())
+
+	tensor.SetWorkers(1)
+
+	cfg := config.DefaultConfig()
+	cfg.TTS.Backend = config.BackendNative
+	cfg.Runtime.Workers = 5
+
+	_, _ = buildVoiceEncoder(cfg, "")
+
+	if got := tensor.Workers(); got != 5 {
+		t.Errorf("tensor workers = %d after buildVoiceEncoder, want --runtime-workers 5", got)
 	}
 }
 

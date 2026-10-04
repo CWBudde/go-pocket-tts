@@ -64,7 +64,8 @@ func newSynthCmd() *cobra.Command {
 		"",
 		"Synthesis backend override (native-safetensors|native-onnx|cli; native is alias for native-safetensors)",
 	)
-	cmd.Flags().StringVar(&voice, "voice", "", "Voice ID from the voice manifest (--paths-voice-manifest) or a file path (overrides config)")
+	cmd.Flags().StringVar(&voice, "voice", "", "Voice ID from the voice manifest (--paths-voice-manifest), a voice file path, or a .wav prompt "+
+		"to clone (native backend, gated weights; overrides config)")
 	cmd.Flags().BoolVar(&chunk, "chunk", false, "Split text into sentence chunks and synthesize sequentially")
 	cmd.Flags().IntVar(&maxChunkChars, "max-chunk-chars", 220, "Maximum characters per chunk when --chunk is enabled")
 	cmd.Flags().BoolVar(&normalize, "normalize", false, "Peak-normalize output audio")
@@ -186,10 +187,11 @@ func synthesizeForBackend(
 			return nil, errors.New("--tts-arg is only supported with --backend cli")
 		}
 
-		resolvedVoice, err := resolveNativeVoice(cfg, selectedBackend, selectedVoice)
+		resolvedVoice, removeVoice, err := resolveSynthVoice(cfg, selectedBackend, selectedVoice)
 		if err != nil {
 			return nil, err
 		}
+		defer removeVoice()
 
 		nativeCfg := cfg
 		nativeCfg.TTS.Backend = selectedBackend

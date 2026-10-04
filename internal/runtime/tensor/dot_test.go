@@ -30,6 +30,28 @@ func TestDotProduct(t *testing.T) {
 	}
 }
 
+// TestDotProductEveryLength covers the SIMD main loops plus every tail
+// length: on amd64 a scalar tail after the 8-wide loop once dropped the upper
+// four partial sums (n >= 8, n%8 != 0).
+func TestDotProductEveryLength(t *testing.T) {
+	for n := 1; n <= 70; n++ {
+		a := make([]float32, n)
+		b := make([]float32, n)
+
+		var want float64
+
+		for i := range a {
+			a[i] = float32(i%5) - 1.5
+			b[i] = float32(i%3) + 0.25
+			want += float64(a[i]) * float64(b[i])
+		}
+
+		if got := DotProduct(a, b); math.Abs(float64(got)-want) > 1e-4 {
+			t.Errorf("n=%d: DotProduct = %v; want %v", n, got, want)
+		}
+	}
+}
+
 func BenchmarkDotProduct(b *testing.B) {
 	for _, n := range []int{8, 64, 512, 4096} {
 		a := make([]float32, n)

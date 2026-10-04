@@ -1,12 +1,14 @@
 package native
 
 import (
+	"fmt"
 	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 )
 
@@ -193,5 +195,40 @@ func BenchmarkMimiDecode(b *testing.B) {
 		if err != nil {
 			b.Fatalf("mimi decode: %v", err)
 		}
+	}
+}
+
+// BenchmarkMimiEncoder30s encodes a 30 s prompt (the upstream maximum) with
+// the gated german encoder: about 6000 encoder-transformer steps at 200 Hz.
+func BenchmarkMimiEncoder30s(b *testing.B) {
+	weights, _ := filepath.Glob(filepath.Join(gatedModelsDir(), "german", "*.safetensors"))
+	if len(weights) != 1 {
+		b.Skipf("gated german checkpoint not found in %s (set POCKETTTS_GATED_MODELS)", gatedModelsDir())
+	}
+
+	enc, err := LoadVoiceEncoderFromSafetensors(weights[0], DefaultMimiConfig())
+	if err != nil {
+		b.Skipf("load voice encoder: %v", err)
+	}
+
+	samples := testSamples(30 * 24000)
+
+	for _, workers := range []int{1, 2, 8} {
+		b.Run(fmt.Sprintf("workers=%d", workers), func(b *testing.B) {
+			ops.SetConvWorkers(workers)
+			tensor.SetWorkers(workers)
+
+			defer func() {
+				ops.SetConvWorkers(0)
+				tensor.SetWorkers(1)
+			}()
+
+			for range b.N {
+				_, err := enc.EncodeToLatent(samples)
+				if err != nil {
+					b.Fatalf("encode: %v", err)
+				}
+			}
+		})
 	}
 }

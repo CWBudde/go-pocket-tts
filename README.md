@@ -334,6 +334,18 @@ export HF_TOKEN=...  # after accepting the terms of kyutai/pocket-tts
 `--model-safetensors` picks another checkpoint for the encoder, e.g. gated
 weights kept next to the ungated ones.
 
+`synth --voice speaker.wav` and `serve --default-voice speaker.wav` clone a voice
+the same way without a separate export (native backend only). They encode the
+prompt with the checkpoint they load (`--paths-model-path`), which must be the
+gated one, into a temporary voice file that is removed when the command ends;
+`serve` encodes it once at startup. A 30 s prompt takes about 5 s to encode with
+the default `--conv-workers 2` and about 2 s with `--conv-workers 8` (Apple M5
+Pro). Remote WAV prompts must be downloaded first.
+
+```bash
+./pockettts synth --language german --voice speaker.wav --text "Guten Tag." --out hallo.wav
+```
+
 The WAV prompt may have any sample rate up to 384 kHz and any channel count
 (8/16/24/32-bit PCM or 32/64-bit float). Like upstream `export-voice`, it is cut to 30 s, mixed down to
 mono, resampled to 24 kHz and ended on a short pause before encoding. Raw PCM
@@ -367,12 +379,14 @@ Start the server (HTTP):
 
 Requests without a `voice` use the default voice: the language's built-in voice,
 or `--default-voice` (`server.default_voice`, `POCKETTTS_SERVER_DEFAULT_VOICE`).
-It takes a voice ID from the manifest, a local `.safetensors` file, an
-`https://` URL or a pinned `hf://<org>/<repo>/<path>@<revision>` reference. URL
-voices are downloaded once into `<user cache dir>/pockettts/voices/` (for
-example `~/Library/Caches/pockettts/voices/` on macOS) without a checksum
-check; redirects must stay on `https://`, and `hf://` downloads send `HF_TOKEN`
-when it is set. WAV prompts are not accepted yet.
+It takes a voice ID from the manifest, a local `.safetensors` file, a local
+`.wav` prompt (cloned once at startup with the gated weights, see
+[Export a voice](#export-a-voice)), an `https://` URL or a pinned
+`hf://<org>/<repo>/<path>@<revision>` reference. URL voices are downloaded once
+into `<user cache dir>/pockettts/voices/` (for example
+`~/Library/Caches/pockettts/voices/` on macOS) without a checksum check;
+redirects must stay on `https://`, and `hf://` downloads send `HF_TOKEN` when it
+is set.
 
 ```bash
 ./pockettts serve --language german \

@@ -14,6 +14,7 @@ import (
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/tts"
 	"github.com/spf13/cobra"
 )
 
@@ -31,6 +32,8 @@ var buildVoiceEncoder = func(cfg config.Config, modelWeightsPath string) (voiceE
 	}
 
 	if backend == config.BackendNative {
+		tts.ApplyNativeWorkers(cfg.Runtime)
+
 		return newNativeVoiceEncoder(modelWeightsPath)
 	}
 
