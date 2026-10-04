@@ -15,6 +15,7 @@ type Engine struct {
 
 	manifestPath      string
 	modelWeightsPath  string
+	latentDim         int
 	speakerProjOnce   sync.Once
 	speakerProjWeight []float32
 	speakerProjErr    error
@@ -47,6 +48,7 @@ func NewEngine(manifestPath string, cfg RunnerConfig) (*Engine, error) {
 		sm:               sm,
 		manifestPath:     manifestPath,
 		modelWeightsPath: cfg.ModelWeightsPath,
+		latentDim:        cfg.EncoderLatentDim,
 	}, nil
 }
 

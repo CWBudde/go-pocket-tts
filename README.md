@@ -158,6 +158,9 @@ export HF_TOKEN=...  # or use --hf-token
 ./pockettts model download --hf-repo kyutai/pocket-tts
 ```
 
+The ungated checkpoints ship the Mimi encoder zeroed, so `pockettts doctor` reports
+`! voice cloning: unavailable` for them: a note, not a failure.
+
 `model download` also fetches the language's default voice next to the voice
 manifest the runtime reads (`--paths-voice-manifest`). For English that is
 the tracked `voices/manifest.json`, which lists all eight voices, so all of
@@ -320,6 +323,11 @@ and prints a suggested `voices/manifest.json` entry.
 ```bash
 ./pockettts export-voice --input speaker.wav --out voices/my_voice.safetensors --id my-voice --license "CC-BY-4.0"
 ```
+
+The WAV prompt may have any sample rate up to 384 kHz and any channel count
+(8/16/24/32-bit PCM or 32/64-bit float). Like upstream `export-voice`, it is cut to 30 s, mixed down to
+mono, resampled to 24 kHz and ended on a short pause before encoding. Raw PCM
+input (any other extension) must be 24 kHz mono 16-bit little-endian.
 
 To produce an upstream-compatible full model-state voice file, use the Python
 tooling fallback. Upstream voice `.safetensors` files are serialized prompted

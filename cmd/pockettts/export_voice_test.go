@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/cwbudde/go-pocket-tts/internal/config"
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
@@ -267,5 +268,38 @@ func TestExportVoiceCmd_WritesUpstreamModelStateViaPythonExporter(t *testing.T) 
 
 	if kind != safetensors.VoiceFileModelState {
 		t.Fatalf("voice file kind = %q, want %q", kind, safetensors.VoiceFileModelState)
+	}
+}
+
+// TestVoiceEncoderRunnerConfig_LatentDimFromModel checks that the speaker
+// projection width follows the selected model's mimi inner_dim.
+func TestVoiceEncoderRunnerConfig_LatentDimFromModel(t *testing.T) {
+	for _, tc := range []struct {
+		language string
+		want     int
+	}{
+		{language: "english_2026-01", want: 512},
+		{language: "german", want: 32},
+		{language: "english_2026-09", want: 32},
+	} {
+		t.Run(tc.language, func(t *testing.T) {
+			mc, err := modelcfg.Lookup(tc.language)
+			if err != nil {
+				t.Fatalf("Lookup: %v", err)
+			}
+
+			rcfg := voiceEncoderRunnerConfig(config.Config{Model: mc}, "model.safetensors")
+			if rcfg.EncoderLatentDim != tc.want {
+				t.Errorf("EncoderLatentDim = %d, want %d", rcfg.EncoderLatentDim, tc.want)
+			}
+
+			if rcfg.ModelWeightsPath != "model.safetensors" {
+				t.Errorf("ModelWeightsPath = %q, want model.safetensors", rcfg.ModelWeightsPath)
+			}
+		})
+	}
+
+	if got := voiceEncoderRunnerConfig(config.Config{}, "").EncoderLatentDim; got != 0 {
+		t.Errorf("without a model config EncoderLatentDim = %d, want 0 (engine default)", got)
 	}
 }

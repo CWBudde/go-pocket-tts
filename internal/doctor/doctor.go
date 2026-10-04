@@ -10,9 +10,11 @@ import (
 )
 
 // PassMark and FailMark are the prefix symbols printed for each check result.
+// WarnMark prefixes a limitation that does not fail the checks.
 const (
 	PassMark = "✓"
 	FailMark = "✗"
+	WarnMark = "!"
 )
 
 // VersionFunc returns a version string or an error if the component is unavailable.
@@ -37,6 +39,9 @@ type Config struct {
 	TokenizerModelPath string
 	// ValidateSafetensors, if set, is called to validate the model file contents.
 	ValidateSafetensors func(path string) error
+	// CheckVoiceCloning, if set, reports whether the model file carries the
+	// Mimi encoder weights that voice cloning (export-voice) needs.
+	CheckVoiceCloning func(path string) (bool, error)
 	// LoadTokenizer, if set, loads the tokenizer once it exists, for example
 	// to check its vocab size against the model config's n_bins.
 	LoadTokenizer func(path string) error
@@ -69,7 +74,7 @@ func (r *Result) AddFailure(msg string) { r.failures = append(r.failures, msg) }
 func (r *Result) fail(msg string) { r.failures = append(r.failures, msg) }
 
 // Run executes all configured checks and writes human-readable output to w.
-// Each check line is prefixed with PassMark or FailMark.
+// Each check line is prefixed with PassMark, FailMark or WarnMark.
 func Run(cfg Config, w io.Writer) Result {
 	var res Result
 
@@ -145,9 +150,42 @@ func Run(cfg Config, w io.Writer) Result {
 		}
 	}
 
+	checkVoiceCloning(cfg, w, &res)
 	checkTokenizer(cfg, w, &res)
 
 	return res
+}
+
+// checkVoiceCloning reports whether the native model can clone voices. The
+// ungated checkpoint is a limitation, not a failure: precomputed voices work.
+func checkVoiceCloning(cfg Config, w io.Writer, res *Result) {
+	if cfg.NativeModelPath == "" || cfg.CheckVoiceCloning == nil {
+		return
+	}
+
+	_, statErr := os.Stat(cfg.NativeModelPath)
+	if statErr != nil {
+		return // already reported as a missing model
+	}
+
+	ok, err := cfg.CheckVoiceCloning(cfg.NativeModelPath)
+	if err != nil {
+		res.fail(fmt.Sprintf("voice cloning check: %v", err))
+		_, _ = fmt.Fprintf(w, "%s voice cloning check: %v\n", FailMark, err)
+
+		return
+	}
+
+	if ok {
+		_, _ = fmt.Fprintf(w, "%s voice cloning: available (Mimi encoder weights of the gated kyutai/pocket-tts)\n", PassMark)
+
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "%s voice cloning: unavailable; %s is an ungated "+
+		"kyutai/pocket-tts-without-voice-cloning checkpoint (Mimi encoder zeroed). Precomputed voices work; "+
+		"cloning a voice from audio needs the gated kyutai/pocket-tts weights: accept the terms at "+
+		"https://huggingface.co/kyutai/pocket-tts, then 'pockettts model download --hf-token <token>' (or HF_TOKEN; same --language)\n", WarnMark, cfg.NativeModelPath)
 }
 
 // checkTokenizer checks that the tokenizer exists and, with LoadTokenizer,

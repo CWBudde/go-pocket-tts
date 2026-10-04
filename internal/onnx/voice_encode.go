@@ -13,22 +13,32 @@ import (
 )
 
 const (
-	mimiEncoderLatentDim = 512
-	// VoiceEmbeddingDim is the projected per-frame speaker conditioning width.
+	// defaultMimiEncoderLatentDim is the Mimi encoder latent width of
+	// english_2026-01 (mimi.inner_dim 512), used when RunnerConfig leaves
+	// EncoderLatentDim unset. Newer models use 32.
+	defaultMimiEncoderLatentDim = 512
+	// VoiceEmbeddingDim is the projected per-frame speaker conditioning width
+	// (flow_lm.transformer.d_model, 1024 in every upstream model config).
 	VoiceEmbeddingDim = 1024
 )
 
 // EncodeVoice loads a WAV/PCM prompt from audioPath and returns a flattened
-// voice embedding tensor with logical shape [1, T, 1024].
+// voice embedding tensor with logical shape [1, T, 1024]. WAV prompts may have
+// any sample rate up to audio.MaxPromptSampleRate and any channel count; raw
+// PCM must be 24 kHz mono 16-bit.
 func (e *Engine) EncodeVoice(audioPath string) ([]float32, error) {
-	samples, err := loadVoiceAudioSamples(audioPath)
+	samples, sampleRate, err := loadVoiceAudioSamples(audioPath)
 	if err != nil {
 		return nil, err
 	}
 
-	// Like upstream get_state_for_audio_prompt, end the prompt on a pause:
-	// one that stops on speech makes the model continue that utterance.
-	samples = audio.EndOnPause(samples, audio.ExpectedSampleRate)
+	// Like upstream get_state_for_audio_prompt with truncate=True (its CLI):
+	// keep 30 s, resample to 24 kHz and end the prompt on a pause, since one
+	// that stops on speech makes the model continue that utterance.
+	samples, err = audio.PrepareVoicePrompt(samples, sampleRate)
+	if err != nil {
+		return nil, fmt.Errorf("encode voice: %w", err)
+	}
 
 	embedding, err := e.encodeVoiceSamples(context.Background(), samples)
 	if err != nil {
@@ -68,7 +78,9 @@ func (e *Engine) encodeVoiceSamples(ctx context.Context, samples []float32) (*Te
 		return nil, errors.New("mimi_encoder: missing 'latent' in output")
 	}
 
-	normalizedLatent, err := normalizeMimiEncoderLatent(latent)
+	dim := e.encoderLatentDim()
+
+	normalizedLatent, err := normalizeMimiEncoderLatent(latent, dim)
 	if err != nil {
 		return nil, fmt.Errorf("mimi_encoder: normalize latent: %w", err)
 	}
@@ -78,10 +90,25 @@ func (e *Engine) encodeVoiceSamples(ctx context.Context, samples []float32) (*Te
 		return nil, err
 	}
 
-	return projectSpeakerConditioning(normalizedLatent, weight)
+	return projectSpeakerConditioning(normalizedLatent, weight, dim)
 }
 
-func normalizeMimiEncoderLatent(latent *Tensor) (*Tensor, error) {
+// encoderLatentDim returns the Mimi encoder latent width the speaker
+// projection expects: the model config's mimi inner_dim, else 512.
+func (e *Engine) encoderLatentDim() int {
+	if e.latentDim > 0 {
+		return e.latentDim
+	}
+
+	return defaultMimiEncoderLatentDim
+}
+
+// normalizeMimiEncoderLatent returns latent as [1, T, dim], transposing a
+// channel-first [1, dim, T] encoder output. The exported mimi_encoder graph is
+// channel-first (scripts/export_onnx.py declares axis 2 as latent_steps), so a
+// square [1, dim, dim] latent, from a prompt of exactly dim frames, is taken
+// as channel-first too.
+func normalizeMimiEncoderLatent(latent *Tensor, dim int) (*Tensor, error) {
 	shape := latent.Shape()
 	if len(shape) != 3 {
 		return nil, fmt.Errorf("expected 3D latent, got %v", shape)
@@ -96,41 +123,44 @@ func normalizeMimiEncoderLatent(latent *Tensor) (*Tensor, error) {
 		return nil, fmt.Errorf("extract latent: %w", err)
 	}
 
-	if shape[2] == mimiEncoderLatentDim {
-		// Already [1, T, 512].
-		return NewTensor(data, []int64{1, shape[1], mimiEncoderLatentDim})
-	}
-
-	if shape[1] == mimiEncoderLatentDim {
-		// [1, 512, T] -> [1, T, 512].
+	// Channel-first is checked first so the square case follows the graph.
+	if shape[1] == int64(dim) {
+		// [1, dim, T] -> [1, T, dim].
 		T := int(shape[2])
 		transposed := make([]float32, len(data))
 
 		for t := range T {
-			for c := range mimiEncoderLatentDim {
+			for c := range dim {
 				src := c*T + t
-				dst := t*mimiEncoderLatentDim + c
+				dst := t*dim + c
 				transposed[dst] = data[src]
 			}
 		}
 
-		return NewTensor(transposed, []int64{1, shape[2], mimiEncoderLatentDim})
+		return NewTensor(transposed, []int64{1, shape[2], int64(dim)})
 	}
 
-	return nil, fmt.Errorf("unexpected latent shape %v (need [1,T,512] or [1,512,T])", shape)
+	if shape[2] == int64(dim) {
+		// Already [1, T, dim].
+		return NewTensor(data, []int64{1, shape[1], int64(dim)})
+	}
+
+	return nil, fmt.Errorf("unexpected latent shape %v (need [1,T,%d] or [1,%d,T])", shape, dim, dim)
 }
 
-func projectSpeakerConditioning(latent *Tensor, weight []float32) (*Tensor, error) {
+// projectSpeakerConditioning applies speaker_proj_weight [VoiceEmbeddingDim,
+// dim] to a [1, T, dim] latent (upstream F.linear in _encode_audio).
+func projectSpeakerConditioning(latent *Tensor, weight []float32, dim int) (*Tensor, error) {
 	shape := latent.Shape()
-	if len(shape) != 3 || shape[0] != 1 || shape[2] != mimiEncoderLatentDim {
-		return nil, fmt.Errorf("latent shape must be [1,T,%d], got %v", mimiEncoderLatentDim, shape)
+	if len(shape) != 3 || shape[0] != 1 || shape[2] != int64(dim) {
+		return nil, fmt.Errorf("latent shape must be [1,T,%d], got %v", dim, shape)
 	}
 
-	if len(weight) != VoiceEmbeddingDim*mimiEncoderLatentDim {
+	if len(weight) != VoiceEmbeddingDim*dim {
 		return nil, fmt.Errorf(
 			"speaker projection weight has %d values, expected %d",
 			len(weight),
-			VoiceEmbeddingDim*mimiEncoderLatentDim,
+			VoiceEmbeddingDim*dim,
 		)
 	}
 
@@ -143,14 +173,14 @@ func projectSpeakerConditioning(latent *Tensor, weight []float32) (*Tensor, erro
 	out := make([]float32, T*VoiceEmbeddingDim)
 
 	for t := range T {
-		latRow := latentData[t*mimiEncoderLatentDim : (t+1)*mimiEncoderLatentDim]
+		latRow := latentData[t*dim : (t+1)*dim]
 
 		outRow := out[t*VoiceEmbeddingDim : (t+1)*VoiceEmbeddingDim]
 		for outIdx := range VoiceEmbeddingDim {
-			wRow := weight[outIdx*mimiEncoderLatentDim : (outIdx+1)*mimiEncoderLatentDim]
+			wRow := weight[outIdx*dim : (outIdx+1)*dim]
 
 			var sum float32
-			for i := range mimiEncoderLatentDim {
+			for i := range dim {
 				sum += latRow[i] * wRow[i]
 			}
 
@@ -189,7 +219,7 @@ func (e *Engine) speakerProjectionWeight() ([]float32, error) {
 		}
 		defer store.Close()
 
-		tensor, err := store.TensorWithShape("speaker_proj_weight", []int64{VoiceEmbeddingDim, mimiEncoderLatentDim})
+		tensor, err := store.TensorWithShape("speaker_proj_weight", []int64{VoiceEmbeddingDim, int64(e.encoderLatentDim())})
 		if err != nil {
 			e.speakerProjErr = fmt.Errorf("load speaker_proj_weight from %q: %w", modelPath, err)
 			return
@@ -245,36 +275,39 @@ func (e *Engine) resolveModelWeightsPath() (string, error) {
 	return "", errors.New("speaker projection weights not found; set --model-safetensors, RunnerConfig.ModelWeightsPath, or POCKETTTS_MODEL_SAFETENSORS")
 }
 
-func loadVoiceAudioSamples(audioPath string) ([]float32, error) {
+// loadVoiceAudioSamples reads a prompt as mono samples and their sample rate:
+// a .wav of any rate and channel count (mixed down), else raw 24 kHz mono
+// PCM16LE.
+func loadVoiceAudioSamples(audioPath string) ([]float32, int, error) {
 	if strings.TrimSpace(audioPath) == "" {
-		return nil, errors.New("encode voice: audio path must not be empty")
+		return nil, 0, errors.New("encode voice: audio path must not be empty")
 	}
 
 	data, err := os.ReadFile(audioPath)
 	if err != nil {
-		return nil, fmt.Errorf("encode voice: read audio file %q: %w", audioPath, err)
+		return nil, 0, fmt.Errorf("encode voice: read audio file %q: %w", audioPath, err)
 	}
 
 	if len(data) == 0 {
-		return nil, fmt.Errorf("encode voice: audio file %q is empty", audioPath)
+		return nil, 0, fmt.Errorf("encode voice: audio file %q is empty", audioPath)
 	}
 
 	ext := strings.ToLower(filepath.Ext(audioPath))
 	if ext == ".wav" {
-		samples, err := audio.DecodeWAV(data)
+		samples, sampleRate, err := audio.DecodePromptWAV(data)
 		if err != nil {
-			return nil, fmt.Errorf("encode voice: decode WAV %q: %w", audioPath, err)
+			return nil, 0, fmt.Errorf("encode voice: decode WAV %q: %w", audioPath, err)
 		}
 
-		return samples, nil
+		return samples, sampleRate, nil
 	}
 
 	samples, err := decodePCM16LE(data)
 	if err != nil {
-		return nil, fmt.Errorf("encode voice: decode raw PCM16 %q: %w", audioPath, err)
+		return nil, 0, fmt.Errorf("encode voice: decode raw PCM16 %q: %w", audioPath, err)
 	}
 
-	return samples, nil
+	return samples, audio.ExpectedSampleRate, nil
 }
 
 func decodePCM16LE(data []byte) ([]float32, error) {

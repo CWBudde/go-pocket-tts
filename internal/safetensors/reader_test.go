@@ -757,3 +757,148 @@ func TestLoadVoiceModelState_RealGermanVoice(t *testing.T) {
 		}
 	}
 }
+
+func TestHasMimiEncoderWeights(t *testing.T) {
+	encoder := func(values ...float32) []Tensor {
+		return []Tensor{
+			{Name: "flow_lm.speaker_proj_weight", Shape: []int64{2}, Data: []float32{1, 2}},
+			{Name: "mimi.downsample.conv.conv.weight", Shape: []int64{2}, Data: []float32{3, 4}},
+			{Name: "mimi.encoder.model.0.conv.weight", Shape: []int64{2}, Data: []float32{0, 0}},
+			{Name: "mimi.encoder.model.3.conv.weight", Shape: []int64{int64(len(values))}, Data: values},
+		}
+	}
+
+	for _, tc := range []struct {
+		name    string
+		tensors []Tensor
+		want    bool
+		wantErr bool
+	}{
+		// Ungated checkpoint: only the encoder is zeroed, the projection and
+		// downsample stay trained.
+		{name: "zeroed encoder", tensors: encoder(0, 0, 0)},
+		{name: "trained encoder", tensors: encoder(0, 0.25, 0), want: true},
+		{name: "no encoder", tensors: encoder()[:2], wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "model.safetensors")
+
+			err := WriteFile(path, tc.tensors)
+			if err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+
+			got, err := HasMimiEncoderWeights(path)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("HasMimiEncoderWeights = %v, want an error", got)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("HasMimiEncoderWeights: %v", err)
+			}
+
+			if got != tc.want {
+				t.Errorf("HasMimiEncoderWeights = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestHasMimiEncoderWeights_RangeBeyondFile checks that a header advertising
+// tensor data past the end of the file is rejected before the range is
+// allocated.
+func TestHasMimiEncoderWeights_RangeBeyondFile(t *testing.T) {
+	headerJSON, err := json.Marshal(map[string]tensorMeta{
+		"mimi.encoder.model.0.conv.weight": {
+			DType:   "F32",
+			Shape:   []int64{16 << 20},
+			Offsets: [2]int{0, 64 << 20},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal header: %v", err)
+	}
+
+	// 8-byte header length, the header, then only 8 bytes of tensor data.
+	data := binary.LittleEndian.AppendUint64(nil, uint64(len(headerJSON)))
+	data = append(data, headerJSON...)
+	data = append(data, float32Bytes([]float32{1, 2})...)
+
+	path := filepath.Join(t.TempDir(), "model.safetensors")
+
+	err = os.WriteFile(path, data, 0o600)
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	got, err := HasMimiEncoderWeights(path)
+	if err == nil {
+		t.Fatalf("HasMimiEncoderWeights = %v, want an error", got)
+	}
+
+	if !strings.Contains(err.Error(), "exceed file size") {
+		t.Errorf("error = %q, want it to mention the file size", err)
+	}
+}
+
+// TestHasMimiEncoderWeights_CorruptEntryNextToTrainedOne checks that every
+// encoder entry is range-checked, also when a trained (non-zero) entry is
+// enough to answer: the header is a map, so the trained entry may come first.
+func TestHasMimiEncoderWeights_CorruptEntryNextToTrainedOne(t *testing.T) {
+	headerJSON, err := json.Marshal(map[string]tensorMeta{
+		"mimi.encoder.model.0.conv.weight": {DType: "F32", Shape: []int64{2}, Offsets: [2]int{0, 8}},
+		"mimi.encoder.model.3.conv.weight": {DType: "F32", Shape: []int64{16 << 20}, Offsets: [2]int{8, 8 + 64<<20}},
+	})
+	if err != nil {
+		t.Fatalf("marshal header: %v", err)
+	}
+
+	data := binary.LittleEndian.AppendUint64(nil, uint64(len(headerJSON)))
+	data = append(data, headerJSON...)
+	data = append(data, float32Bytes([]float32{1, 2})...)
+
+	path := filepath.Join(t.TempDir(), "model.safetensors")
+
+	err = os.WriteFile(path, data, 0o600)
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// Map iteration order varies between calls; every order must fail.
+	for range 32 {
+		got, err := HasMimiEncoderWeights(path)
+		if err == nil || !strings.Contains(err.Error(), "exceed file size") {
+			t.Fatalf("HasMimiEncoderWeights = %v, %v; want the file-size error", got, err)
+		}
+	}
+}
+
+// TestHasMimiEncoderWeights_UngatedCheckpoints checks the downloaded
+// kyutai/pocket-tts-without-voice-cloning checkpoints, whose Mimi encoder is
+// zeroed.
+func TestHasMimiEncoderWeights_UngatedCheckpoints(t *testing.T) {
+	for _, path := range []string{
+		filepath.Join("..", "..", "models", "tts_b6369a24.safetensors"),
+		filepath.Join("..", "..", "models", "german", "model.safetensors"),
+	} {
+		t.Run(path, func(t *testing.T) {
+			_, err := os.Stat(path)
+			if err != nil {
+				t.Skipf("checkpoint not available: %v", err)
+			}
+
+			got, err := HasMimiEncoderWeights(path)
+			if err != nil {
+				t.Fatalf("HasMimiEncoderWeights: %v", err)
+			}
+
+			if got {
+				t.Error("HasMimiEncoderWeights = true, want false for an ungated checkpoint")
+			}
+		})
+	}
+}

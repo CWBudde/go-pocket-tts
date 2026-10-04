@@ -287,6 +287,85 @@ func TestRun_ValidateSafetensorsPassesOnSuccess(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// voice cloning
+// ---------------------------------------------------------------------------
+
+func TestRun_VoiceCloning(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		model     string
+		check     func(string) (bool, error)
+		wantLine  string
+		wantFail  bool
+		wantNoRun bool
+	}{
+		{
+			name:     "gated weights",
+			model:    "doctor_test.go",
+			check:    func(string) (bool, error) { return true, nil },
+			wantLine: doctor.PassMark + " voice cloning: available",
+		},
+		{
+			// An ungated checkpoint is a limitation, not a failure.
+			name:     "ungated weights",
+			model:    "doctor_test.go",
+			check:    func(string) (bool, error) { return false, nil },
+			wantLine: doctor.WarnMark + " voice cloning: unavailable; doctor_test.go is an ungated kyutai/pocket-tts-without-voice-cloning checkpoint",
+		},
+		{
+			name:     "unreadable model",
+			model:    "doctor_test.go",
+			check:    func(string) (bool, error) { return false, sentinelError("no mimi.encoder tensors") },
+			wantLine: doctor.FailMark + " voice cloning check: no mimi.encoder tensors",
+			wantFail: true,
+		},
+		{
+			name:      "missing model",
+			model:     "/nonexistent/model.safetensors",
+			wantFail:  true, // the missing model itself
+			wantNoRun: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ran := false
+			cfg := doctor.Config{
+				SkipPocketTTS:   true,
+				SkipPython:      true,
+				NativeModelPath: tc.model,
+				CheckVoiceCloning: func(path string) (bool, error) {
+					ran = true
+
+					if path != tc.model {
+						t.Errorf("CheckVoiceCloning(%q), want the model path %q", path, tc.model)
+					}
+
+					if tc.check == nil {
+						return false, nil
+					}
+
+					return tc.check(path)
+				},
+			}
+
+			var out strings.Builder
+
+			result := doctor.Run(cfg, &out)
+			if result.Failed() != tc.wantFail {
+				t.Errorf("Failed() = %v, want %v; failures: %v", result.Failed(), tc.wantFail, result.Failures())
+			}
+
+			if ran == tc.wantNoRun {
+				t.Errorf("CheckVoiceCloning ran = %v, want %v", ran, !tc.wantNoRun)
+			}
+
+			if !strings.Contains(out.String(), tc.wantLine) {
+				t.Errorf("output missing %q:\n%s", tc.wantLine, out.String())
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 
