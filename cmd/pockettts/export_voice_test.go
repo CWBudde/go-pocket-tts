@@ -12,6 +12,7 @@ import (
 
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
+	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
@@ -187,20 +188,29 @@ func TestExportVoiceCmd_WritesSafetensorsViaNativeEncoder(t *testing.T) {
 	}
 }
 
+// TestExportVoiceCmd_WritesUpstreamModelStateViaPythonExporter: backends
+// other than native keep exporting the model state with the Python CLI.
 func TestExportVoiceCmd_WritesUpstreamModelStateViaPythonExporter(t *testing.T) {
-	origExporter := exportVoiceModelState
+	origExporter := exportVoiceModelStatePython
+	origNative := exportVoiceModelStateNative
 	origBuilder := buildVoiceEncoder
 
 	t.Cleanup(func() {
-		exportVoiceModelState = origExporter
+		exportVoiceModelStatePython = origExporter
+		exportVoiceModelStateNative = origNative
 		buildVoiceEncoder = origBuilder
 	})
+
+	exportVoiceModelStateNative = func(config.Config, string, string, string) error {
+		t.Fatal("native model-state exporter should not run on the cli backend")
+		return nil
+	}
 
 	var called bool
 	var gotAudioPath string
 	var gotOutPath string
 	var gotLanguage string
-	exportVoiceModelState = func(_ context.Context, _ config.Config, audioPath, outPath, language string) error {
+	exportVoiceModelStatePython = func(_ context.Context, _ config.Config, audioPath, outPath, language string) error {
 		called = true
 		gotAudioPath = audioPath
 		gotOutPath = outPath
@@ -241,6 +251,7 @@ func TestExportVoiceCmd_WritesUpstreamModelStateViaPythonExporter(t *testing.T) 
 		"--out=" + out,
 		"--format=model-state",
 		"--language=english_2026-01",
+		"--backend=cli",
 	})
 
 	err = cmd.Execute()
@@ -272,6 +283,219 @@ func TestExportVoiceCmd_WritesUpstreamModelStateViaPythonExporter(t *testing.T) 
 	if kind != safetensors.VoiceFileModelState {
 		t.Fatalf("voice file kind = %q, want %q", kind, safetensors.VoiceFileModelState)
 	}
+}
+
+// TestExportVoiceCmd_ModelStateNativeBackend: on the native backend
+// --format model-state builds the state in Go from the checkpoint and model
+// config the legacy export uses (--model-safetensors, else
+// --paths-model-path, which follows --language); Python is not involved.
+func TestExportVoiceCmd_ModelStateNativeBackend(t *testing.T) {
+	origPython := exportVoiceModelStatePython
+	origNative := exportVoiceModelStateNative
+
+	t.Cleanup(func() {
+		exportVoiceModelStatePython = origPython
+		exportVoiceModelStateNative = origNative
+	})
+
+	exportVoiceModelStatePython = func(context.Context, config.Config, string, string, string) error {
+		t.Fatal("the Python exporter should not run on the native backend")
+		return nil
+	}
+
+	in := filepath.Join(t.TempDir(), "prompt.wav")
+
+	err := os.WriteFile(in, []byte{1, 2, 3, 4}, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	explicit := filepath.Join(t.TempDir(), "gated.safetensors")
+
+	for _, tc := range []struct {
+		name        string
+		args        []string
+		wantWeights string
+		wantLang    string
+		wantBOS     bool
+	}{
+		{
+			name:        "language default path",
+			args:        []string{"--language=german"},
+			wantWeights: "models/german/model.safetensors",
+			wantLang:    "german",
+			wantBOS:     true,
+		},
+		{
+			name:        "paths-model-path",
+			args:        []string{"--language=german", "--paths-model-path=" + explicit},
+			wantWeights: explicit,
+			wantLang:    "german",
+			wantBOS:     true,
+		},
+		{
+			name:        "model-safetensors",
+			args:        []string{"--model-safetensors=" + explicit, "--backend=native"},
+			wantWeights: explicit,
+			wantLang:    "english_2026-01",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "voice.safetensors")
+
+			var called bool
+
+			exportVoiceModelStateNative = func(cfg config.Config, audioPath, outPath, weights string) error {
+				called = true
+
+				if audioPath != in || outPath != out {
+					t.Errorf("paths = %q, %q; want %q, %q", audioPath, outPath, in, out)
+				}
+
+				if weights != tc.wantWeights {
+					t.Errorf("weights = %q, want %q", weights, tc.wantWeights)
+				}
+
+				if cfg.Model == nil || cfg.TTS.Language != tc.wantLang || cfg.Model.FlowLM.InsertBOSBeforeVoice != tc.wantBOS {
+					t.Errorf("model config for %q (BOS before voice %v), want %q (%v)",
+						cfg.TTS.Language, cfg.Model != nil && cfg.Model.FlowLM.InsertBOSBeforeVoice, tc.wantLang, tc.wantBOS)
+				}
+
+				return nil
+			}
+
+			cmd := NewRootCmd()
+			cmd.SilenceUsage = true
+			cmd.SetArgs(append([]string{"export-voice", "--input=" + in, "--out=" + out, "--format=model-state"}, tc.args...))
+
+			err := cmd.Execute()
+			if err != nil {
+				t.Fatalf("export-voice: %v", err)
+			}
+
+			if !called {
+				t.Fatal("native model-state exporter was not called")
+			}
+		})
+	}
+}
+
+// TestExportVoiceModelStateNative_Errors covers a missing checkpoint and one
+// whose voice encoder is missing.
+func TestExportVoiceModelStateNative_Errors(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.DefaultConfig()
+
+	err := exportVoiceModelStateNative(cfg, "in.wav", filepath.Join(dir, "out.safetensors"), "")
+	if err == nil || !strings.Contains(err.Error(), "--model-safetensors") {
+		t.Errorf("no weights: err = %v, want a --model-safetensors hint", err)
+	}
+
+	weights := filepath.Join(dir, "model.safetensors")
+
+	err = safetensors.WriteFile(weights, []safetensors.Tensor{{Name: "unrelated", Shape: []int64{1}, Data: []float32{1}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = exportVoiceModelStateNative(cfg, "in.wav", filepath.Join(dir, "out.safetensors"), weights)
+	if err == nil || !strings.Contains(err.Error(), "mimi.encoder") {
+		t.Errorf("checkpoint without encoder: err = %v, want the missing mimi.encoder tensor", err)
+	}
+}
+
+// TestExportVoiceModelStateNative_UngatedCheckpoint: the ungated checkpoint
+// has the Mimi encoder zeroed, so the export must stop with the gated-weights
+// hint instead of writing a state every prompt would share.
+func TestExportVoiceModelStateNative_UngatedCheckpoint(t *testing.T) {
+	weights := filepath.Join("..", "..", "models", "german", "model.safetensors")
+
+	_, err := os.Stat(weights)
+	if err != nil {
+		t.Skipf("ungated german checkpoint not found: %v", err)
+	}
+
+	cfg := gatedExportConfig(t, "german")
+	out := filepath.Join(t.TempDir(), "voice.safetensors")
+
+	err = exportVoiceModelStateNative(cfg, parityPromptPath(), out, weights)
+	if !errors.Is(err, nativemodel.ErrMimiEncoderWeightsZeroed) {
+		t.Fatalf("err = %v, want ErrMimiEncoderWeightsZeroed", err)
+	}
+
+	_, statErr := os.Stat(out)
+	if statErr == nil {
+		t.Fatal("a voice file was written for the ungated checkpoint")
+	}
+}
+
+// TestExportVoiceModelStateNative_GatedGerman exports the parity prompt with
+// the gated german checkpoint and checks that the file is an upstream model
+// state the native runtime loads.
+func TestExportVoiceModelStateNative_GatedGerman(t *testing.T) {
+	gated := os.Getenv("POCKETTTS_GATED_MODELS")
+	if gated == "" {
+		gated = filepath.Join("..", "..", "models", "gated")
+	}
+
+	weights := filepath.Join(gated, "german", "model.safetensors")
+
+	_, err := os.Stat(weights)
+	if err != nil {
+		t.Skipf("gated german checkpoint not found: %v", err)
+	}
+
+	cfg := gatedExportConfig(t, "german")
+	out := filepath.Join(t.TempDir(), "voice.safetensors")
+
+	err = exportVoiceModelStateNative(cfg, parityPromptPath(), out, weights)
+	if err != nil {
+		t.Fatalf("exportVoiceModelStateNative: %v", err)
+	}
+
+	kind, err := safetensors.InspectVoiceFile(out)
+	if err != nil || kind != safetensors.VoiceFileModelState {
+		t.Fatalf("InspectVoiceFile = %q, %v; want %q", kind, err, safetensors.VoiceFileModelState)
+	}
+
+	vs, err := safetensors.LoadVoiceModelState(out)
+	if err != nil {
+		t.Fatalf("LoadVoiceModelState: %v", err)
+	}
+
+	m, err := nativemodel.LoadModelFromSafetensors(weights, nativemodel.ConfigFor(cfg.Model))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := m.NewFlowStateFromVoiceModelState(vs)
+	if err != nil {
+		t.Fatalf("NewFlowStateFromVoiceModelState: %v", err)
+	}
+
+	// The parity prompt encodes to 27 frames, plus the BOS before the voice.
+	if got := state.Offset(); got != 28 {
+		t.Fatalf("state offset = %d, want 28", got)
+	}
+}
+
+func gatedExportConfig(t *testing.T, language string) config.Config {
+	t.Helper()
+
+	mc, err := modelcfg.Lookup(language)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DefaultConfig()
+	cfg.TTS.Language = language
+	cfg.Model = mc
+
+	return cfg
+}
+
+func parityPromptPath() string {
+	return filepath.Join("..", "..", "internal", "native", "testdata", "python_parity", "voice_prompt.wav")
 }
 
 // TestVoiceEncoderRunnerConfig_LatentDimFromModel checks that the speaker
