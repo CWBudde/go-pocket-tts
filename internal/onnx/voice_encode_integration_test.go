@@ -88,7 +88,7 @@ func TestEncodeVoiceIntegration_OutputShape(t *testing.T) {
 		t.Skip("mimi_encoder graph not present in manifest; skipping")
 	}
 
-	samples, err := loadVoiceAudioSamples(audioPath)
+	samples, _, err := loadVoiceAudioSamples(audioPath)
 	if err != nil {
 		t.Fatalf("loadVoiceAudioSamples: %v", err)
 	}

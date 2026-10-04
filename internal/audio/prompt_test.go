@@ -1,0 +1,49 @@
+package audio
+
+import (
+	"math"
+	"slices"
+	"testing"
+)
+
+// TestPrepareVoicePrompt_TruncatesAtSourceRateThenResamples feeds a 31 s
+// prompt at 48 kHz with speech at 0–1 s, 20–21 s and 29.5–31 s. Upstream cuts
+// it to 30 s at 48 kHz, resamples, then ends it on a pause, so the output ends
+// just after 30 s: the 20 s burst survives, the cut-off tail does not.
+func TestPrepareVoicePrompt_TruncatesAtSourceRateThenResamples(t *testing.T) {
+	const rate = 48000
+
+	in := make([]float32, 31*rate)
+	for _, burst := range [][2]float64{{0, 1}, {20, 21}, {29.5, 31}} {
+		for i := int(burst[0] * rate); i < int(burst[1]*rate); i++ {
+			in[i] = float32(0.5 * math.Sin(float64(i)/7))
+		}
+	}
+
+	orig := slices.Clone(in)
+
+	got := PrepareVoicePrompt(in, rate)
+
+	want := EndOnPause(ResamplePoly(in[:VoicePromptMaxSec*rate], ExpectedSampleRate, rate), ExpectedSampleRate)
+	if !slices.Equal(got, want) {
+		t.Errorf("output (%d samples) differs from truncate → resample → EndOnPause (%d samples)", len(got), len(want))
+	}
+
+	const pause = ExpectedSampleRate * 8 / 100
+	if lo, hi := 29*ExpectedSampleRate, VoicePromptMaxSec*ExpectedSampleRate+pause; len(got) < lo || len(got) > hi {
+		t.Errorf("len = %d (%.2f s at 24 kHz), want within [%d, %d]",
+			len(got), float64(len(got))/ExpectedSampleRate, lo, hi)
+	}
+
+	if !slices.Equal(in, orig) {
+		t.Error("input slice was modified")
+	}
+}
+
+func TestPrepareVoicePrompt_ModelRateIsEndOnPauseOnly(t *testing.T) {
+	in := append(tone(ExpectedSampleRate/2), make([]float32, ExpectedSampleRate/4)...)
+
+	if got, want := PrepareVoicePrompt(in, ExpectedSampleRate), EndOnPause(in, ExpectedSampleRate); !slices.Equal(got, want) {
+		t.Errorf("24 kHz prompt: got %d samples, want EndOnPause's %d", len(got), len(want))
+	}
+}
