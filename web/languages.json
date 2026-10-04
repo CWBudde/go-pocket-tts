@@ -1,0 +1,524 @@
+{
+  "default": "english_2026-01",
+  "languages": [
+    {
+      "name": "english_2026-01",
+      "layers": 6,
+      "default_voice": "alba",
+      "default_temperature": 0.3,
+      "default_text": "Hello world. I am Kyutai's Pocket TTS. I'm fast enough to run on small CPUs. I hope you'll like me.",
+      "model": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/d4fdd22ae8c8e1cb3634e150ebeff1dab2d16df3/tts_b6369a24.safetensors",
+      "tokenizer": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/00eac05ed3d16bdc3f6b5d598874019c34a89214/tokenizer.json",
+      "voices": [
+        {
+          "id": "alba",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/d4fdd22ae8c8e1cb3634e150ebeff1dab2d16df3/embeddings/alba.safetensors"
+        },
+        {
+          "id": "azelma",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/d4fdd22ae8c8e1cb3634e150ebeff1dab2d16df3/embeddings/azelma.safetensors"
+        },
+        {
+          "id": "cosette",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/d4fdd22ae8c8e1cb3634e150ebeff1dab2d16df3/embeddings/cosette.safetensors"
+        },
+        {
+          "id": "eponine",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/d4fdd22ae8c8e1cb3634e150ebeff1dab2d16df3/embeddings/eponine.safetensors"
+        },
+        {
+          "id": "fantine",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/d4fdd22ae8c8e1cb3634e150ebeff1dab2d16df3/embeddings/fantine.safetensors"
+        },
+        {
+          "id": "javert",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/d4fdd22ae8c8e1cb3634e150ebeff1dab2d16df3/embeddings/javert.safetensors"
+        },
+        {
+          "id": "jean",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/d4fdd22ae8c8e1cb3634e150ebeff1dab2d16df3/embeddings/jean.safetensors"
+        },
+        {
+          "id": "marius",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/d4fdd22ae8c8e1cb3634e150ebeff1dab2d16df3/embeddings/marius.safetensors"
+        }
+      ]
+    },
+    {
+      "name": "english_2026-09",
+      "layers": 6,
+      "default_voice": "alba",
+      "default_temperature": 0.3,
+      "default_text": "Hello world. I am Kyutai's Pocket TTS. I'm fast enough to run on small CPUs. I hope you'll like me.",
+      "model": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/e7205b6ee50e654a5ea19f0e9df2b0813b05e921/languages/english_2026-09/model.safetensors",
+      "tokenizer": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/00eac05ed3d16bdc3f6b5d598874019c34a89214/languages/english_2026-09/tokenizer.json",
+      "voices": [
+        {
+          "id": "alba",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/alba.safetensors"
+        },
+        {
+          "id": "anna",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/anna.safetensors"
+        },
+        {
+          "id": "azelma",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/azelma.safetensors"
+        },
+        {
+          "id": "bill_boerst",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/bill_boerst.safetensors"
+        },
+        {
+          "id": "caro_davy",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/caro_davy.safetensors"
+        },
+        {
+          "id": "charles",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/charles.safetensors"
+        },
+        {
+          "id": "cosette",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/cosette.safetensors"
+        },
+        {
+          "id": "daan",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/daan.safetensors"
+        },
+        {
+          "id": "eponine",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/eponine.safetensors"
+        },
+        {
+          "id": "estelle",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/estelle.safetensors"
+        },
+        {
+          "id": "eve",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/eve.safetensors"
+        },
+        {
+          "id": "fantine",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/fantine.safetensors"
+        },
+        {
+          "id": "george",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/george.safetensors"
+        },
+        {
+          "id": "giovanni",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/giovanni.safetensors"
+        },
+        {
+          "id": "jane",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/jane.safetensors"
+        },
+        {
+          "id": "javert",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/javert.safetensors"
+        },
+        {
+          "id": "jean",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/jean.safetensors"
+        },
+        {
+          "id": "juergen",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/juergen.safetensors"
+        },
+        {
+          "id": "lola",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/lola.safetensors"
+        },
+        {
+          "id": "marius",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/marius.safetensors"
+        },
+        {
+          "id": "mary",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/mary.safetensors"
+        },
+        {
+          "id": "michael",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/michael.safetensors"
+        },
+        {
+          "id": "paul",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/paul.safetensors"
+        },
+        {
+          "id": "peter_yearsley",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/peter_yearsley.safetensors"
+        },
+        {
+          "id": "rafael",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/rafael.safetensors"
+        },
+        {
+          "id": "stuart_bell",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/stuart_bell.safetensors"
+        },
+        {
+          "id": "vera",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_2026-09/embeddings/vera.safetensors"
+        }
+      ]
+    },
+    {
+      "name": "english_drifting_26-09",
+      "layers": 6,
+      "default_voice": "alba",
+      "default_temperature": 0.3,
+      "default_text": "Hello world. I am Kyutai's Pocket TTS. I'm fast enough to run on small CPUs. I hope you'll like me.",
+      "model": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/a5ce31f3eba7a3b0cb9c24ba2015b098f278eaae/languages/english_drifting_26-09/model.safetensors",
+      "tokenizer": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/00eac05ed3d16bdc3f6b5d598874019c34a89214/languages/english_2026-09/tokenizer.json",
+      "voices": [
+        {
+          "id": "alba",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/alba.safetensors"
+        },
+        {
+          "id": "anna",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/anna.safetensors"
+        },
+        {
+          "id": "azelma",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/azelma.safetensors"
+        },
+        {
+          "id": "bill_boerst",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/bill_boerst.safetensors"
+        },
+        {
+          "id": "caro_davy",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/caro_davy.safetensors"
+        },
+        {
+          "id": "charles",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/charles.safetensors"
+        },
+        {
+          "id": "cosette",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/cosette.safetensors"
+        },
+        {
+          "id": "daan",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/daan.safetensors"
+        },
+        {
+          "id": "eponine",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/eponine.safetensors"
+        },
+        {
+          "id": "estelle",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/estelle.safetensors"
+        },
+        {
+          "id": "eve",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/eve.safetensors"
+        },
+        {
+          "id": "fantine",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/fantine.safetensors"
+        },
+        {
+          "id": "george",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/george.safetensors"
+        },
+        {
+          "id": "giovanni",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/giovanni.safetensors"
+        },
+        {
+          "id": "jane",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/jane.safetensors"
+        },
+        {
+          "id": "javert",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/javert.safetensors"
+        },
+        {
+          "id": "jean",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/jean.safetensors"
+        },
+        {
+          "id": "juergen",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/juergen.safetensors"
+        },
+        {
+          "id": "lola",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/lola.safetensors"
+        },
+        {
+          "id": "marius",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/marius.safetensors"
+        },
+        {
+          "id": "mary",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/mary.safetensors"
+        },
+        {
+          "id": "michael",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/michael.safetensors"
+        },
+        {
+          "id": "paul",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/paul.safetensors"
+        },
+        {
+          "id": "peter_yearsley",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/peter_yearsley.safetensors"
+        },
+        {
+          "id": "rafael",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/rafael.safetensors"
+        },
+        {
+          "id": "stuart_bell",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/stuart_bell.safetensors"
+        },
+        {
+          "id": "vera",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/english_drifting_26-09/embeddings/vera.safetensors"
+        }
+      ]
+    },
+    {
+      "name": "german",
+      "layers": 6,
+      "default_voice": "juergen",
+      "default_temperature": 0.3,
+      "default_text": "Hallo Welt. Ich bin Pocket TTS von Kyutai. Ich bin schnell genug, um auch auf kleinen CPUs zu laufen. Ich hoffe, ich gefalle dir.",
+      "model": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/model.safetensors",
+      "tokenizer": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/4e1e0a3e611c51c0b4ed8174fc10f32a54644303/languages/german/tokenizer.json",
+      "voices": [
+        {
+          "id": "alba",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/alba.safetensors"
+        },
+        {
+          "id": "anna",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/anna.safetensors"
+        },
+        {
+          "id": "azelma",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/azelma.safetensors"
+        },
+        {
+          "id": "bill_boerst",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/bill_boerst.safetensors"
+        },
+        {
+          "id": "caro_davy",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/caro_davy.safetensors"
+        },
+        {
+          "id": "charles",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/charles.safetensors"
+        },
+        {
+          "id": "cosette",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/cosette.safetensors"
+        },
+        {
+          "id": "daan",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/daan.safetensors"
+        },
+        {
+          "id": "eponine",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/eponine.safetensors"
+        },
+        {
+          "id": "estelle",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/estelle.safetensors"
+        },
+        {
+          "id": "eve",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/eve.safetensors"
+        },
+        {
+          "id": "fantine",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/fantine.safetensors"
+        },
+        {
+          "id": "george",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/george.safetensors"
+        },
+        {
+          "id": "giovanni",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/giovanni.safetensors"
+        },
+        {
+          "id": "jane",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/jane.safetensors"
+        },
+        {
+          "id": "javert",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/javert.safetensors"
+        },
+        {
+          "id": "jean",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/jean.safetensors"
+        },
+        {
+          "id": "juergen",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/juergen.safetensors"
+        },
+        {
+          "id": "lola",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/lola.safetensors"
+        },
+        {
+          "id": "marius",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/marius.safetensors"
+        },
+        {
+          "id": "mary",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/mary.safetensors"
+        },
+        {
+          "id": "michael",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/michael.safetensors"
+        },
+        {
+          "id": "paul",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/paul.safetensors"
+        },
+        {
+          "id": "peter_yearsley",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/peter_yearsley.safetensors"
+        },
+        {
+          "id": "rafael",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/rafael.safetensors"
+        },
+        {
+          "id": "stuart_bell",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/stuart_bell.safetensors"
+        },
+        {
+          "id": "vera",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german/embeddings/vera.safetensors"
+        }
+      ]
+    },
+    {
+      "name": "german_24l",
+      "layers": 24,
+      "default_voice": "juergen",
+      "default_temperature": 0.3,
+      "default_text": "Hallo Welt. Ich bin Pocket TTS von Kyutai. Ich bin schnell genug, um auch auf kleinen CPUs zu laufen. Ich hoffe, ich gefalle dir.",
+      "model": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/4e1e0a3e611c51c0b4ed8174fc10f32a54644303/languages/german_24l/model.safetensors",
+      "tokenizer": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/4e1e0a3e611c51c0b4ed8174fc10f32a54644303/languages/german_24l/tokenizer.json",
+      "voices": [
+        {
+          "id": "alba",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/alba.safetensors"
+        },
+        {
+          "id": "anna",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/anna.safetensors"
+        },
+        {
+          "id": "azelma",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/azelma.safetensors"
+        },
+        {
+          "id": "bill_boerst",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/bill_boerst.safetensors"
+        },
+        {
+          "id": "caro_davy",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/caro_davy.safetensors"
+        },
+        {
+          "id": "charles",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/charles.safetensors"
+        },
+        {
+          "id": "cosette",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/cosette.safetensors"
+        },
+        {
+          "id": "daan",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/daan.safetensors"
+        },
+        {
+          "id": "eponine",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/eponine.safetensors"
+        },
+        {
+          "id": "estelle",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/estelle.safetensors"
+        },
+        {
+          "id": "eve",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/eve.safetensors"
+        },
+        {
+          "id": "fantine",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/fantine.safetensors"
+        },
+        {
+          "id": "george",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/george.safetensors"
+        },
+        {
+          "id": "giovanni",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/giovanni.safetensors"
+        },
+        {
+          "id": "jane",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/jane.safetensors"
+        },
+        {
+          "id": "javert",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/javert.safetensors"
+        },
+        {
+          "id": "jean",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/jean.safetensors"
+        },
+        {
+          "id": "juergen",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/juergen.safetensors"
+        },
+        {
+          "id": "lola",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/lola.safetensors"
+        },
+        {
+          "id": "marius",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/marius.safetensors"
+        },
+        {
+          "id": "mary",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/mary.safetensors"
+        },
+        {
+          "id": "michael",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/michael.safetensors"
+        },
+        {
+          "id": "paul",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/paul.safetensors"
+        },
+        {
+          "id": "peter_yearsley",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/peter_yearsley.safetensors"
+        },
+        {
+          "id": "rafael",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/rafael.safetensors"
+        },
+        {
+          "id": "stuart_bell",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/stuart_bell.safetensors"
+        },
+        {
+          "id": "vera",
+          "url": "https://huggingface.co/kyutai/pocket-tts-without-voice-cloning/resolve/1e08e6a23401048648a9fdcfde2f89348215c2a7/languages/german_24l/embeddings/vera.safetensors"
+        }
+      ]
+    }
+  ]
+}
