@@ -24,7 +24,8 @@ const (
 
 // EncodeVoice loads a WAV/PCM prompt from audioPath and returns a flattened
 // voice embedding tensor with logical shape [1, T, 1024]. WAV prompts may have
-// any sample rate and channel count; raw PCM must be 24 kHz mono 16-bit.
+// any sample rate up to audio.MaxPromptSampleRate and any channel count; raw
+// PCM must be 24 kHz mono 16-bit.
 func (e *Engine) EncodeVoice(audioPath string) ([]float32, error) {
 	samples, sampleRate, err := audio.ReadVoicePrompt(audioPath)
 	if err != nil {

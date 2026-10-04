@@ -104,6 +104,10 @@ func TestResamplePoly_ReducesRatio(t *testing.T) {
 // TestResamplePoly_RejectsImpracticalRatio: 24000/0xffffffff reduces to
 // 1600/286331153, whose filter would need 5.7e9 taps (~43 GiB). It must fail
 // fast, before allocating the filter.
+// maxWAVRate is the largest rate a WAV header can claim (0xffffffff), capped
+// to int on 32-bit targets.
+var maxWAVRate = int(min(uint64(math.MaxUint32), uint64(math.MaxInt)))
+
 func TestResamplePoly_RejectsImpracticalRatio(t *testing.T) {
 	in := promptTestSignal(48000, 64)
 
@@ -111,8 +115,8 @@ func TestResamplePoly_RejectsImpracticalRatio(t *testing.T) {
 		name     string
 		up, down int
 	}{
-		{"huge down", ExpectedSampleRate, 0xffffffff},
-		{"huge up", 0xffffffff, ExpectedSampleRate},
+		{"huge down", ExpectedSampleRate, maxWAVRate},
+		{"huge up", maxWAVRate, ExpectedSampleRate},
 		{"just past the limit", 1, resamplePolyMaxFactor + 1},
 		{"zero down", ExpectedSampleRate, 0},
 		{"negative up", -1, ExpectedSampleRate},
@@ -147,6 +151,29 @@ func TestResamplePoly_LimitFactorWorks(t *testing.T) {
 
 	if len(out) != 1 {
 		t.Errorf("len = %d, want 1", len(out))
+	}
+}
+
+// TestResamplePoly_LargeProductsFitInt resamples a 30 s prompt at 24001 Hz:
+// len·up and the zero-stuffed positions reach about 1.7e10, past int32, so
+// this fails on 32-bit targets unless they are computed in 64 bits.
+func TestResamplePoly_LargeProductsFitInt(t *testing.T) {
+	const rate = ExpectedSampleRate + 1
+
+	out, err := ResamplePoly(promptTestSignal(rate, VoicePromptMaxSec*rate), ExpectedSampleRate, rate)
+	if err != nil {
+		t.Fatalf("ResamplePoly: %v", err)
+	}
+
+	// ceil(720030 · 24000 / 24001) = 720000.
+	if want := VoicePromptMaxSec * ExpectedSampleRate; len(out) != want {
+		t.Fatalf("len = %d, want %d", len(out), want)
+	}
+
+	for i, v := range out {
+		if math.IsNaN(float64(v)) || math.Abs(float64(v)) > 2 {
+			t.Fatalf("out[%d] = %g", i, v)
+		}
 	}
 }
 

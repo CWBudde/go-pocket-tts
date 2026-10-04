@@ -328,8 +328,8 @@ export HF_TOKEN=...  # after accepting the terms of kyutai/pocket-tts
 `--model-safetensors` picks another checkpoint for the encoder, e.g. gated
 weights kept next to the ungated ones.
 
-The WAV prompt may have any sample rate and channel count (8/16/24/32-bit PCM or
-32/64-bit float). Like upstream `export-voice`, it is cut to 30 s, mixed down to
+The WAV prompt may have any sample rate up to 384 kHz and any channel count
+(8/16/24/32-bit PCM or 32/64-bit float). Like upstream `export-voice`, it is cut to 30 s, mixed down to
 mono, resampled to 24 kHz and ended on a short pause before encoding. Raw PCM
 input (any other extension) must be 24 kHz mono 16-bit little-endian.
 
