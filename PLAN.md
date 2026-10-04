@@ -454,9 +454,16 @@ Follow-ups:
       `synth` without `--voice` from `cmd/pockettts/`, where `voices/manifest.json` does not resolve. (Found
       2026-10-04.) (2026-10-04) — the test passes `--paths-voice-manifest` from `requireNativeSafetensorsVoices`, so it
       still covers the default voice path. `go test -tags integration ./...` is green locally again.
-- [ ] `TestDoctorFails_MissingVoiceFile` (`-tags integration`) passes for the wrong reason: its temp dir has no
+- [x] `TestDoctorFails_MissingVoiceFile` (`-tags integration`) passes for the wrong reason: its temp dir has no
       model or tokenizer, so doctor fails on those before the missing voice file matters. Point it at the real
       model/tokenizer and assert the voice-file failure. (Found 2026-10-04.)
+      (2026-10-04) — the test runs `doctor --backend native` on the real model and tokenizer with a temp manifest
+      listing the real `alba` and a missing voice, and asserts that the missing voice file is the only `FAIL:`
+      line. Dropping the missing voice from the manifest makes it fail. Skips without assets, like the test above.
+- [x] `doctor` checked a missing voice file relative to the working directory instead of the manifest directory
+      (`collectVoiceFiles` fell back to the raw manifest path), so it reported the wrong path and a file of the
+      same name in the CWD hid the missing voice. (Found 2026-10-04 by the test above.) (2026-10-04) — missing
+      files now resolve next to the manifest too; `TestCollectVoiceFiles_MissingFileResolvedRelativeToManifest`.
 - [ ] Multi-language server: `language` field in `ttsRequest`, `/voices?language=`, and a lazy-loaded
       language → `tts.Service` registry with an LRU cap (each model is ~220 MB of weights)
 - [ ] Web/WASM: language picker. `web/main.js` hard-codes the English model and tokenizer URLs.
