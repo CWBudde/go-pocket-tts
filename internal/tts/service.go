@@ -72,18 +72,7 @@ func NewService(cfg config.Config) (*Service, error) {
 
 	switch backend {
 	case config.BackendNative:
-		ops.SetConvWorkers(cfg.Runtime.ConvWorkers)
-
-		if w := cfg.Runtime.ConvWorkers; w > 1 {
-			slog.Info("conv parallelism enabled", "workers", w)
-		}
-
-		tensorWorkers, source := resolveTensorWorkers(cfg.Runtime)
-		tensor.SetWorkers(tensorWorkers)
-
-		if tensorWorkers > 1 {
-			slog.Info("tensor parallelism enabled", "workers", tensorWorkers, "source", source)
-		}
+		ApplyNativeWorkers(cfg.Runtime)
 
 		modelPath, err := resolveNativeModelPath(cfg)
 		if err != nil {
@@ -383,6 +372,24 @@ func resolveNativeModelPath(cfg config.Config) (string, error) {
 	}
 
 	return p, nil
+}
+
+// ApplyNativeWorkers sets the conv and tensor kernel parallelism of the native
+// runtime from --conv-workers and --runtime-workers. The native voice encoder
+// needs it too, as it runs without a Service.
+func ApplyNativeWorkers(cfg config.RuntimeConfig) {
+	ops.SetConvWorkers(cfg.ConvWorkers)
+
+	if w := cfg.ConvWorkers; w > 1 {
+		slog.Info("conv parallelism enabled", "workers", w)
+	}
+
+	tensorWorkers, source := resolveTensorWorkers(cfg)
+	tensor.SetWorkers(tensorWorkers)
+
+	if tensorWorkers > 1 {
+		slog.Info("tensor parallelism enabled", "workers", tensorWorkers, "source", source)
+	}
 }
 
 func resolveTensorWorkers(cfg config.RuntimeConfig) (int, string) {
