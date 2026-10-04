@@ -65,6 +65,12 @@ def main() -> int:
     torch.set_num_threads(1)
     torch.manual_seed(args.seed)
 
+    if args.config is not None and (args.weights is None or args.tokenizer is None):
+        # The Go test resolves an embedded config's files by language name; a
+        # custom config has none, so the fixture must name them.
+        print("--config needs --weights and --tokenizer", file=sys.stderr)
+        return 2
+
     if args.config is not None:
         config_path = Path(args.config)
         source_config = args.config
@@ -95,6 +101,11 @@ def main() -> int:
             "seed": args.seed,
         }
     }
+    if args.config is not None:
+        files = {"weights": args.weights.as_posix(), "tokenizer": args.tokenizer.as_posix()}
+        if args.voice is not None:
+            files["voices"] = args.voice.parent.as_posix()
+        fixture["source"]["files"] = files
     fixture["text"] = dump_text(torch, model, raw_text, prepared_text)
     fixture["flow_lm_prefill_step"] = dump_flow_lm_prefill_step(
         torch,
@@ -158,7 +169,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--upstream", type=Path, default=Path("original/pockettts"))
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--language", default="english_2026-01")
-    source.add_argument("--config", help="custom upstream YAML config instead of --language")
+    source.add_argument(
+        "--config",
+        help="custom upstream YAML config instead of --language (needs --weights and --tokenizer)",
+    )
     parser.add_argument(
         "--weights", type=Path, help="local checkpoint instead of the config's pinned one"
     )
