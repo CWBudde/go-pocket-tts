@@ -30,7 +30,8 @@ func conv1DFastGroups1(
 	stride, leftPadding, dilation int64,
 	outData []float32,
 ) {
-	tileRows := max(1, convTileFloats/int(inCh*kSize))
+	// An empty patch (no input channels) still yields the bias everywhere.
+	tileRows := max(1, convTileFloats/max(1, int(inCh*kSize)))
 	if int(outLen) <= tileRows {
 		conv1DIm2colFull(inputData, kernelData, biasData, batch, inCh, length, outCh, kSize, outLen,
 			stride, leftPadding, dilation, outData)

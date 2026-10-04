@@ -342,3 +342,24 @@ func TestConv1DTiledMatchesFullIm2col(t *testing.T) {
 		}
 	}
 }
+
+// TestConv1DZeroInputChannels: an empty patch (no input channels) gives the
+// bias at every position instead of dividing by the zero patch length.
+func TestConv1DZeroInputChannels(t *testing.T) {
+	for _, length := range []int64{4, 40000} {
+		input := mustTensorT(t, []float32{}, []int64{1, 0, length})
+		kernel := mustTensorT(t, []float32{}, []int64{2, 0, 3})
+		bias := mustTensorT(t, []float32{0.5, -1}, []int64{2})
+
+		out, err := Conv1D(input, kernel, bias, 1, 1, 1, 1)
+		if err != nil {
+			t.Fatalf("length %d: %v", length, err)
+		}
+
+		data := out.RawData()
+		if int64(len(data)) != 2*length || data[0] != 0.5 || data[len(data)-1] != -1 {
+			t.Fatalf("length %d: %d outputs, first %g, last %g; want %d outputs of the bias",
+				length, len(data), data[0], data[len(data)-1], 2*length)
+		}
+	}
+}
