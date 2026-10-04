@@ -2,6 +2,7 @@ package ops
 
 import (
 	"math"
+	"math/rand/v2"
 	"strings"
 	"testing"
 
@@ -426,4 +427,104 @@ func mustTensorB(b *testing.B, data []float32, shape []int64) *tensor.Tensor {
 	}
 
 	return t
+}
+
+// TestAttentionWithPositionsKeyWindow: with strictly increasing key positions
+// each query only visits its context window, and must give exactly what the
+// full masked loop over all keys gives.
+func TestAttentionWithPositionsKeyWindow(t *testing.T) {
+	const heads, d = 3, 8
+
+	cases := []struct {
+		name    string
+		posQ    []int64
+		posK    []int64
+		context int64
+	}{
+		{"mimi encoder context 250", arangeT(600), arangeT(600), 250},
+		{"context 1", arangeT(40), arangeT(40), 1},
+		{"no context", arangeT(80), arangeT(80), AttentionNoContext},
+		{"query offset past the keys", []int64{700, 701}, arangeT(600), 250},
+		{"queries before the first key", []int64{0, 1}, []int64{5, 6, 7}, 250},
+		{"gaps in the key positions", []int64{10, 400}, []int64{0, 3, 9, 150, 160, 399, 401}, 250},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if !keysStrictlyIncreasing(c.posK) {
+				t.Fatalf("posK %v should take the window path", c.posK)
+			}
+
+			tq, tk := len(c.posQ), len(c.posK)
+			rng := rand.New(rand.NewPCG(uint64(tq), uint64(tk)))
+			q := mustTensorT(t, randDataT(rng, int64(heads*tq*d)), []int64{1, heads, int64(tq), d})
+			k := mustTensorT(t, randDataT(rng, int64(heads*tk*d)), []int64{1, heads, int64(tk), d})
+			v := mustTensorT(t, randDataT(rng, int64(heads*tk*d)), []int64{1, heads, int64(tk), d})
+
+			full, err := attention4DPositionsKeys(q, k, v, c.posQ, c.posK, c.context, false)
+			if err != nil {
+				t.Fatalf("full loop: %v", err)
+			}
+
+			got, err := AttentionWithPositions(q, k, v, c.posQ, c.posK, c.context)
+			if err != nil {
+				t.Fatalf("window: %v", err)
+			}
+
+			want, gotData := full.RawData(), got.RawData()
+			for i := range want {
+				if gotData[i] != want[i] && !(math.IsNaN(float64(gotData[i])) && math.IsNaN(float64(want[i]))) {
+					t.Fatalf("out[%d] = %g, full loop %g", i, gotData[i], want[i])
+				}
+			}
+
+			ref := referencePositionAttention(q.RawData(), k.RawData(), v.RawData(), heads, tq, tk, d, d,
+				c.posQ, c.posK, c.context)
+			if !equalApprox(gotData, ref, 1e-5) {
+				t.Fatal("window path differs from the reference mask")
+			}
+		})
+	}
+}
+
+func TestKeysStrictlyIncreasing(t *testing.T) {
+	for _, c := range []struct {
+		posK []int64
+		want bool
+	}{
+		{arangeT(5), true},
+		{[]int64{3}, true},
+		{[]int64{-1, -1, 0, 1}, false},
+		{[]int64{0, 2, 2, 3}, false},
+		{[]int64{4, 0, 1, 2, 3}, false},
+	} {
+		if got := keysStrictlyIncreasing(c.posK); got != c.want {
+			t.Errorf("keysStrictlyIncreasing(%v) = %v, want %v", c.posK, got, c.want)
+		}
+	}
+}
+
+// TestAttentionWithPositionsRingBufferKeys: keys in ring-buffer order are not
+// sorted, so they must take the full masked loop.
+func TestAttentionWithPositionsRingBufferKeys(t *testing.T) {
+	const heads, d = 2, 4
+
+	posQ := []int64{6, 7}
+	posK := []int64{4, 5, 6, 7, 1, 2, 3}
+
+	rng := rand.New(rand.NewPCG(3, 5))
+	q := mustTensorT(t, randDataT(rng, int64(heads*len(posQ)*d)), []int64{1, heads, int64(len(posQ)), d})
+	k := mustTensorT(t, randDataT(rng, int64(heads*len(posK)*d)), []int64{1, heads, int64(len(posK)), d})
+	v := mustTensorT(t, randDataT(rng, int64(heads*len(posK)*d)), []int64{1, heads, int64(len(posK)), d})
+
+	got, err := AttentionWithPositions(q, k, v, posQ, posK, 4)
+	if err != nil {
+		t.Fatalf("attention: %v", err)
+	}
+
+	ref := referencePositionAttention(q.RawData(), k.RawData(), v.RawData(), heads, len(posQ), len(posK), d, d,
+		posQ, posK, 4)
+	if !equalApprox(got.RawData(), ref, 1e-5) {
+		t.Fatalf("ring-buffer keys: got %v, want %v", got.RawData(), ref)
+	}
 }

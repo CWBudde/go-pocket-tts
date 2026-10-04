@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -308,8 +309,45 @@ func attention4D(q, k, v *tensor.Tensor, causal bool, offset int64) (*tensor.Ten
 	return out, true, nil
 }
 
-//nolint:gocyclo,funlen // hot attention kernel; splitting adds per-call overhead and shared-state plumbing
 func attention4DPositions(q, k, v *tensor.Tensor, posQ, posK []int64, context int64) (*tensor.Tensor, error) {
+	return attention4DPositionsKeys(q, k, v, posQ, posK, context, keysStrictlyIncreasing(posK))
+}
+
+// keysStrictlyIncreasing reports whether every key position is above the one
+// before it, as in a full-sequence pass (Mimi passes pos, pos).
+func keysStrictlyIncreasing(posK []int64) bool {
+	for i := 1; i < len(posK); i++ {
+		if posK[i] <= posK[i-1] {
+			return false
+		}
+	}
+
+	return true
+}
+
+// keyWindow returns the key range [lo, hi) a query at posQ may attend to
+// when posK is strictly increasing: valid keys within context steps up to and
+// including posQ.
+func keyWindow(posK []int64, posQ, context int64) (int, int) {
+	first := int64(0)
+	if context >= 0 {
+		first = max(first, posQ-context+1)
+	}
+
+	lo := sort.Search(len(posK), func(i int) bool { return posK[i] >= first })
+	hi := sort.Search(len(posK), func(i int) bool { return posK[i] > posQ })
+
+	return lo, max(lo, hi)
+}
+
+// attention4DPositionsKeys is attention4DPositions; with window set, posK
+// must be strictly increasing and each query visits only its key window
+// instead of masking every key. Both add the same terms in the same order.
+//
+//nolint:gocyclo,funlen // hot attention kernel; splitting adds per-call overhead and shared-state plumbing
+func attention4DPositionsKeys(
+	q, k, v *tensor.Tensor, posQ, posK []int64, context int64, window bool,
+) (*tensor.Tensor, error) {
 	qShape := q.Shape()
 	kShape := k.Shape()
 	vShape := v.Shape()
@@ -405,8 +443,13 @@ func attention4DPositions(q, k, v *tensor.Tensor, posQ, posK []int64, context in
 
 			maxV := float32(math.Inf(-1))
 
-			for ki := range tkI {
-				if !positionMaskAllows(posQ[qi], posK[ki], context) {
+			kLo, kHi := 0, tkI
+			if window {
+				kLo, kHi = keyWindow(posK, posQ[qi], context)
+			}
+
+			for ki := kLo; ki < kHi; ki++ {
+				if !window && !positionMaskAllows(posQ[qi], posK[ki], context) {
 					scores[ki] = float32(math.Inf(-1))
 					continue
 				}
@@ -432,7 +475,7 @@ func attention4DPositions(q, k, v *tensor.Tensor, posQ, posK []int64, context in
 
 			var sum float64
 
-			for ki := range tkI {
+			for ki := kLo; ki < kHi; ki++ {
 				s := scores[ki]
 				if math.IsInf(float64(s), -1) {
 					scores[ki] = 0
@@ -450,7 +493,7 @@ func attention4DPositions(q, k, v *tensor.Tensor, posQ, posK []int64, context in
 			}
 
 			inv := float32(1.0 / sum)
-			for ki := range tkI {
+			for ki := kLo; ki < kHi; ki++ {
 				w := scores[ki] * inv
 				if w == 0 {
 					continue

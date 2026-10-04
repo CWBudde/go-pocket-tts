@@ -1,6 +1,9 @@
 package ops
 
 import (
+	"fmt"
+	"math"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
@@ -204,5 +207,138 @@ func TestConv1DErrors(t *testing.T) {
 			_, err := Conv1D(tc.input, tc.kernel, tc.bias, tc.stride, tc.padding, tc.dil, tc.groups)
 			assertErrContains(t, err, tc.wantErr)
 		})
+	}
+}
+
+// naiveConv1D is the textbook Conv1d (groups 1) with float64 accumulation.
+func naiveConv1D(in, kernel, bias []float32, batch, inCh, length, outCh, kSize, stride, leftPad, rightPad,
+	dilation int64,
+) []float32 {
+	outLen := (length+leftPad+rightPad-dilation*(kSize-1)-1)/stride + 1
+	out := make([]float32, batch*outCh*outLen)
+
+	for b := range batch {
+		for oc := range outCh {
+			for ox := range outLen {
+				var sum float64
+				if bias != nil {
+					sum = float64(bias[oc])
+				}
+
+				for ic := range inCh {
+					for kx := range kSize {
+						pos := ox*stride - leftPad + kx*dilation
+						if pos >= 0 && pos < length {
+							sum += float64(in[(b*inCh+ic)*length+pos]) * float64(kernel[(oc*inCh+ic)*kSize+kx])
+						}
+					}
+				}
+
+				out[(b*outCh+oc)*outLen+ox] = float32(sum)
+			}
+		}
+	}
+
+	return out
+}
+
+func randDataT(rng *rand.Rand, n int64) []float32 {
+	out := make([]float32, n)
+	for i := range out {
+		out[i] = rng.Float32()*2 - 1
+	}
+
+	return out
+}
+
+// TestConv1DLongInputMatchesNaive covers outputs much longer than one im2col
+// tile (the SEANet convs run at 24 kHz): every tile, the padded edges and
+// strided or dilated taps must match the naive conv.
+func TestConv1DLongInputMatchesNaive(t *testing.T) {
+	cases := []struct {
+		name                                string
+		batch, inCh, length, outCh, kSize   int64
+		stride, leftPad, rightPad, dilation int64
+		bias                                bool
+	}{
+		{"causal k7", 1, 16, 5000, 8, 7, 1, 6, 0, 1, true},
+		{"stride 4 k8 both pads", 1, 8, 9001, 16, 8, 4, 4, 3, 1, true},
+		{"dilation 3 batch 2", 2, 12, 4000, 6, 3, 1, 6, 6, 3, false},
+		{"pad wider than one tile row", 1, 4, 3000, 3, 33, 2, 40, 40, 1, true},
+	}
+
+	for _, c := range cases {
+		for _, workers := range []int{1, 4} {
+			t.Run(fmt.Sprintf("%s/workers=%d", c.name, workers), func(t *testing.T) {
+				SetConvWorkers(workers)
+				defer SetConvWorkers(0)
+
+				rng := rand.New(rand.NewPCG(uint64(c.length), uint64(c.kSize)))
+				in := randDataT(rng, c.batch*c.inCh*c.length)
+				kernel := randDataT(rng, c.outCh*c.inCh*c.kSize)
+
+				var (
+					bias  []float32
+					biasT *tensor.Tensor
+				)
+
+				if c.bias {
+					bias = randDataT(rng, c.outCh)
+					biasT = mustTensorT(t, bias, []int64{c.outCh})
+				}
+
+				got, err := conv1DWithAsymmetricPadding(
+					mustTensorT(t, in, []int64{c.batch, c.inCh, c.length}),
+					mustTensorT(t, kernel, []int64{c.outCh, c.inCh, c.kSize}),
+					biasT, c.stride, c.leftPad, c.rightPad, c.dilation, 1)
+				if err != nil {
+					t.Fatalf("conv1d: %v", err)
+				}
+
+				want := naiveConv1D(in, kernel, bias, c.batch, c.inCh, c.length, c.outCh, c.kSize,
+					c.stride, c.leftPad, c.rightPad, c.dilation)
+
+				gotData := got.RawData()
+				if len(gotData) != len(want) {
+					t.Fatalf("len = %d, want %d", len(gotData), len(want))
+				}
+
+				for i := range want {
+					if d := math.Abs(float64(gotData[i] - want[i])); d > 1e-4 {
+						t.Fatalf("out[%d] = %g, want %g (|diff| %.3g)", i, gotData[i], want[i], d)
+					}
+				}
+			})
+		}
+	}
+}
+
+// TestConv1DTiledMatchesFullIm2col: the tiled path computes every output from
+// the same patch and kernel row as the full im2col, so they agree bit for bit.
+func TestConv1DTiledMatchesFullIm2col(t *testing.T) {
+	SetConvWorkers(3)
+	defer SetConvWorkers(0)
+
+	const batch, inCh, length, outCh, kSize, stride, leftPad, dilation = 2, 6, 2500, 5, 5, 2, 4, 1
+
+	outLen := int64((length+leftPad-dilation*(kSize-1)-1)/stride + 1)
+	rng := rand.New(rand.NewPCG(7, 11))
+	in := randDataT(rng, batch*inCh*length)
+	kernel := randDataT(rng, outCh*inCh*kSize)
+	bias := randDataT(rng, outCh)
+
+	full := make([]float32, batch*outCh*outLen)
+	conv1DIm2colFull(in, kernel, bias, batch, inCh, length, outCh, kSize, outLen, stride, leftPad, dilation, full)
+
+	for _, tileRows := range []int{1, 7, 64, int(outLen) - 1} {
+		tiled := make([]float32, len(full))
+		conv1DIm2colTiled(in, kernel, bias, batch, inCh, length, outCh, kSize, outLen, stride, leftPad, dilation,
+			tiled, tileRows)
+
+		for i := range full {
+			if tiled[i] != full[i] {
+				t.Fatalf("tileRows %d: out[%d] = %g, full im2col %g", tileRows, i, tiled[i], full[i])
+			}
+		}
 	}
 }

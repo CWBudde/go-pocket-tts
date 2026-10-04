@@ -7,6 +7,11 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 )
 
+// convTileFloats bounds one worker's im2col tile (128 KiB) so the GEMM over it
+// stays in cache. A full im2col of a SEANet residual conv over a 30 s prompt
+// at 24 kHz would be about 550 MB.
+const convTileFloats = 1 << 15
+
 // conv1DFastGroups1 is the im2col fast path for Conv1D with groups=1.
 //
 // It rearranges the convolution into a GEMM by building a patch matrix
@@ -15,70 +20,143 @@ import (
 //
 //	out[oc, ox] = dotProduct(kernel[oc, :], imcol[ox, :]) + bias[oc]
 //
-// Both the kernel row and the im2col row are contiguous in memory, so the
-// AVX2/FMA dotProduct kernel runs at full throughput.
+// Both the kernel row and the im2col row are contiguous in memory. Short
+// outputs (the streaming decoder) build one im2col and split the output
+// channels across workers; long ones are cut into tiles of output positions,
+// each built and multiplied by one worker.
 func conv1DFastGroups1(
 	inputData, kernelData, biasData []float32,
 	batch, inCh, length, outCh, kSize, outLen,
 	stride, leftPadding, dilation int64,
 	outData []float32,
 ) {
+	tileRows := max(1, convTileFloats/int(inCh*kSize))
+	if int(outLen) <= tileRows {
+		conv1DIm2colFull(inputData, kernelData, biasData, batch, inCh, length, outCh, kSize, outLen,
+			stride, leftPadding, dilation, outData)
+
+		return
+	}
+
+	conv1DIm2colTiled(inputData, kernelData, biasData, batch, inCh, length, outCh, kSize, outLen,
+		stride, leftPadding, dilation, outData, tileRows)
+}
+
+func conv1DIm2colFull(
+	inputData, kernelData, biasData []float32,
+	batch, inCh, length, outCh, kSize, outLen,
+	stride, leftPadding, dilation int64,
+	outData []float32,
+) {
 	patchLen := int(inCh * kSize)
-	imcolSize := int(outLen) * patchLen
-
-	imcol := getScratch(imcolSize) // [outLen, inCh*kSize]
-	defer putScratch(imcol)
-
-	kSizeI := int(kSize)
 	outChI := int(outCh)
 	outLenI := int(outLen)
-	lenI := int(length)
+	inBatch := int(inCh * length)
 
-	for b := range batch {
-		// Zero im2col (ensures padding positions stay 0).
-		// getScratch already zeroed, but we must re-zero for b > 0.
-		if b > 0 {
-			for i := range imcol {
-				imcol[i] = 0
-			}
-		}
+	imcol := getScratch(int(outLen) * patchLen) // [outLen, inCh*kSize]
+	defer putScratch(imcol)
 
-		// Build im2col: for each (ic, kx) column, copy valid input positions.
-		// Iterating (ic, kx) in outer loops and ox in inner loop keeps the
-		// writes to imcol sequential (stride = patchLen across rows, consecutive
-		// columns within a row).
-		for ic := range inCh {
-			inBase := int(b*inCh+ic) * lenI
-			for kx := range kSize {
-				col := int(ic)*kSizeI + int(kx)
-				for ox := range outLen {
-					inPos := ox*stride - leftPadding + kx*dilation
-					if inPos >= 0 && inPos < length {
-						imcol[int(ox)*patchLen+col] = inputData[inBase+int(inPos)]
-					}
-				}
-			}
-		}
+	for b := range int(batch) {
+		fillIm2colRows(imcol, inputData[b*inBatch:(b+1)*inBatch], inCh, length, kSize,
+			stride, leftPadding, dilation, 0, outLenI)
 
 		// GEMM: kernel [outCh, patchLen] x imcol^T [patchLen, outLen] -> out [outCh, outLen].
 		// The oc loop is embarrassingly parallel: each output channel writes to
 		// a disjoint slice of outData and reads shared (immutable) imcol + kernel.
-		outBase := int(b) * outChI * outLenI
+		outB := outData[b*outChI*outLenI : (b+1)*outChI*outLenI]
 		parallelFor(outChI, getConvWorkers(), func(ocLo, ocHi int) {
-			for oc := ocLo; oc < ocHi; oc++ {
-				kernelRow := kernelData[oc*patchLen : (oc+1)*patchLen]
+			im2colGEMM(imcol, kernelData, biasData, patchLen, ocLo, ocHi, outB, outLenI, 0, outLenI)
+		})
+	}
+}
 
-				biasVal := float32(0)
-				if biasData != nil {
-					biasVal = biasData[oc]
-				}
+func conv1DIm2colTiled(
+	inputData, kernelData, biasData []float32,
+	batch, inCh, length, outCh, kSize, outLen,
+	stride, leftPadding, dilation int64,
+	outData []float32, tileRows int,
+) {
+	patchLen := int(inCh * kSize)
+	outChI := int(outCh)
+	outLenI := int(outLen)
+	inBatch := int(inCh * length)
+	tiles := (outLenI + tileRows - 1) / tileRows
 
-				outOC := outData[outBase+oc*outLenI : outBase+(oc+1)*outLenI]
-				for ox := range outLenI {
-					outOC[ox] = tensor.DotProduct(kernelRow, imcol[ox*patchLen:(ox+1)*patchLen]) + biasVal
-				}
+	for b := range int(batch) {
+		in := inputData[b*inBatch : (b+1)*inBatch]
+		outB := outData[b*outChI*outLenI : (b+1)*outChI*outLenI]
+
+		parallelFor(tiles, getConvWorkers(), func(tLo, tHi int) {
+			imcol := getScratch(tileRows * patchLen)
+			defer putScratch(imcol)
+
+			for tile := tLo; tile < tHi; tile++ {
+				ox0 := tile * tileRows
+				rows := min(tileRows, outLenI-ox0)
+				fillIm2colRows(imcol, in, inCh, length, kSize, stride, leftPadding, dilation, ox0, rows)
+				im2colGEMM(imcol, kernelData, biasData, patchLen, 0, outChI, outB, outLenI, ox0, rows)
 			}
 		})
+	}
+}
+
+// fillIm2colRows writes the im2col rows of output positions ox0..ox0+rows-1
+// of one batch item, one [inCh*kSize] patch per row; taps outside the input
+// are 0.
+func fillIm2colRows(
+	imcol, in []float32,
+	inCh, length, kSize, stride, leftPadding, dilation int64,
+	ox0, rows int,
+) {
+	kSizeI := int(kSize)
+	lenI := int(length)
+	patchLen := int(inCh) * kSizeI
+
+	for r := range rows {
+		start := int64(ox0+r)*stride - leftPadding
+		inside := start >= 0 && start+(kSize-1)*dilation < length
+		row := imcol[r*patchLen : (r+1)*patchLen]
+
+		for ic := range int(inCh) {
+			dst := row[ic*kSizeI : (ic+1)*kSizeI]
+			src := in[ic*lenI : (ic+1)*lenI]
+
+			if inside && dilation == 1 {
+				copy(dst, src[start:start+kSize])
+				continue
+			}
+
+			for kx := range dst {
+				pos := start + int64(kx)*dilation
+				if pos >= 0 && pos < length {
+					dst[kx] = src[pos]
+				} else {
+					dst[kx] = 0
+				}
+			}
+		}
+	}
+}
+
+// im2colGEMM computes output channels ocLo..ocHi-1 at positions
+// ox0..ox0+rows-1 from imcol rows 0..rows-1.
+func im2colGEMM(
+	imcol, kernelData, biasData []float32,
+	patchLen, ocLo, ocHi int,
+	out []float32, outLen, ox0, rows int,
+) {
+	for oc := ocLo; oc < ocHi; oc++ {
+		kernelRow := kernelData[oc*patchLen : (oc+1)*patchLen]
+
+		biasVal := float32(0)
+		if biasData != nil {
+			biasVal = biasData[oc]
+		}
+
+		outRow := out[oc*outLen+ox0 : oc*outLen+ox0+rows]
+		for r := range outRow {
+			outRow[r] = tensor.DotProduct(kernelRow, imcol[r*patchLen:(r+1)*patchLen]) + biasVal
+		}
 	}
 }
 
