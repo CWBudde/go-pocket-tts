@@ -1,7 +1,6 @@
 package native
 
 import (
-	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -129,27 +128,6 @@ func TestLatentToMimiAndDecode_RealCheckpoint(t *testing.T) {
 
 	if got := audio.Shape(); len(got) != 3 || got[0] != 1 || got[1] != 1 || got[2] <= 0 {
 		t.Fatalf("audio shape = %v", got)
-	}
-}
-
-func TestEncodeVoiceHook_NotImplemented(t *testing.T) {
-	path := requireCheckpoint(t)
-
-	m, err := LoadModelFromSafetensors(path, DefaultConfig())
-	if err != nil {
-		t.Fatalf("load model: %v", err)
-	}
-	defer m.Close()
-
-	audio, _ := tensor.New(make([]float32, 24000), []int64{1, 1, 24000})
-
-	_, err = m.EncodeVoiceHook(audio)
-	if err == nil {
-		t.Fatal("expected not implemented error")
-	}
-
-	if !errors.Is(err, ErrMimiEncoderNotImplemented) {
-		t.Fatalf("EncodeVoiceHook err = %v, want %v", err, ErrMimiEncoderNotImplemented)
 	}
 }
 
