@@ -7,17 +7,15 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math"
+	"runtime"
 	"sync"
 	"syscall/js"
 	"time"
 
 	"github.com/cwbudde/go-pocket-tts/internal/audio"
 	"github.com/cwbudde/go-pocket-tts/internal/config"
-	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
-	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/cwbudde/go-pocket-tts/internal/text"
-	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
 	"github.com/cwbudde/go-pocket-tts/internal/tts"
 )
 
@@ -62,13 +60,6 @@ type synthesizeOptions struct {
 	VoiceSafetensors   []byte
 }
 
-type nativeEngine struct {
-	runtime   tts.Runtime
-	tokenizer tokenizer.Tokenizer
-	// model is the config of the browser checkpoint (config.DefaultLanguage).
-	model *modelcfg.ModelConfig
-}
-
 var (
 	defaults = config.DefaultConfig()
 	engineMu sync.RWMutex
@@ -77,12 +68,13 @@ var (
 
 func main() {
 	kernel := map[string]any{
-		"version":    "0.4.0-wasm",
-		"sampleRate": audio.ExpectedSampleRate,
-		"loadModel":  js.FuncOf(loadModelAsync),
-		"normalize":  js.FuncOf(normalizeText),
-		"tokenize":   js.FuncOf(tokenizeText),
-		"synthesize": js.FuncOf(synthesizeAsync),
+		"version":     "0.5.0-wasm",
+		"sampleRate":  audio.ExpectedSampleRate,
+		"loadModel":   js.FuncOf(loadModelAsync),
+		"unloadModel": js.FuncOf(unloadModel),
+		"normalize":   js.FuncOf(normalizeText),
+		"tokenize":    js.FuncOf(tokenizeText),
+		"synthesize":  js.FuncOf(synthesizeAsync),
 	}
 
 	js.Global().Set("PocketTTSKernel", js.ValueOf(kernel))
@@ -147,6 +139,9 @@ func tokenizeText(_ js.Value, args []js.Value) any {
 //	          (tokenizer.model) or a Hugging Face tokenizer.json; the format
 //	          is sniffed from the bytes
 //	args[2] – Function (optional): progress callback
+//	args[3] – Object (optional): {config: "<model config name>"}, the
+//	          embedded model config the checkpoint belongs to; omitted or ""
+//	          selects config.DefaultLanguage
 func loadModelAsync(_ js.Value, args []js.Value) any {
 	promiseCtor := js.Global().Get("Promise")
 	var handler js.Func
@@ -177,8 +172,15 @@ func loadModelAsync(_ js.Value, args []js.Value) any {
 			progress.cb = args[2]
 		}
 
+		configName := ""
+		if len(args) > 3 && args[3].Type() == js.TypeObject {
+			if v := args[3].Get("config"); v.Type() == js.TypeString {
+				configName = v.String()
+			}
+		}
+
 		go func() {
-			res, err := loadModel(modelBytes, tokBytes, &progress)
+			res, err := loadModel(modelBytes, tokBytes, configName, &progress)
 			if err != nil {
 				reject.Invoke(err.Error())
 				return
@@ -192,37 +194,15 @@ func loadModelAsync(_ js.Value, args []js.Value) any {
 	return promiseCtor.New(handler)
 }
 
-func loadModel(modelSafetensors, tokenizerBytes []byte, progress *progressReporter) (map[string]any, error) {
-	mc, err := modelcfg.Lookup(config.DefaultLanguage)
+func loadModel(modelSafetensors, tokenizerBytes []byte, configName string, progress *progressReporter) (map[string]any, error) {
+	loaded, err := newEngine(modelSafetensors, tokenizerBytes, configName, progress.Emit)
 	if err != nil {
-		return nil, fmt.Errorf("model config: %w", err)
+		return nil, err
 	}
 
-	progress.Emit("tokenizer", 5, 100, "loading tokenizer")
-
-	tok, err := tokenizer.LoadBytes(tokenizerBytes, mc.FlowLM.LookupTable.NBins)
-	if err != nil {
-		return nil, fmt.Errorf("load tokenizer: %w", err)
-	}
-
-	progress.Emit("load", 20, 100, "opening safetensors checkpoint")
-	store, err := safetensors.OpenStoreFromBytes(modelSafetensors, safetensors.StoreOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("open model safetensors: %w", err)
-	}
-
-	progress.Emit("load", 50, 100, "building native model")
-	model, err := nativemodel.LoadModelFromStore(store, nativemodel.ConfigFor(mc))
-	if err != nil {
-		store.Close()
-		return nil, fmt.Errorf("load native model: %w", err)
-	}
-	runtime := tts.NewNativeSafetensorsRuntime(model)
-
-	newEngine := &nativeEngine{runtime: runtime, tokenizer: tok, model: mc}
 	engineMu.Lock()
 	oldEngine := engine
-	engine = newEngine
+	engine = loaded
 	engineMu.Unlock()
 
 	if oldEngine != nil && oldEngine.runtime != nil {
@@ -231,8 +211,26 @@ func loadModel(modelSafetensors, tokenizerBytes []byte, progress *progressReport
 
 	progress.Emit("load", 100, 100, "model ready")
 	return okResult(map[string]any{
+		"config":      loaded.name,
 		"model_bytes": len(modelSafetensors),
 	}), nil
+}
+
+// unloadModel drops the loaded model, so the page can free its memory before
+// it loads another config.
+func unloadModel(_ js.Value, _ []js.Value) any {
+	engineMu.Lock()
+	oldEngine := engine
+	engine = nil
+	engineMu.Unlock()
+
+	if oldEngine != nil && oldEngine.runtime != nil {
+		oldEngine.runtime.Close()
+	}
+
+	runtime.GC()
+
+	return okResult(map[string]any{})
 }
 
 func parseSynthOptions(args []js.Value) synthesizeOptions {
