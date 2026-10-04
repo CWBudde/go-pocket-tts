@@ -34,13 +34,18 @@ func newServeCmd() *cobra.Command {
 			}
 
 			// Other backends reject --default-voice at startup; don't download
-			// a voice for them first.
+			// or clone a voice for them first.
 			if backend == config.BackendNative {
-				cfg.Server.DefaultVoice, err = resolveServeDefaultVoice(
-					cfg.Server.DefaultVoice, userCacheVoiceFetcher(nil, os.Stdout))
+				var removeVoice func()
+
+				cfg.Server.DefaultVoice, removeVoice, err = resolveServeDefaultVoice(
+					cfg.Server.DefaultVoice, userCacheVoiceFetcher(nil, os.Stdout),
+					func(wav string) (string, func(), error) { return encodeWAVVoice(cfg, wav) })
 				if err != nil {
 					return err
 				}
+
+				defer removeVoice()
 			}
 
 			// The server loads the model itself, after it has checked the
@@ -63,26 +68,41 @@ func newServeCmd() *cobra.Command {
 
 // resolveServeDefaultVoice turns --default-voice into what the server takes:
 // a voice ID or .safetensors path passes through (the server resolves and
-// loads it at startup), and an https:// or hf:// voice is downloaded by
-// fetch. WAV prompts need the Mimi encoder, which the native backend lacks.
-func resolveServeDefaultVoice(ref string, fetch func(string) (string, error)) (string, error) {
+// loads it at startup), an https:// or hf:// voice is downloaded by fetch,
+// and a local WAV prompt is cloned once by encode. cleanup removes a cloned
+// voice when the server stops and is a no-op otherwise.
+func resolveServeDefaultVoice(
+	ref string,
+	fetch func(string) (string, error),
+	encode func(string) (string, func(), error),
+) (string, func(), error) {
 	ref = strings.TrimSpace(ref)
+	noCleanup := func() {}
 
-	if model.VoiceRefExt(ref) == ".wav" {
-		return "", fmt.Errorf("--default-voice %q: WAV voices are not supported yet (the native backend has no "+
-			"Mimi encoder); pass a .safetensors voice, e.g. from 'pockettts export-voice'", ref)
+	if isWAVVoice(ref) {
+		if model.IsRemoteVoice(ref) {
+			return "", nil, fmt.Errorf("--default-voice %q: only local WAV files can be cloned; download it first",
+				ref)
+		}
+
+		path, cleanup, err := encode(ref)
+		if err != nil {
+			return "", nil, fmt.Errorf("--default-voice: %w", err)
+		}
+
+		return path, cleanup, nil
 	}
 
 	if !model.IsRemoteVoice(ref) {
-		return ref, nil
+		return ref, noCleanup, nil
 	}
 
 	path, err := fetch(ref)
 	if err != nil {
-		return "", fmt.Errorf("--default-voice: %w", err)
+		return "", nil, fmt.Errorf("--default-voice: %w", err)
 	}
 
-	return path, nil
+	return path, noCleanup, nil
 }
 
 // userCacheVoiceFetcher downloads URL voices once into
