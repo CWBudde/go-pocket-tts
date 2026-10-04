@@ -638,9 +638,29 @@ Follow-ups:
       `TestNewDoctorConfig_GermanPasses`; an always-true check or counting the note as a failure each fail them.
       `pockettts doctor --language german` / default english: the note, exit 0. No gated checkpoint is available
       here, so the "available" path is covered by a synthetic file only.
-- [ ] `export-voice --language german` (ONNX encoder must be re-exported per language; see Phase 9).
+- [x] `export-voice --language german` (ONNX encoder must be re-exported per language; see Phase 9).
       The native Mimi encoder is still unimplemented (`internal/native/mimi.go`). With the english_2026-01
       `mimi_encoder.onnx` (512 wide) a german config now fails with `unexpected latent shape … [1,T,32] or [1,32,T]`.
+      (2026-10-04) — native Mimi encoder instead of a re-export: `native.VoiceEncoder` ports `encode_to_latent`
+      (pad to 1920-sample frames, SEANet encoder with strides 4/5/6, the 2-layer encoder transformer, the
+      replicate-padded stride-16 downsample) and `_encode_audio`'s `speaker_proj_weight` projection; it refuses
+      zeroed (ungated) encoder weights. `export-voice` uses it on the native backend (no ORT); native-onnx keeps the
+      ONNX graph. The prompt reader moved to `audio.ReadVoicePrompt`. `TestPythonParity_MimiEncoder` compares the
+      prepared prompt, the latent and the conditioning with upstream `41cbc84` for german (inner_dim 32) and
+      english_2026-01 (512) on gated weights (`scripts/dump_voice_encoder_parity.py`, synthetic 2.4 s prompt; worst
+      error 2.3% of Abs 2e-4 / Rel 1e-3); it skips without `models/gated/<language>` or `POCKETTTS_GATED_MODELS`.
+      Zero instead of replicate padding, ignoring the strides, loading `decoder_transformer`, dropping the projection
+      and dropping the zeroed-weights guard each fail a test. Real run: a German juergen synth (6.2 s) cloned with
+      the gated german weights in 1.9 s, then synthesized with the cloned voice (exit 0, 4.2 s of audio; not yet
+      judged by ear). The ungated `models/german` exits 1 with the gated-weights hint.
+- [ ] WAV voices without `export-voice`: `synth --voice x.wav` and `serve --default-voice x.wav` (still rejected in
+      `cmd/pockettts/serve.go` `resolveServeDefaultVoice`) can encode in-process with `native.VoiceEncoder` when the
+      loaded checkpoint is gated. (Found 2026-10-04.)
+- [ ] Native encoder speed: a 30 s prompt takes 11 s (376 frames). The encoder transformer runs at 200 Hz (about
+      6000 steps) and `ops.AttentionWithPositions` checks every key against the 250-step context; restrict the key
+      range per query. (Found 2026-10-04.)
+- [ ] Voice cloning in the WASM build (`cmd/pockettts-wasm` accepts voice safetensors only) and a native
+      `--format model-state` export (still the Python CLI). (Found 2026-10-04.)
 
 ## Phase 8 — Parity Fixtures & Tests
 
@@ -718,6 +738,8 @@ Follow-ups:
 - [ ] **Decide:** keep ONNX only as the voice-cloning encoder until the native Mimi encoder exists, or deprecate it.
       Upstream changes now have to be applied twice (Go + re-export), which is a strong argument for
       minimising it.
+      (2026-10-04) — the native Mimi encoder exists (Phase 7), so `export-voice` needs ONNX only on the native-onnx
+      backend; whether to deprecate ONNX is still open.
 
 ---
 
