@@ -27,18 +27,6 @@ jobs:
         with:
           go-version: 1.25.x
 
-      - name: Build PocketTTS CLIs
-        run: |
-          ls -la cmd
-          go build -o pockettts-tools ./cmd/pockettts-tools
-
-      - name: Download safetensors model assets
-        run: |
-          set -euo pipefail
-          ./pockettts-tools model download \
-            --hf-repo kyutai/pocket-tts-without-voice-cloning \
-            --out-dir models
-
       - name: Build Go wasm kernel
         run: |
           mkdir -p web/dist
@@ -47,22 +35,10 @@ jobs:
       - name: Copy Go wasm runtime JS
         run: cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" web/dist/wasm_exec.js
 
-      - name: Download voice safetensors
-        run: ./pockettts-tools voice download --out-dir voices
-
+      # The page fetches models, tokenizers and voices from Hugging Face at
+      # the revisions web/languages.json pins (go generate ./internal/webmanifest/).
       - name: Copy static web assets
-        run: cp web/index.html web/main.js web/dist/
-
-      - name: Bundle safetensors model into web app
-        run: |
-          mkdir -p web/dist/models
-          cp models/tts_b6369a24.safetensors web/dist/models/
-          cp models/tokenizer.model web/dist/models/
-
-      - name: Bundle voice safetensors into web app
-        run: |
-          mkdir -p web/dist/voices
-          cp voices/*.safetensors voices/manifest.json web/dist/voices/
+        run: cp web/index.html web/main.js web/languages.json web/dist/
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

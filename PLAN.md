@@ -376,8 +376,11 @@ All in `internal/tts/runtime_native_safetensors.go`, mirrored in `internal/onnx/
       and WASM pass the model config's `n_bins`; stageprof passes 0 (`DefaultConfig` has no model config).
       `TestLoad_VocabSize` (synthetic, both formats and loaders), `TestVocabSize_RealModels` (english + german
       `.model`/`.json` = 4000), `TestLoadTokenizer_VocabSizeMatchesNBins`.
-- [ ] `web/main.js` still fetches `./models/tokenizer.model`; switch the asset to `tokenizer.json` once the web
+- [x] `web/main.js` still fetches `./models/tokenizer.model`; switch the asset to `tokenizer.json` once the web
       app gets a language picker (Phase 6; `LoadBytes` already accepts both). (Found 2026-10-03.)
+      (2026-10-04) — done with the Phase 6 language picker: every config in `web/languages.json` points at its
+      `tokenizer.json` (`TestBuild_EveryConfigPinned`), `english_2026-01` the root `tokenizer.json@00eac05`; the
+      browser run loaded and synthesized with it.
 - [ ] With the json backend, user text containing literal `<s>`, `</s>`, `<unk>` or `<pad>` encodes them as
       special tokens (upstream does the same), and upstream's splitter decodes literal `<0xXX>` text via the
       tokenizers ByteFallback decoder, which Go's `spanText` does not emulate. Edge case only; note. (Found 2026-10-03.)
@@ -522,7 +525,7 @@ Follow-ups:
     German again each return a 24 kHz WAV with load/unload/free logged per switch; a German request still running
     while English loads is unloaded with `in_flight 1` and freed after it returns 200; `french` gets 400; a missing
     `german_24l` tokenizer, `cli`, an unknown language and `--server-max-languages 0` exit 1 at startup.
-- [ ] Web/WASM: language picker. `web/main.js` hard-codes the English model and tokenizer URLs.
+- [x] Web/WASM: language picker. `web/main.js` hard-codes the English model and tokenizer URLs.
       Decided (2026-10-04):
   - Offer all six embedded configs (`english_2026-01`, `english_2026-09`, `english_2026-09_24l`,
     `english_drifting_26-09`, `german`, `german_24l`). The `*_24l` models are ~670 MB downloads in the browser.
@@ -536,6 +539,27 @@ Follow-ups:
   - Voice caches are per config: the configs reuse voice IDs (`alba` etc.) with different files, so key
     `voiceBytes`/`voiceDownloads` in `web/main.js` by config and voice ID (or clear them on a switch and ignore
     in-flight downloads for the old config).
+  - (2026-10-04) — `internal/webmanifest` builds `web/languages.json` (`go generate ./internal/webmanifest/`)
+    from the CLI's pins: `model.LanguageManifest(…, VoiceRepo)` for the model (`english_2026-01` keeps
+    `tts_b6369a24.safetensors@d4fdd22`), the config's `tokenizer_path`, `model.VoiceManifestForLanguage` for the
+    voices, plus each config's default voice, temperature and demo text. The kernel's
+    `loadModel(model, tokenizer, progress, {config})` builds the engine from that config (`newEngine` in the
+    untagged `cmd/pockettts-wasm/engine.go`) and `unloadModel()` drops it. `web/main.js` gets a model picker: a
+    switch aborts the old downloads, unloads the old model, fetches the new one from Hugging Face and loads it;
+    kernel calls are queued, so only the last pick loads; voice caches are keyed by config and voice; the picker
+    is disabled during a synthesis, and a kernel that stops (out of memory) is reported with a reload hint. The
+    Pages workflow no longer downloads or bundles models and voices. Deviation, decided with the user:
+    `english_2026-09_24l` is left out of the catalog (see the follow-up below). `TestBuild_*`,
+    `TestCatalogFileUpToDate` (fails on a stale pin), `TestNewEngine_*` (`German` fails when the config name is
+    ignored). Real browser run (Chromium via Playwright, local static server): `english_2026-01`/alba, `german`/
+    juergen (90 frames, 7.2 s 24 kHz WAV, same as the CLI), `english_2026-09`, `english_drifting_26-09` and
+    `german_24l` (21 s load, 5.7 s audio) all synthesize; every model, tokenizer and voice request goes to
+    `huggingface.co`; switching german → english mid-download only calls `loadModel` for english; five switches
+    with three `german_24l` loads still synthesize.
+- [ ] `english_2026-09_24l` in the web app: its checkpoint is 1.3 GB (`german_24l` is 672 MB). It loads, but
+      synthesis runs out of 32-bit WASM memory in the Mimi decoder (4.27 GB in use; after `german_24l` the load
+      itself fails). Left out of `web/languages.json` (`tooLargeForBrowser`) until it fits, e.g. by not keeping
+      the copied checkpoint bytes alongside the decoded weights. (Found 2026-10-04.)
 - [ ] `german_24l` support (verify quality and speed; ~3× the weights)
 - [ ] Other upstream languages (french, italian, spanish, portuguese, dutch): only config + manifest work
       once German works
