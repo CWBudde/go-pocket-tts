@@ -171,3 +171,28 @@ func TestDecodePromptWAV_Rejects(t *testing.T) {
 		t.Error("garbage input: want error")
 	}
 }
+
+// A WAV header may claim any nonzero uint32 rate; one past
+// MaxPromptSampleRate must be rejected before its PCM is read or resampled.
+func TestDecodePromptWAV_RejectsImpracticalSampleRate(t *testing.T) {
+	for _, rate := range []uint32{MaxPromptSampleRate + 1, 0xffffffff} {
+		_, _, err := DecodePromptWAV(rawWAV(wavFormatPCM, rate, 1, 16, int16Bytes(1, 2, 3, 4)))
+		if !errors.Is(err, ErrFormatMismatch) {
+			t.Errorf("rate %d: err = %v, want ErrFormatMismatch", rate, err)
+		}
+	}
+}
+
+func TestDecodePromptWAV_AcceptsCommonSampleRates(t *testing.T) {
+	for _, rate := range []uint32{8000, 16000, 44100, 48000, MaxPromptSampleRate} {
+		samples, got, err := DecodePromptWAV(rawWAV(wavFormatPCM, rate, 1, 16, int16Bytes(1, 2, 3, 4)))
+		if err != nil {
+			t.Errorf("rate %d: %v", rate, err)
+			continue
+		}
+
+		if got != int(rate) || len(samples) != 4 {
+			t.Errorf("rate %d: got rate %d with %d samples, want %d with 4", rate, got, len(samples), rate)
+		}
+	}
+}

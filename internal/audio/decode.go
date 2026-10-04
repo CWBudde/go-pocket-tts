@@ -66,6 +66,7 @@ func DecodeWAV(data []byte) ([]float32, error) {
 // count, like upstream audio_read: channels are mixed down to mono by their
 // mean and the source rate is returned for resampling. On top of DecodeWAV's
 // formats it reads unsigned 8-bit PCM, scaled like libsndfile as (b−128)/128.
+// Rates above MaxPromptSampleRate are rejected before the PCM data is read.
 func DecodePromptWAV(data []byte) ([]float32, int, error) {
 	if len(data) == 0 {
 		return nil, 0, errors.New("empty WAV input")
@@ -78,6 +79,10 @@ func DecodePromptWAV(data []byte) ([]float32, int, error) {
 
 	if dec.SampleRate == 0 || dec.NumChans == 0 {
 		return nil, 0, fmt.Errorf("%w: sample rate %d, channels %d", ErrFormatMismatch, dec.SampleRate, dec.NumChans)
+	}
+
+	if dec.SampleRate > MaxPromptSampleRate {
+		return nil, 0, fmt.Errorf("%w: sample rate %d exceeds %d", ErrFormatMismatch, dec.SampleRate, MaxPromptSampleRate)
 	}
 
 	is8Bit := dec.WavAudioFormat == wavFormatPCM && dec.BitDepth == 8

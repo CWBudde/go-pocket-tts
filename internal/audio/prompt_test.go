@@ -22,9 +22,9 @@ func TestPrepareVoicePrompt_TruncatesAtSourceRateThenResamples(t *testing.T) {
 
 	orig := slices.Clone(in)
 
-	got := PrepareVoicePrompt(in, rate)
+	got := mustPrepareVoicePrompt(t, in, rate)
 
-	want := EndOnPause(ResamplePoly(in[:VoicePromptMaxSec*rate], ExpectedSampleRate, rate), ExpectedSampleRate)
+	want := EndOnPause(mustResamplePoly(t, in[:VoicePromptMaxSec*rate], ExpectedSampleRate, rate), ExpectedSampleRate)
 	if !slices.Equal(got, want) {
 		t.Errorf("output (%d samples) differs from truncate → resample → EndOnPause (%d samples)", len(got), len(want))
 	}
@@ -43,7 +43,42 @@ func TestPrepareVoicePrompt_TruncatesAtSourceRateThenResamples(t *testing.T) {
 func TestPrepareVoicePrompt_ModelRateIsEndOnPauseOnly(t *testing.T) {
 	in := append(tone(ExpectedSampleRate/2), make([]float32, ExpectedSampleRate/4)...)
 
-	if got, want := PrepareVoicePrompt(in, ExpectedSampleRate), EndOnPause(in, ExpectedSampleRate); !slices.Equal(got, want) {
+	if got, want := mustPrepareVoicePrompt(t, in, ExpectedSampleRate), EndOnPause(in, ExpectedSampleRate); !slices.Equal(got, want) {
 		t.Errorf("24 kHz prompt: got %d samples, want EndOnPause's %d", len(got), len(want))
 	}
+}
+
+func TestPrepareVoicePrompt_CommonRates(t *testing.T) {
+	for _, rate := range []int{8000, 16000, 44100, 48000, MaxPromptSampleRate} {
+		in := append(tone(rate/2), make([]float32, rate/4)...)
+
+		got := mustPrepareVoicePrompt(t, in, rate)
+
+		// 0.5 s of tone at 24 kHz plus the 80 ms pause, give or take the
+		// resampling filter's ringing into the silence.
+		const pause = ExpectedSampleRate * 8 / 100
+		if want := ExpectedSampleRate/2 + pause; len(got) < want || len(got) > want+ExpectedSampleRate/50 {
+			t.Errorf("rate %d: len = %d, want about %d", rate, len(got), want)
+		}
+	}
+}
+
+func TestPrepareVoicePrompt_RejectsImpracticalRate(t *testing.T) {
+	for _, rate := range []int{0, -8000, MaxPromptSampleRate + 1, 0xffffffff} {
+		_, err := PrepareVoicePrompt(make([]float32, 16), rate)
+		if err == nil {
+			t.Errorf("rate %d: want error", rate)
+		}
+	}
+}
+
+func mustPrepareVoicePrompt(t *testing.T, samples []float32, rate int) []float32 {
+	t.Helper()
+
+	out, err := PrepareVoicePrompt(samples, rate)
+	if err != nil {
+		t.Fatalf("PrepareVoicePrompt(rate %d): %v", rate, err)
+	}
+
+	return out
 }

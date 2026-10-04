@@ -273,7 +273,11 @@ func TestEncodeVoice_ResamplesAndDownmixesPrompt(t *testing.T) {
 
 	got := captureEncoderInput(t, path)
 
-	want := audio.PrepareVoicePrompt(mono, rate)
+	want, err := audio.PrepareVoicePrompt(mono, rate)
+	if err != nil {
+		t.Fatalf("PrepareVoicePrompt: %v", err)
+	}
+
 	if !slices.Equal(got, want) {
 		t.Fatalf("encoder input: %d samples, want %d (mean of both channels, resampled, ended on a pause)",
 			len(got), len(want))

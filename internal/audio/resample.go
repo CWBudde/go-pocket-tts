@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"fmt"
 	"math"
 	"slices"
 )
@@ -10,6 +11,11 @@ import (
 const (
 	resamplePolyKaiserBeta  = 5.0
 	resamplePolyHalfLenRate = 10
+
+	// resamplePolyMaxFactor caps max(up, down) after reduction. The filter has
+	// 2·10·max(up, down)+1 taps, so this bounds it to about 7.7 M taps
+	// (~90 MiB while it is built); MaxPromptSampleRate is chosen to fit.
+	resamplePolyMaxFactor = MaxPromptSampleRate
 )
 
 // ResamplePoly resamples samples by the rational factor up/down, a port of
@@ -19,17 +25,31 @@ const (
 // ceil(len·up/down) output samples. Like scipy on float32 input, the taps are
 // rounded to float32; the accumulation runs in float64.
 //
-// The input slice is not modified. up and down must be positive.
-func ResamplePoly(samples []float32, up, down int) []float32 {
+// The input slice is not modified. up and down must be positive, and
+// max(up, down) after reducing the ratio must not exceed
+// resamplePolyMaxFactor, or the filter would be impractically large.
+func ResamplePoly(samples []float32, up, down int) ([]float32, error) {
+	if up <= 0 || down <= 0 {
+		return nil, fmt.Errorf("resample: factors %d/%d must be positive", up, down)
+	}
+
 	g := gcd(up, down)
 	up /= g
 	down /= g
 
+	if up > resamplePolyMaxFactor || down > resamplePolyMaxFactor {
+		return nil, fmt.Errorf("resample: reduced ratio %d/%d exceeds the limit of %d", up, down, resamplePolyMaxFactor)
+	}
+
 	if up == down {
-		return slices.Clone(samples)
+		return slices.Clone(samples), nil
 	}
 
 	nIn := len(samples)
+	if nIn == 0 {
+		return []float32{}, nil
+	}
+
 	nOut := (nIn*up + down - 1) / down
 
 	maxRate := max(up, down)
@@ -63,7 +83,7 @@ func ResamplePoly(samples []float32, up, down int) []float32 {
 		out[o] = float32(acc)
 	}
 
-	return out
+	return out, nil
 }
 
 // resamplePolyFilter returns scipy's firwin(numtaps, cutoff, window=('kaiser',

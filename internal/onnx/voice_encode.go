@@ -30,7 +30,10 @@ func (e *Engine) EncodeVoice(audioPath string) ([]float32, error) {
 	// Like upstream get_state_for_audio_prompt with truncate=True (its CLI):
 	// keep 30 s, resample to 24 kHz and end the prompt on a pause, since one
 	// that stops on speech makes the model continue that utterance.
-	samples = audio.PrepareVoicePrompt(samples, sampleRate)
+	samples, err = audio.PrepareVoicePrompt(samples, sampleRate)
+	if err != nil {
+		return nil, fmt.Errorf("encode voice: %w", err)
+	}
 
 	embedding, err := e.encodeVoiceSamples(context.Background(), samples)
 	if err != nil {

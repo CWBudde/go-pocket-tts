@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"runtime"
 	"slices"
 	"testing"
 )
@@ -61,7 +62,7 @@ func TestResamplePoly_MatchesScipy(t *testing.T) {
 			in := promptTestSignal(c.FromRate, c.NIn)
 			orig := slices.Clone(in)
 
-			got := ResamplePoly(in, c.ToRate, c.FromRate)
+			got := mustResamplePoly(t, in, c.ToRate, c.FromRate)
 
 			if len(got) != len(c.Output) {
 				t.Fatalf("len = %d, want %d", len(got), len(c.Output))
@@ -94,7 +95,75 @@ func TestResamplePoly_MatchesScipy(t *testing.T) {
 func TestResamplePoly_ReducesRatio(t *testing.T) {
 	in := promptTestSignal(44100, 441)
 
-	if got, want := ResamplePoly(in, 24000, 44100), ResamplePoly(in, 80, 147); !slices.Equal(got, want) {
+	got, want := mustResamplePoly(t, in, 24000, 44100), mustResamplePoly(t, in, 80, 147)
+	if !slices.Equal(got, want) {
 		t.Error("24000/44100 and 80/147 differ")
 	}
+}
+
+// TestResamplePoly_RejectsImpracticalRatio: 24000/0xffffffff reduces to
+// 1600/286331153, whose filter would need 5.7e9 taps (~43 GiB). It must fail
+// fast, before allocating the filter.
+func TestResamplePoly_RejectsImpracticalRatio(t *testing.T) {
+	in := promptTestSignal(48000, 64)
+
+	cases := []struct {
+		name     string
+		up, down int
+	}{
+		{"huge down", ExpectedSampleRate, 0xffffffff},
+		{"huge up", 0xffffffff, ExpectedSampleRate},
+		{"just past the limit", 1, resamplePolyMaxFactor + 1},
+		{"zero down", ExpectedSampleRate, 0},
+		{"negative up", -1, ExpectedSampleRate},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var before, after runtime.MemStats
+
+			runtime.ReadMemStats(&before)
+
+			out, err := ResamplePoly(in, c.up, c.down)
+
+			runtime.ReadMemStats(&after)
+
+			if err == nil {
+				t.Fatalf("ResamplePoly(%d, %d) = %d samples, want error", c.up, c.down, len(out))
+			}
+
+			if alloc := after.TotalAlloc - before.TotalAlloc; alloc > 1<<20 {
+				t.Errorf("allocated %d bytes before failing, want < 1 MiB", alloc)
+			}
+		})
+	}
+}
+
+func TestResamplePoly_LimitFactorWorks(t *testing.T) {
+	out, err := ResamplePoly(promptTestSignal(48000, 64), 1, resamplePolyMaxFactor)
+	if err != nil {
+		t.Fatalf("ResamplePoly(1, %d): %v", resamplePolyMaxFactor, err)
+	}
+
+	if len(out) != 1 {
+		t.Errorf("len = %d, want 1", len(out))
+	}
+}
+
+func TestResamplePoly_EmptyInput(t *testing.T) {
+	out, err := ResamplePoly(nil, ExpectedSampleRate, 44100)
+	if err != nil || len(out) != 0 {
+		t.Errorf("ResamplePoly(nil) = %d samples, %v; want 0 samples, nil", len(out), err)
+	}
+}
+
+func mustResamplePoly(t *testing.T, samples []float32, up, down int) []float32 {
+	t.Helper()
+
+	out, err := ResamplePoly(samples, up, down)
+	if err != nil {
+		t.Fatalf("ResamplePoly(%d, %d): %v", up, down, err)
+	}
+
+	return out
 }
