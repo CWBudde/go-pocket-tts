@@ -29,6 +29,14 @@ from typing import Any
 # trivially right once the token ids match, so the full matrix is not needed.
 TEXT_EMBEDDING_ROWS = 3
 
+# Scale of the deterministic latents in the generated-range Mimi cases: values
+# span about ±1.65 with std ≈ 1, like normalized flow latents.
+GENERATED_LATENT_SCALE = 0.15
+
+# Audio samples kept from the end of the long Mimi case (two 12.5 Hz frames at
+# 24 kHz).
+MIMI_TAIL_SAMPLES = 3840
+
 
 def main() -> int:
     args = parse_args()
@@ -111,6 +119,33 @@ def main() -> int:
         dump_mimi_case(torch, init_states, model, frames, args.mimi_cache_length)
         for frames in parse_ints(args.mimi_frames)
     ]
+    # Generated latents are roughly unit-scale; the small cases above barely
+    # excite the decoder transformer's MLP.
+    fixture["mimi"].append(
+        dump_mimi_case(
+            torch,
+            init_states,
+            model,
+            args.mimi_generated_frames,
+            args.mimi_cache_length,
+            scale=GENERATED_LATENT_SCALE,
+            name=f"{args.mimi_generated_frames}_frames_generated_range",
+        )
+    )
+    # Long enough that the decoder transformer runs past its attention
+    # context; only the audio tail is stored to keep the fixture small.
+    fixture["mimi"].append(
+        dump_mimi_case(
+            torch,
+            init_states,
+            model,
+            args.mimi_long_frames,
+            args.mimi_cache_length,
+            scale=GENERATED_LATENT_SCALE,
+            name=f"{args.mimi_long_frames}_frames_past_context",
+            tail_samples=MIMI_TAIL_SAMPLES,
+        )
+    )
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(fixture, indent=1) + "\n", encoding="utf-8")
@@ -140,6 +175,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--flow-cache-length", type=int, default=64)
     parser.add_argument("--mimi-frames", default="1,2,4")
     parser.add_argument("--mimi-cache-length", type=int, default=64)
+    parser.add_argument(
+        "--mimi-generated-frames",
+        type=int,
+        default=4,
+        help="frames of the Mimi case with latents in the generated range",
+    )
+    parser.add_argument(
+        "--mimi-long-frames",
+        type=int,
+        default=130,
+        help="frames of the Mimi case that runs past the decoder's attention context",
+    )
     return parser.parse_args()
 
 
@@ -309,10 +356,13 @@ def dump_mimi_case(
     model: Any,
     frames: int,
     cache_length: int,
+    scale: float = 0.03,
+    name: str | None = None,
+    tail_samples: int | None = None,
 ) -> dict[str, Any]:
     flow = model.flow_lm
     mimi = model.mimi
-    latent = deterministic_tensor(torch, (1, frames, flow.ldim), scale=0.03)
+    latent = deterministic_tensor(torch, (1, frames, flow.ldim), scale=scale)
     with torch.no_grad():
         mimi_input = latent * flow.emb_std + flow.emb_mean
         quantized = mimi.quantizer(mimi_input.transpose(-1, -2))
@@ -323,12 +373,18 @@ def dump_mimi_case(
         # decode_from_latent applies the quantizer itself (upstream 3.x).
         audio = mimi.decode_from_latent(mimi_input, mimi_state)
 
-    return {
-        "name": f"{frames}_frames",
+    case = {
+        "name": name if name is not None else f"{frames}_frames",
         "latent": tensor_to_json(latent),
-        "latent_to_mimi": tensor_to_json(quantized),
-        "mimi_decode": tensor_to_json(audio),
     }
+    if tail_samples is None:
+        case["latent_to_mimi"] = tensor_to_json(quantized)
+        case["mimi_decode"] = tensor_to_json(audio)
+    else:
+        # The short cases already cover latent_to_mimi; the full long tensors
+        # would dominate the fixture size.
+        case["mimi_decode_tail"] = tensor_to_json(audio[..., -tail_samples:])
+    return case
 
 
 def deterministic_tensor(torch: Any, shape: tuple[int, ...], scale: float) -> Any:
