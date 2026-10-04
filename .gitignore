@@ -33,6 +33,7 @@ models/
 *.ogg
 *.flac
 !cmd/pockettts/testdata/silence_100ms.wav
+!internal/native/testdata/python_parity/voice_prompt.wav
 
 # OS specific files
 .DS_Store
