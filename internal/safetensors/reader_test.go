@@ -845,6 +845,38 @@ func TestHasMimiEncoderWeights_RangeBeyondFile(t *testing.T) {
 	}
 }
 
+// TestHasMimiEncoderWeights_CorruptEntryNextToTrainedOne checks that every
+// encoder entry is range-checked, also when a trained (non-zero) entry is
+// enough to answer: the header is a map, so the trained entry may come first.
+func TestHasMimiEncoderWeights_CorruptEntryNextToTrainedOne(t *testing.T) {
+	headerJSON, err := json.Marshal(map[string]tensorMeta{
+		"mimi.encoder.model.0.conv.weight": {DType: "F32", Shape: []int64{2}, Offsets: [2]int{0, 8}},
+		"mimi.encoder.model.3.conv.weight": {DType: "F32", Shape: []int64{16 << 20}, Offsets: [2]int{8, 8 + 64<<20}},
+	})
+	if err != nil {
+		t.Fatalf("marshal header: %v", err)
+	}
+
+	data := binary.LittleEndian.AppendUint64(nil, uint64(len(headerJSON)))
+	data = append(data, headerJSON...)
+	data = append(data, float32Bytes([]float32{1, 2})...)
+
+	path := filepath.Join(t.TempDir(), "model.safetensors")
+
+	err = os.WriteFile(path, data, 0o600)
+	if err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	// Map iteration order varies between calls; every order must fail.
+	for range 32 {
+		got, err := HasMimiEncoderWeights(path)
+		if err == nil || !strings.Contains(err.Error(), "exceed file size") {
+			t.Fatalf("HasMimiEncoderWeights = %v, %v; want the file-size error", got, err)
+		}
+	}
+}
+
 // TestHasMimiEncoderWeights_UngatedCheckpoints checks the downloaded
 // kyutai/pocket-tts-without-voice-cloning checkpoints, whose Mimi encoder is
 // zeroed.

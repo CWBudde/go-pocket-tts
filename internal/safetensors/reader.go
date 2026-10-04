@@ -229,17 +229,15 @@ func HasMimiEncoderWeights(path string) (bool, error) {
 
 	fileSize := info.Size()
 
-	var (
-		found bool
-		buf   []byte
-	)
+	// Validate every encoder entry before reading any: the header is a map,
+	// so stopping at the first trained tensor would leave the ranges of the
+	// rest unchecked, depending on iteration order.
+	var ranges [][2]int
 
 	for name, raw := range header {
 		if !strings.HasPrefix(name, mimiEncoderPrefix) {
 			continue
 		}
-
-		found = true
 
 		entry, err := parseHeaderEntry(raw)
 		if err != nil {
@@ -265,25 +263,31 @@ func HasMimiEncoderWeights(path string) (bool, error) {
 			)
 		}
 
-		size := entry.Offsets[1] - entry.Offsets[0]
+		ranges = append(ranges, entry.Offsets)
+	}
+
+	if len(ranges) == 0 {
+		return false, fmt.Errorf("no %s* tensors in %s", mimiEncoderPrefix, path)
+	}
+
+	var buf []byte
+
+	for _, r := range ranges {
+		size := r[1] - r[0]
 		if cap(buf) < size {
 			buf = make([]byte, size)
 		}
 
 		buf = buf[:size]
 
-		_, err = f.ReadAt(buf, dataStart+int64(entry.Offsets[0]))
+		_, err = f.ReadAt(buf, dataStart+int64(r[0]))
 		if err != nil {
-			return false, fmt.Errorf("read tensor %q: %w", name, err)
+			return false, fmt.Errorf("read tensor data at %v: %w", r, err)
 		}
 
 		if slices.ContainsFunc(buf, func(b byte) bool { return b != 0 }) {
 			return true, nil
 		}
-	}
-
-	if !found {
-		return false, fmt.Errorf("no %s* tensors in %s", mimiEncoderPrefix, path)
 	}
 
 	return false, nil
