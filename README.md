@@ -153,8 +153,10 @@ export HF_TOKEN=...  # or use --hf-token
 ./pockettts model download --hf-repo kyutai/pocket-tts
 ```
 
-`model download` also fetches the language's default voice (`alba` for
-English) next to the voice manifest the runtime reads (`--paths-voice-manifest`).
+`model download` also fetches the language's default voice next to the voice
+manifest the runtime reads (`--paths-voice-manifest`). For English that is
+the tracked `voices/manifest.json`, which lists all eight voices, so all of
+them are fetched there.
 `--voice <id>` (repeatable) picks other predefined voices, `--all-voices` fetches
 every one, and `--no-voices` skips them. Other languages download into their own
 directories; see [Languages](#languages).
@@ -190,8 +192,9 @@ Force CLI compatibility backend:
 ./pockettts synth --backend cli --text "Hello from PocketTTS" --out out.wav
 ```
 
-Without `--voice`, the native backends use the language's default voice
-(`alba` for English, `juergen` for German), like upstream. Override it for a
+Without `--voice`, the native backend uses the language's default voice
+(`alba` for English, `juergen` for German), like upstream. `native-onnx`
+cannot use these voice files and synthesizes without a voice. Override it for a
 single request:
 
 ```bash

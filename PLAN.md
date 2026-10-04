@@ -392,17 +392,20 @@ voices in that folder are German-model states.
 
 Minimal path (precomputed voices only; needs Phases 1, 3, 4 and Phase 5 byte fallback; tanh GELU from Phase 2):
 
-- [x] `pockettts model download --language german`: model, `tokenizer.model` and voice embeddings → lock file entries
+- [x] `pockettts model download --language german`: model, `tokenizer.json` and voice embeddings → lock file entries
       (2026-10-03) — `model download` now also fetches the language's default voice (`--voice id…`, `--all-voices`,
       `--no-voices`) into the configured voice manifest dir, recording `voices/<lang>/download-manifest.lock.json`
       and merging `manifest.json`; the voice-download core moved to `model.ResolveVoiceTarget`/`DownloadVoices`,
       which `pockettts-tools voice download` now calls. Real run `--language german`: model, `tokenizer.json`
       (the tokenizer since Phase 5) and `juergen` checksum-verified into both lock files. `TestModelDownloadVoices`,
       `TestModelDownloadCmd_VoiceFlagsAreExclusive`, `TestResolveVoiceTarget`, `TestDownloadVoices_RecordsLockAndIndex`.
+      (2026-10-04, review) — the flat `english_2026-01` layout keeps its tracked `voices/manifest.json`, which lists all
+      eight voices, so there `model download` fetches every voice unless `--voice` is given (else `doctor` failed on
+      the rest); `TestModelDownloadCmd_FlatManifestGetsEveryVoice`.
 - [x] `voices/german/manifest.json` with `juergen` as default (generate it from the HF tree listing)
       (2026-10-03) — the manifest is written by the voice download from the pinned checksums (generated from the HF
-      tree API). Like upstream, the default lives in code, not in the manifest: `synth` (native backends) and `serve`
-      now fall back to `modelcfg.DefaultVoice` (`juergen` for german, `alba` for English) when no voice is given, and
+      tree API). Like upstream, the default lives in code, not in the manifest: `synth` and `serve` (native-safetensors
+      only; the ONNX runtime rejects these model-state voices, so native-onnx stays voice-less) now fall back to `modelcfg.DefaultVoice` (`juergen` for german, `alba` for English) when no voice is given, and
       fail with a `pockettts model download` hint if it does not resolve, instead of generating voice-less.
       `bench` drives the Python CLI, which applies its own default. `TestResolveNativeVoice_*`,
       `TestNativeSynthesizer_DefaultVoice`. Real run: German demo text without `--voice` → 82 frames (87 with an
