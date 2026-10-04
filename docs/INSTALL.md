@@ -69,22 +69,40 @@ pockettts synth --backend cli --text "Hello" --out out.wav
 
 The native parity fixtures (`scripts/dump_python_parity.py`) and the
 model-state voice export fallback run against a local checkout of upstream
-PocketTTS in `original/pockettts` (gitignored). Check out the commit the port
-is synced to (see "Upstream alignment" in the README), not upstream `main`:
+PocketTTS in `original/pockettts` (gitignored). Check out the sync target
+(`41cbc84`, upstream 3.3.0 plus 13 commits; see `PLAN.md`), not upstream `main`:
 
 ```bash
 git clone https://github.com/kyutai-labs/pocket-tts original/pockettts
-git -C original/pockettts checkout 2dff8a2d1b3b21bf44ecf0084cc8ce79ab6d6bba
-cd original/pockettts && uv sync --all-extras && cd ../..
-original/pockettts/.venv/bin/python scripts/dump_python_parity.py \
-  --output tests/parity/native_runtime.json
-POCKETTTS_NATIVE_PY_FIXTURE=tests/parity/native_runtime.json go test ./internal/native
+git -C original/pockettts checkout 41cbc84af539ea78a804ffca5f9c6edc1a22ce44
+cd original/pockettts && UV_PYTHON=3.12 uv sync --no-dev && cd ../..
 ```
+
+The committed fixtures in `internal/native/testdata/python_parity/` run with
+`go test ./internal/native` (each skips when its local model is missing).
+Regenerate one from the local model, tokenizer and default voice, so Python and
+Go read the same files:
+
+```bash
+original/pockettts/.venv/bin/python scripts/dump_python_parity.py \
+  --language german \
+  --weights models/german/model.safetensors \
+  --tokenizer models/german/tokenizer.json \
+  --voice voices/german/juergen.safetensors \
+  --output internal/native/testdata/python_parity/german.json
+prettier -w internal/native/testdata/python_parity/german.json
+```
+
+For `english_2026-01` use `models/tts_b6369a24.safetensors`,
+`models/tokenizer.json` and `voices/alba.safetensors`. A fixture outside
+`testdata/` runs too when `POCKETTTS_NATIVE_PY_FIXTURE` points at it.
 
 Notes:
 
+- Upstream's `.python-version` says 3.10, but its scipy wheel for 3.10 does not
+  load on macOS 27 (`__DATA/__thread_bss` dyld error); `UV_PYTHON=3.12` avoids it.
 - Upstream's `pyproject.toml` sets `[tool.uv] exclude-newer = "7 days"`, so
   `uv sync` ignores package releases from the last week.
-- `uv sync` installs the `dev` dependency group by default. In newer upstream
-  versions (3.x) it pulls in training and evaluation packages (torchaudio,
-  transformers, UTMOS scoring); add `--no-dev` if you only need inference.
+- `--no-dev` skips the `dev` dependency group, which in 3.x pulls in training
+  and evaluation packages (torchaudio, transformers, UTMOS scoring). The parity
+  script only needs inference.
