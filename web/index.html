@@ -200,11 +200,14 @@
     <main>
       <section class="panel">
         <h1>PocketTTS Web Demo</h1>
-        <p class="subtitle">Go WASM + native safetensors pipeline.</p>
+        <p class="subtitle">Go WASM + native safetensors pipeline. Models load from Hugging Face.</p>
 
         <textarea id="text" placeholder="Type text here">Hello from PocketTTS in the browser.</textarea>
 
         <div class="controls-row">
+          <label for="language">Model</label>
+          <select id="language"></select>
+
           <label for="voice">Voice</label>
           <select id="voice"></select>
 
