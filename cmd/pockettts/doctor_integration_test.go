@@ -226,12 +226,12 @@ func setupTempVoiceManifest(t testing.TB, voiceFileExists bool) string {
 		t.Fatalf("MkdirAll voices/: %v", err)
 	}
 
-	voiceRelPath := filepath.Join("voices", "test.safetensors")
-	voiceAbsPath := filepath.Join(tmp, voiceRelPath)
+	// Manifest paths are relative to the manifest directory.
+	voiceAbsPath := filepath.Join(voiceDir, "test.safetensors")
 
 	manifest := map[string]any{
 		"voices": []map[string]any{
-			{"id": "test", "path": voiceRelPath, "license": "MIT"},
+			{"id": "test", "path": "test.safetensors", "license": "MIT"},
 		},
 	}
 	data, err := json.Marshal(manifest)
