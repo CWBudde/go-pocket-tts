@@ -434,7 +434,7 @@ Minimal path (precomputed voices only; needs Phases 1, 3, 4 and Phase 5 byte fal
       unresolvable `--voice` on the native backend, so generation ran without a voice (`german_24l` without a
       voice also stops at 17 frames). `resolveVoiceForNative` now fails when the manifest is missing or lacks the
       ID, pointing at `pockettts-tools voice download`. With the manifest: EOS at steps 26–35 (29–38 frames).
-- [ ] `serve --language german`: one language per process (same as upstream `serve`); add `--default-voice`
+- [x] `serve --language german`: one language per process (same as upstream `serve`); add `--default-voice`
       (#271: name | local wav/safetensors | URL, resolved at startup, fail fast)
       Decided (2026-10-04), its own PR before the multi-language server:
   - Accept a built-in voice name, a local `.safetensors` file, and `https://` URLs and `hf://` paths (reusing
@@ -460,6 +460,21 @@ Minimal path (precomputed voices only; needs Phases 1, 3, 4 and Phase 5 byte fal
     manifest, `http://` and `.wav` exit 1 at once; `--language german_24l` with the `german` juergen voice exits 1
     after the model loads (the old build started and answered 500). Remaining: WAV voices, which need the native Mimi encoder
     (Phase 7).
+  - (2026-10-04) — Local `.wav` default voices came with Phase 7 (`encodeWAVVoice`). Remote ones now too, as
+    upstream allows: an `https://` or `hf://…@rev` WAV is downloaded once with `model.FetchVoice` into the same
+    user cache and then cloned like a local prompt; only the temporary encoded voice is removed on shutdown, and a
+    failed download or encode stops `serve` at startup. `FetchVoice` kept appending `.safetensors`, so a cached WAV
+    would have been read as raw PCM; it now keeps the `.wav` name. `TestResolveServeDefaultVoice` (remote WAV and
+    remote WAV failures), `TestFetchVoice_CachesWAVPromptAsWAV`; encoding the URL without fetching, returning the
+    downloaded WAV unencoded and the old refusal each fail a test. Real run (gated german,
+    `hf://kyutai/tts-voices/alba-mackenna/casual.wav@323332d`): `POST /tts` without a voice answers 200 with 2.8 s
+    of audio, the temporary voice is gone after SIGINT (exit 0), the cached download stays and a restart reuses it;
+    the ungated checkpoint exits 1. `synth --voice` still refuses remote WAVs (and does not download remote
+    `.safetensors` voices either); see the follow-up below.
+- [ ] `synth --voice <URL>`: download remote voices (`.safetensors` and `.wav`) like `serve --default-voice`
+      instead of refusing remote WAVs and failing on remote `.safetensors` only after the model loads. Sharing
+      `resolveServeDefaultVoice` as one `resolveVoiceRef(ref, fetch, encode)` is about 20 lines; the fetcher must log
+      to stderr because `synth --out -` writes the WAV to stdout. (Found 2026-10-04.)
 - [x] `doctor` validates the selected language's files
       (2026-10-03) — `doctor` prints the language; on the native backends a missing voice manifest fails (it was
       silently skipped), the default voice must resolve, and native-safetensors loads the tokenizer with the model
@@ -683,8 +698,33 @@ Follow-ups:
       `TestBuildVoiceEncoder_NativeAppliesWorkers`; window bounds off by one, the window on unsorted keys, no zeroing
       of padded taps, a dropped tile row and no worker setup each fail a test. The encoder transformer's linear
       layers are now the largest share.
-- [ ] Voice cloning in the WASM build (`cmd/pockettts-wasm` accepts voice safetensors only) and a native
+- [x] Voice cloning in the WASM build (`cmd/pockettts-wasm` accepts voice safetensors only) and a native
       `--format model-state` export (still the Python CLI). (Found 2026-10-04.)
+      (2026-10-04) — Native export: on the native backend `export-voice --format model-state` encodes the prompt,
+      runs `Model.PromptVoice` (BOS before the voice, then the FlowLM prefill, like `get_state_for_audio_prompt`) and
+      writes `FlowLMState.VoiceModelState()`: per `transformer.layers.N.self_attn` an F32 `cache [2,1,T,H,Dh]` cut to
+      the offset, an I64 `offset` and an I64 `pad` of 0, which upstream reads as its own export (same names, dtypes
+      and shapes). The safetensors writer gained I64 (`Tensor.DType`); the other backends still call the Python CLI.
+      `TestFlowLMState_VoiceModelStateRoundTrip`, `TestFlowLMPromptVoice_BOSBeforeVoice`,
+      `TestVoiceModelStateExport_GenerationMatchesAudioPrompt{,_GatedGerman}` (temperature 0: bit-identical after the
+      round trip; within 1e-5 of the `audio_prompt` path, because the arm64 `MatMulTransB` blocks rows differently
+      when voice and text are prefilled apart), `TestPythonParity_VoiceModelState` (german and english_2026-01 rows 0,
+      1 and T−1 of every layer against upstream `41cbc84`, worst 4.3% of Abs 2e-4 / Rel 1e-3),
+      `TestExportVoiceModelStateNative_{GatedGerman,UngatedCheckpoint}`. An offset off by one, no BOS, an F32 offset,
+      an untrimmed cache and swapped K/V each fail a test. Real run: a German WAV exports in 0.6 s without Python,
+      `synth --voice` on it exits 0 (2.4 s of audio), upstream `_import_model_state` + `generate_audio` on it exits 0
+      (2.2 s); the ungated checkpoint exits 1 with the gated hint and writes nothing.
+      WASM: the engine builds the `VoiceEncoder` from the checkpoint store before freeing it (ungated: no encoder,
+      still synthesizes); `PocketTTSKernel.cloneVoice(wav)` runs `DecodePromptWAV` → `PrepareVoicePrompt` →
+      `Encode` and returns an `audio_prompt` embedding for `synthesize`. The page gets **Use local checkpoint** (the
+      gated `model.safetensors` is picked locally; no HF token in the page) and **Clone voice from WAV**.
+      `TestNewEngine_GatedCheckpointLoadsVoiceEncoder`, `TestNewEngine_ZeroedEncoderLoadsWithoutCloning`,
+      `TestNewEngine_GatedGermanClonesVoice`, `TestNewEngine_UngatedGermanSynthesizesWithoutCloning`,
+      `TestCloneVoice_{AudioPromptEmbedding,RejectsBadWAV}`; the encoder
+      built after the store is closed, no prompt preparation, the latent instead of the conditioning and an ungated
+      checkpoint failing the load each fail a test. Browser run (Chromium, local static server): german with the
+      local gated checkpoint, a 5 s WAV cloned to 37 frames, synthesis with it gives 7.0 s of audio; the ungated
+      checkpoint disables the clone button with the gated-repo hint; no console errors besides the favicon 404.
 
 ## Phase 8 — Parity Fixtures & Tests
 

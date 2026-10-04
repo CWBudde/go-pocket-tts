@@ -67,8 +67,9 @@ pockettts synth --backend cli --text "Hello" --out out.wav
 
 ## Parity setup (Python reference)
 
-The native parity fixtures (`scripts/dump_python_parity.py`) and the
-model-state voice export fallback run against a local checkout of upstream
+The native parity fixtures (`scripts/dump_python_parity.py`,
+`scripts/dump_voice_encoder_parity.py`) and the Python model-state voice export
+of the non-native backends run against a local checkout of upstream
 PocketTTS in `original/pockettts` (gitignored). Check out the sync target
 (`41cbc84`, upstream 3.3.0 plus 13 commits; see `PLAN.md`), not upstream `main`:
 

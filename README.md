@@ -340,7 +340,8 @@ prompt with the checkpoint they load (`--paths-model-path`), which must be the
 gated one, into a temporary voice file that is removed when the command ends;
 `serve` encodes it once at startup. A 30 s prompt takes about 5 s to encode with
 the default `--conv-workers 2` and about 2 s with `--conv-workers 8` (Apple M5
-Pro). Remote WAV prompts must be downloaded first.
+Pro). `serve` also takes a remote WAV prompt (see [Server](#server)); `synth`
+needs a local file.
 
 ```bash
 ./pockettts synth --language german --voice speaker.wav --text "Guten Tag." --out hallo.wav
@@ -351,13 +352,18 @@ The WAV prompt may have any sample rate up to 384 kHz and any channel count
 mono, resampled to 24 kHz and ended on a short pause before encoding. Raw PCM
 input (any other extension) must be 24 kHz mono 16-bit little-endian.
 
-To produce an upstream-compatible full model-state voice file, use the Python
-tooling fallback. Upstream voice `.safetensors` files are serialized prompted
-model state: transformer KV-cache tensors plus offsets such as
-`<module>/cache` and `<module>/offset`. They are not just raw audio embeddings.
+`--format=model-state` writes an upstream-compatible model-state voice file
+instead. Upstream voice `.safetensors` files are serialized prompted model
+state: per FlowLM attention layer the KV cache (`<module>/cache`, float32) and
+the `<module>/offset` and `<module>/pad` positions (int64), not raw audio
+embeddings. On the native backend Go encodes the prompt, prompts the FlowLM with
+it and writes that state itself, with the same gated weights as above; upstream
+`pocket-tts` loads the file like its own exports. The other backends run the
+upstream Python CLI instead (`--tts-cli-path`).
 
 ```bash
-./pockettts export-voice --format=model-state --input speaker.wav --out voices/my_voice.safetensors --tts-cli-path original/pockettts/.venv/bin/pocket-tts
+./pockettts export-voice --format=model-state --language german --input speaker.wav --out voices/german/my_voice.safetensors
+./pockettts export-voice --backend cli --format=model-state --input speaker.wav --out voices/my_voice.safetensors --tts-cli-path original/pockettts/.venv/bin/pocket-tts
 ```
 
 Compatibility summary:
@@ -382,7 +388,9 @@ or `--default-voice` (`server.default_voice`, `POCKETTTS_SERVER_DEFAULT_VOICE`).
 It takes a voice ID from the manifest, a local `.safetensors` file, a local
 `.wav` prompt (cloned once at startup with the gated weights, see
 [Export a voice](#export-a-voice)), an `https://` URL or a pinned
-`hf://<org>/<repo>/<path>@<revision>` reference. URL voices are downloaded once
+`hf://<org>/<repo>/<path>@<revision>` reference. A URL may point at a
+`.safetensors` voice or at a `.wav` prompt, which is then cloned like a local
+one. URL voices are downloaded once
 into `<user cache dir>/pockettts/voices/` (for example
 `~/Library/Caches/pockettts/voices/` on macOS) without a checksum check;
 redirects must stay on `https://`, and `hf://` downloads send `HF_TOKEN` when it
@@ -473,6 +481,15 @@ which the browser may serve from its HTTP cache. Each 6-layer model is a
 kernel frees the checkpoint bytes once the weights are decoded, so the 24-layer
 models fit in 32-bit WASM memory (4 GB).
 
+Voice cloning works in the browser too, but the ungated checkpoints the page
+downloads have zeroed encoder weights. Accept the terms of the gated
+`kyutai/pocket-tts` repo, download the selected config's `model.safetensors`
+yourself (e.g. `languages/german/model.safetensors`), and pick it with **Use
+local checkpoint**; the page never asks for a Hugging Face token. **Clone voice
+from WAV** then encodes a WAV prompt like `export-voice` (cut to 30 s, any rate
+and channel count) and adds it to the voice list for this session. With an
+ungated checkpoint the clone button stays disabled and the page says why.
+
 Run/deploy workflow:
 
 - GitHub Actions -> `Deploy Web App to GitHub Pages` -> `Run workflow`
@@ -511,8 +528,8 @@ Configuration is loaded in this order:
 4. Optional local config file named `pockettts.(yaml|yml|toml|json)` in the working directory
 
 `--config` always points to this Go port's config file. To use an upstream
-Python PocketTTS `.yaml` config with `--backend cli` or `export-voice
---format=model-state`, pass it via `--tts-cli-config-path`. For native Go
+Python PocketTTS `.yaml` config with `--backend cli` (including `export-voice
+--format=model-state` on that backend), pass it via `--tts-cli-config-path`. For native Go
 inference, point `--paths-model-path` at a local model `.safetensors` checkpoint
 and `--paths-tokenizer-model` at the matching tokenizer: a `tokenizer.json`
 (Hugging Face tokenizers) or a SentencePiece `tokenizer.model`, picked by the
