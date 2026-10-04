@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"syscall/js"
 	"time"
@@ -20,6 +21,10 @@ import (
 )
 
 const maxTokensPerChunk = 50
+
+// heapLimit keeps the Go heap below the 4 GB of 32-bit WASM memory: near it,
+// the GC collects instead of growing the heap to twice the live weights.
+const heapLimit = 3584 << 20
 
 type progressReporter struct {
 	cb js.Value
@@ -67,8 +72,10 @@ var (
 )
 
 func main() {
+	debug.SetMemoryLimit(heapLimit)
+
 	kernel := map[string]any{
-		"version":     "0.5.0-wasm",
+		"version":     "0.6.0-wasm",
 		"sampleRate":  audio.ExpectedSampleRate,
 		"loadModel":   js.FuncOf(loadModelAsync),
 		"unloadModel": js.FuncOf(unloadModel),
@@ -180,7 +187,12 @@ func loadModelAsync(_ js.Value, args []js.Value) any {
 		}
 
 		go func() {
-			res, err := loadModel(modelBytes, tokBytes, configName, &progress)
+			// Hand loadModel the only reference to the checkpoint copy, so
+			// it is freed once the weights are decoded.
+			data := modelBytes
+			modelBytes = nil
+
+			res, err := loadModel(data, tokBytes, configName, &progress)
 			if err != nil {
 				reject.Invoke(err.Error())
 				return
@@ -195,6 +207,8 @@ func loadModelAsync(_ js.Value, args []js.Value) any {
 }
 
 func loadModel(modelSafetensors, tokenizerBytes []byte, configName string, progress *progressReporter) (map[string]any, error) {
+	modelSize := len(modelSafetensors)
+
 	loaded, err := newEngine(modelSafetensors, tokenizerBytes, configName, progress.Emit)
 	if err != nil {
 		return nil, err
@@ -209,10 +223,14 @@ func loadModel(modelSafetensors, tokenizerBytes []byte, configName string, progr
 		oldEngine.runtime.Close()
 	}
 
+	// Free the checkpoint copy now, so synthesis reuses its memory instead of
+	// growing the WASM heap.
+	runtime.GC()
+
 	progress.Emit("load", 100, 100, "model ready")
 	return okResult(map[string]any{
 		"config":      loaded.name,
-		"model_bytes": len(modelSafetensors),
+		"model_bytes": modelSize,
 	}), nil
 }
 
