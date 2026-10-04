@@ -392,7 +392,8 @@ func TestRuntimeDeps_DefaultVoice(t *testing.T) {
 		`{"id":"juergen","path":"juergen.safetensors","license":"CC-BY-4.0"},`+
 		`{"id":"anna","path":"anna.safetensors","license":"CC-BY-4.0"},`+
 		`{"id":"broken","path":"corrupt.safetensors","license":"CC-BY-4.0"},`+
-		`{"id":"gone","path":"gone.safetensors","license":"CC-BY-4.0"}]}`), 0o644)
+		`{"id":"gone","path":"gone.safetensors","license":"CC-BY-4.0"},`+
+		`{"id":"de/anna.safetensors","path":"anna.safetensors","license":"CC-BY-4.0"}]}`), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -432,6 +433,7 @@ func TestRuntimeDeps_DefaultVoice(t *testing.T) {
 		"model default":             {setup{native, manifestPath, "juergen", ""}, juergen},
 		"--default-voice ID":        {setup{native, manifestPath, "juergen", "anna"}, anna},
 		"--default-voice path":      {setup{native, filepath.Join(dir, "absent.json"), "juergen", anna}, anna},
+		"path-like manifest ID":     {setup{native, manifestPath, "juergen", "de/anna.safetensors"}, anna},
 		"no model default":          {setup{native, manifestPath, "", ""}, ""},
 		"native-onnx gets no voice": {setup{config.BackendNativeONNX, manifestPath, "juergen", ""}, ""},
 	} {

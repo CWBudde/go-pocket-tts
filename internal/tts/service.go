@@ -254,6 +254,35 @@ func CheckVoiceFile(voicePath string) error {
 	return err
 }
 
+// voiceChecker is implemented by runtimes that can check voice conditioning
+// against their loaded model without generating audio.
+type voiceChecker interface {
+	checkVoice(v voiceConditioning) error
+}
+
+// CheckVoice loads the voice at voicePath like CheckVoiceFile and then primes
+// the loaded model with it the way synthesis does, so a voice made for
+// another model (e.g. a 6-layer voice state for a 24-layer model) fails here
+// instead of on the first request. Runtimes without such a check only get
+// the file check.
+func (s *Service) CheckVoice(voicePath string) error {
+	if strings.TrimSpace(voicePath) == "" {
+		return errors.New("voice path is empty")
+	}
+
+	v, err := loadVoiceConditioning(voicePath)
+	if err != nil {
+		return err
+	}
+
+	checker, ok := s.runtime.(voiceChecker)
+	if !ok {
+		return nil
+	}
+
+	return checker.checkVoice(v)
+}
+
 func loadVoiceConditioning(voicePath string) (voiceConditioning, error) {
 	if strings.TrimSpace(voicePath) == "" {
 		return voiceConditioning{}, nil

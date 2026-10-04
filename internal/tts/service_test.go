@@ -13,6 +13,7 @@ import (
 
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
+	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/cwbudde/go-pocket-tts/internal/text/texttest"
@@ -830,5 +831,36 @@ func TestCheckVoiceFile(t *testing.T) {
 		if err == nil {
 			t.Errorf("CheckVoiceFile(%q) = nil; want an error", path)
 		}
+	}
+}
+
+// CheckVoice also asks the runtime: a voice file that loads fine still fails
+// when the model cannot take it.
+func TestServiceCheckVoice_AsksTheRuntime(t *testing.T) {
+	voice := filepath.Join(t.TempDir(), "voice.safetensors")
+
+	err := safetensors.WriteFile(voice, []safetensors.Tensor{
+		{Name: "audio_prompt", Shape: []int64{1, 2, 3}, Data: []float32{1, 2, 3, 4, 5, 6}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = (&Service{}).CheckVoice(voice)
+	if err != nil {
+		t.Errorf("CheckVoice without a runtime = %v; want nil (only the file is checked)", err)
+	}
+
+	// A native runtime without a loaded flow model rejects every voice.
+	svc := &Service{runtime: &nativeSafetensorsRuntime{model: &nativemodel.Model{}}}
+
+	err = svc.CheckVoice(voice)
+	if err == nil || !strings.Contains(err.Error(), "flow_lm") {
+		t.Errorf("CheckVoice with an unloaded model = %v; want a flow_lm error", err)
+	}
+
+	err = svc.CheckVoice(filepath.Join(t.TempDir(), "missing.safetensors"))
+	if err == nil {
+		t.Error("CheckVoice(missing file) = nil; want an error")
 	}
 }

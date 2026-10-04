@@ -566,6 +566,19 @@ func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, Str
 			}
 		}
 
+		// The file loaded above; now check it fits the loaded model.
+		if defaultVoice != "" {
+			err := svc.CheckVoice(defaultVoice)
+			if err != nil {
+				if s.tts == nil {
+					svc.Close()
+				}
+
+				return nil, nil, 0, nil, fmt.Errorf("default voice %s does not fit the %s model: %w",
+					defaultVoice, s.cfg.TTS.Language, err)
+			}
+		}
+
 		workers := s.cfg.Server.Workers
 		if workers <= 0 {
 			workers = 2
@@ -604,8 +617,11 @@ func (s *Server) resolveDefaultVoice(vm *tts.VoiceManager) (string, error) {
 
 	const hint = "run 'pockettts model download' (same --language)"
 
+	// An exact manifest ID wins, as for request voices; otherwise a value
+	// that looks like a file is a path and anything else must be an ID.
 	path := ref
-	fromManifest := !strings.ContainsRune(ref, filepath.Separator) && !strings.HasSuffix(ref, ".safetensors")
+	fromManifest := hasVoiceID(vm, ref) ||
+		(!strings.ContainsRune(ref, filepath.Separator) && !strings.HasSuffix(ref, ".safetensors"))
 
 	if fromManifest {
 		if vm == nil {
@@ -630,6 +646,21 @@ func (s *Server) resolveDefaultVoice(vm *tts.VoiceManager) (string, error) {
 	}
 
 	return path, nil
+}
+
+// hasVoiceID reports whether the manifest (nil when unreadable) lists id.
+func hasVoiceID(vm *tts.VoiceManager, id string) bool {
+	if vm == nil {
+		return false
+	}
+
+	for _, v := range vm.ListVoices() {
+		if v.ID == id {
+			return true
+		}
+	}
+
+	return false
 }
 
 func chooseWorkerLimit(cfg config.Config, backend string) int {
