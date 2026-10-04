@@ -373,16 +373,16 @@ func TestNativeSynthesizer_DefaultVoice(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	newSynth := func(t *testing.T, manifest, defaultVoice string) *nativeSynthesizer {
+	newSynthFor := func(t *testing.T, backend, manifest, defaultVoice string) *nativeSynthesizer {
 		t.Helper()
 
 		cfg := config.DefaultConfig()
 		cfg.Paths.VoiceManifest = manifest
 		cfg.Model = &modelcfg.ModelConfig{DefaultVoice: defaultVoice}
 
-		synth, _, _, _, err := New(cfg, &tts.Service{}).runtimeDeps(config.BackendNative)
+		synth, _, _, _, err := New(cfg, &tts.Service{}).runtimeDeps(backend)
 		if err != nil {
-			t.Fatalf("runtimeDeps(native) error = %v", err)
+			t.Fatalf("runtimeDeps(%s) error = %v", backend, err)
 		}
 
 		ns, ok := synth.(*nativeSynthesizer)
@@ -391,6 +391,11 @@ func TestNativeSynthesizer_DefaultVoice(t *testing.T) {
 		}
 
 		return ns
+	}
+	newSynth := func(t *testing.T, manifest, defaultVoice string) *nativeSynthesizer {
+		t.Helper()
+
+		return newSynthFor(t, config.BackendNative, manifest, defaultVoice)
 	}
 
 	got, err := newSynth(t, manifestPath, "juergen").voicePath("")
@@ -406,5 +411,11 @@ func TestNativeSynthesizer_DefaultVoice(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "default voice") {
 			t.Errorf("%s: voicePath(no voice) = %q, %v; want an error naming the default voice", name, got, err)
 		}
+	}
+
+	// The ONNX runtime rejects the predefined model-state voices.
+	got, err = newSynthFor(t, config.BackendNativeONNX, manifestPath, "juergen").voicePath("")
+	if err != nil || got != "" {
+		t.Errorf("native-onnx voicePath(no voice) = %q, %v; want empty", got, err)
 	}
 }

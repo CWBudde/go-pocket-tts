@@ -18,14 +18,14 @@ func TestResolveNativeVoice_DefaultVoice(t *testing.T) {
 	cfg.Paths.VoiceManifest = manifestPath
 	cfg.Model = &modelcfg.ModelConfig{DefaultVoice: "alice"}
 
-	got, err := resolveNativeVoice(cfg, "")
+	got, err := resolveNativeVoice(cfg, config.BackendNative, "")
 	if err != nil || got != voiceFile {
 		t.Errorf("resolveNativeVoice(no voice) = %q, %v; want the default voice %q", got, err, voiceFile)
 	}
 
 	explicit := filepath.Join("elsewhere", "bob.safetensors")
 
-	got, err = resolveNativeVoice(cfg, explicit)
+	got, err = resolveNativeVoice(cfg, config.BackendNative, explicit)
 	if err != nil || got != explicit {
 		t.Errorf("resolveNativeVoice(%q) = %q, %v; want the explicit voice", explicit, got, err)
 	}
@@ -42,7 +42,7 @@ func TestResolveNativeVoice_MissingDefaultVoiceFails(t *testing.T) {
 		cfg.Paths.VoiceManifest = manifest
 		cfg.Model = &modelcfg.ModelConfig{DefaultVoice: "juergen"}
 
-		got, err := resolveNativeVoice(cfg, "")
+		got, err := resolveNativeVoice(cfg, config.BackendNative, "")
 		if err == nil || !strings.Contains(err.Error(), "default voice") || !strings.Contains(err.Error(), `"juergen"`) {
 			t.Errorf("%s: resolveNativeVoice = %q, %v; want an error naming the default voice juergen", name, got, err)
 		}
@@ -53,8 +53,23 @@ func TestResolveNativeVoice_MissingDefaultVoiceFails(t *testing.T) {
 func TestResolveNativeVoice_NoModelConfigKeepsEmptyVoice(t *testing.T) {
 	cfg := config.DefaultConfig()
 
-	got, err := resolveNativeVoice(cfg, "")
+	got, err := resolveNativeVoice(cfg, config.BackendNative, "")
 	if err != nil || got != "" {
 		t.Errorf("resolveNativeVoice without model config = %q, %v; want empty", got, err)
+	}
+}
+
+// The predefined voices are upstream model-state files, which the ONNX runtime
+// rejects, so native-onnx keeps generating without a voice.
+func TestResolveNativeVoice_ONNXGetsNoDefaultVoice(t *testing.T) {
+	manifestPath, _ := writeVoiceManifest(t)
+
+	cfg := config.DefaultConfig()
+	cfg.Paths.VoiceManifest = manifestPath
+	cfg.Model = &modelcfg.ModelConfig{DefaultVoice: "alice"}
+
+	got, err := resolveNativeVoice(cfg, config.BackendNativeONNX, "")
+	if err != nil || got != "" {
+		t.Errorf("resolveNativeVoice(native-onnx, no voice) = %q, %v; want empty", got, err)
 	}
 }

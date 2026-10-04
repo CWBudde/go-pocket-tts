@@ -174,7 +174,7 @@ func synthesizeForBackend(
 			return nil, errors.New("--tts-arg is only supported with --backend cli")
 		}
 
-		resolvedVoice, err := resolveNativeVoice(cfg, selectedVoice)
+		resolvedVoice, err := resolveNativeVoice(cfg, selectedBackend, selectedVoice)
 		if err != nil {
 			return nil, err
 		}
@@ -431,12 +431,14 @@ func resolveSynthBackend(flagBackend, cfgBackend string) (string, error) {
 	return config.NormalizeBackend(backend)
 }
 
-// resolveNativeVoice resolves voice for the native backends. Without one it
-// takes the model config's default voice (upstream
+// resolveNativeVoice resolves voice for the native backends. Without one,
+// native takes the model config's default voice (upstream
 // get_default_voice_for_language), which must then resolve too: generating
-// without a voice ends almost at once.
-func resolveNativeVoice(cfg config.Config, voice string) (string, error) {
-	if strings.TrimSpace(voice) != "" || cfg.Model == nil || cfg.Model.DefaultVoice == "" {
+// without a voice ends almost at once. native-onnx gets no default, as its
+// runtime rejects the predefined model-state voices.
+func resolveNativeVoice(cfg config.Config, backend, voice string) (string, error) {
+	if strings.TrimSpace(voice) != "" || backend != config.BackendNative ||
+		cfg.Model == nil || cfg.Model.DefaultVoice == "" {
 		return resolveVoiceForNative(cfg.Paths.VoiceManifest, voice)
 	}
 

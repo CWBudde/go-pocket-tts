@@ -130,11 +130,16 @@ func newDoctorConfig(cfg config.Config, backend string) doctor.Config {
 	nBins := 0
 
 	if cfg.Model != nil {
-		dcfg.DefaultVoice = cfg.Model.DefaultVoice
 		nBins = cfg.Model.FlowLM.LookupTable.NBins
 	}
 
 	if backend == config.BackendNative {
+		// Only native falls back to the default voice; the ONNX runtime
+		// rejects the predefined model-state voices.
+		if cfg.Model != nil {
+			dcfg.DefaultVoice = cfg.Model.DefaultVoice
+		}
+
 		dcfg.NativeModelPath = cfg.Paths.ModelPath
 		dcfg.TokenizerModelPath = cfg.Paths.TokenizerModel
 		dcfg.ValidateSafetensors = safetensors.ValidateModelKeys

@@ -554,7 +554,8 @@ func (s *Server) runtimeDeps(backend string) (Synthesizer, VoiceLister, int, Str
 		vm, _ := voices.(*tts.VoiceManager)
 		ns := &nativeSynthesizer{svc: svc, voices: vm, manifest: s.cfg.Paths.VoiceManifest}
 
-		if s.cfg.Model != nil {
+		// The ONNX runtime rejects the predefined model-state voices.
+		if backend == config.BackendNative && s.cfg.Model != nil {
 			ns.defaultVoice = s.cfg.Model.DefaultVoice
 		}
 

@@ -277,3 +277,18 @@ func TestNewDoctorConfig_ChecksLanguageFiles(t *testing.T) {
 		t.Errorf("missing voice manifest: failures = %v; want a voice manifest failure", result.Failures())
 	}
 }
+
+// native-onnx synthesizes without the default voice, so doctor does not
+// require it there.
+func TestNewDoctorConfig_ONNXSkipsDefaultVoice(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Model = &modelcfg.ModelConfig{DefaultVoice: "juergen"}
+
+	if got := newDoctorConfig(cfg, config.BackendNativeONNX).DefaultVoice; got != "" {
+		t.Errorf("native-onnx DefaultVoice = %q; want empty", got)
+	}
+
+	if got := newDoctorConfig(cfg, config.BackendNative).DefaultVoice; got != "juergen" {
+		t.Errorf("native DefaultVoice = %q; want juergen", got)
+	}
+}
