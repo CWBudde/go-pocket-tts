@@ -509,6 +509,11 @@ Follow-ups:
     language, freeing it after its last request; failed loads are retried. Requests pick a language with
     `language` on `/tts` and `/tts/stream`, `/voices?language=` reads the manifest without loading the model;
     unknown languages get 400, a failed load 500. The shared limit is the existing `--workers` semaphore.
+    Review fixes: a request takes its worker slot before it acquires (and maybe loads) a model, so queued
+    requests neither load models nor keep evicted ones alive; loads run on their own, so the request that started
+    one can give up too; a model still loading is never evicted (later requests join its load) and the cap is
+    enforced again when it finishes. `TestHandler_LanguageLoadsOnlyWithAWorkerSlot`,
+    `TestLanguageRegistry_{FirstLoaderCanCancel,LoadingModelIsNotEvicted}`.
     `TestLanguageRegistry_*` (fail when eviction ignores in-flight requests, when callers don't share a load,
     when failed loads are cached, or without the allow-list), `TestLanguageSpecs*`,
     `TestStart_OtherLanguageMissingAssetsFailsFast`, `TestHandler_Language*`, `TestHandler_VoicesByLanguage`,

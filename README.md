@@ -384,7 +384,8 @@ curl -s -X POST http://localhost:8080/tts \
   is unloaded for another language and freed once its running requests finish,
   so memory can briefly exceed the cap. The 6-layer models hold about 210–235 MB
   of weights each, the `*_24l` models about 670 MB.
-- `--workers` limits concurrent synthesis across all languages.
+- `--workers` limits concurrent synthesis across all languages; a request
+  loads its language's model only once it has a worker slot.
 - A language that is not served gets 400. With `--backend native-onnx` or `cli`,
   or with `--model-config`, only the startup model is served (`--model-config`:
   requests without a `language`).
