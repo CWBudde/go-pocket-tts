@@ -59,9 +59,10 @@ func TestModelDownloadVoices(t *testing.T) {
 		want     []string
 	}{
 		{"default voice of german", "german", nil, false, []string{"juergen"}},
-		{"default voice of the flat language", config.DefaultLanguage, nil, false, []string{"alba"}},
+		{"default voice of the flat language in another manifest", config.DefaultLanguage, nil, false, []string{"alba"}},
 		{"german_24l shares the german default", "german_24l", nil, false, []string{"juergen"}},
 		{"explicit voices win", "german", []string{"alba", "juergen"}, false, []string{"alba", "juergen"}},
+		{"explicit voices win over all", config.DefaultLanguage, []string{"marius"}, true, []string{"marius"}},
 		{"all voices", "german", nil, true, nil},
 	}
 	for _, tc := range tests {
@@ -103,5 +104,33 @@ func TestModelDownloadCmd_VoiceFlagsAreExclusive(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "none of the others can be") {
 			t.Errorf("model download %v: error = %v; want a mutually exclusive flags error", args, err)
 		}
+	}
+}
+
+// The tracked voices/manifest.json lists every flat-layout voice and is not
+// rewritten, so fetching only the default would leave doctor failing on the
+// rest.
+func TestModelDownloadCmd_FlatManifestGetsEveryVoice(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.TTS.Language = config.DefaultLanguage
+	cfg.Paths.VoiceManifest = config.PathsForLanguage(config.DefaultLanguage).VoiceManifest
+
+	mc, err := modelcfg.Lookup(config.DefaultLanguage)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg.Model = mc
+
+	_, got, err := modelDownloadVoiceTarget(cfg, nil, false)
+	if err != nil || got != nil {
+		t.Errorf("flat layout voices = %#v, %v; want nil (every voice)", got, err)
+	}
+
+	cfg.Paths.VoiceManifest = filepath.Join(t.TempDir(), "manifest.json")
+
+	_, got, err = modelDownloadVoiceTarget(cfg, nil, false)
+	if err != nil || !slices.Equal(got, []string{"alba"}) {
+		t.Errorf("own manifest voices = %#v, %v; want the default voice alba", got, err)
 	}
 }

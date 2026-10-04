@@ -27,6 +27,8 @@ func newModelDownloadCmd() *cobra.Command {
 		Short: "Download PocketTTS model files from Hugging Face",
 		Long: "Download the model and tokenizer of --language from Hugging Face, then its default voice\n" +
 			"(or --voice / --all-voices) next to the voice manifest (--paths-voice-manifest).\n" +
+			"The tracked voices/manifest.json of " + config.DefaultLanguage + " lists every voice, so there\n" +
+			"all of them are fetched unless --voice is given.\n" +
 			"Voices always come from the ungated repo, pinned like the model files.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := requireConfig()
@@ -52,12 +54,7 @@ func newModelDownloadCmd() *cobra.Command {
 				return nil
 			}
 
-			target, err := model.ResolveVoiceTarget(cfg, "", false)
-			if err != nil {
-				return err
-			}
-
-			selected, err := modelDownloadVoices(cfg, voices, allVoices)
+			target, selected, err := modelDownloadVoiceTarget(cfg, voices, allVoices)
 			if err != nil {
 				return err
 			}
@@ -77,7 +74,7 @@ func newModelDownloadCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&fallbackUngated, "fallback-ungated", true, "On gated access failure without token, retry with ungated repo")
 	cmd.Flags().StringVar(&fallbackRepo, "fallback-repo", "kyutai/pocket-tts-without-voice-cloning", "Ungated repo used when --fallback-ungated is enabled")
 
-	cmd.Flags().StringArrayVar(&voices, "voice", nil, "Predefined voice to download (repeatable; default: the language's default voice)")
+	cmd.Flags().StringArrayVar(&voices, "voice", nil, "Predefined voice to download (repeatable; default: the language's default voice, or every voice of the tracked voices/manifest.json)")
 	cmd.Flags().BoolVar(&allVoices, "all-voices", false, "Download every predefined voice of the language")
 	cmd.Flags().BoolVar(&noVoices, "no-voices", false, "Download only the model and tokenizer")
 	cmd.MarkFlagsMutuallyExclusive("voice", "all-voices", "no-voices")
@@ -121,16 +118,33 @@ func downloadModel(hfRepo, language, outDir, hfToken string, fallbackUngated boo
 	return nil
 }
 
-// modelDownloadVoices returns the voices model download fetches: every one
-// (nil) with --all-voices, the --voice ids, else the language's default voice
-// (upstream get_default_voice_for_language).
-func modelDownloadVoices(cfg config.Config, voices []string, all bool) ([]string, error) {
-	if all {
-		return nil, nil
+// modelDownloadVoiceTarget returns where model download puts the voices and
+// which ones it fetches.
+func modelDownloadVoiceTarget(cfg config.Config, voices []string, all bool) (model.VoiceTarget, []string, error) {
+	target, err := model.ResolveVoiceTarget(cfg, "", false)
+	if err != nil {
+		return model.VoiceTarget{}, nil, err
 	}
 
+	selected, err := modelDownloadVoices(cfg, voices, all || !target.WriteIndex)
+	if err != nil {
+		return model.VoiceTarget{}, nil, err
+	}
+
+	return target, selected, nil
+}
+
+// modelDownloadVoices returns the voices model download fetches: the --voice
+// ids, else every one (nil) with allByDefault (--all-voices, or the tracked
+// flat voices/manifest.json, which lists them all and is not rewritten), else
+// the language's default voice (upstream get_default_voice_for_language).
+func modelDownloadVoices(cfg config.Config, voices []string, allByDefault bool) ([]string, error) {
 	if len(voices) > 0 {
 		return voices, nil
+	}
+
+	if allByDefault {
+		return nil, nil
 	}
 
 	mc := cfg.Model
