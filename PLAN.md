@@ -475,10 +475,25 @@ Follow-ups:
 
 ## Phase 7 — Voice Cloning (audio → voice state) Updates
 
-- [ ] **`end_on_pause` (#334)** in `internal/audio`: 20 ms RMS frames, keep everything up to the last frame
+- [x] **`end_on_pause` (#334)** in `internal/audio`: 20 ms RMS frames, keep everything up to the last frame
       within 35 dB of the peak, 20 ms fade-out, append 80 ms of zeros. If the input is all silence, return it unchanged.
       Call it before encoding in `internal/onnx/voice_encode.go`. Port `tests/test_end_on_pause.py`.
-- [ ] WAV input: accept 24/32-bit int and float WAVs (`internal/audio/decode.go` rejects anything that isn't 16-bit).
+      (2026-10-04) — `audio.EndOnPause` ports upstream `audio_utils.py@41cbc84` 1:1 (fade = torch `linspace(1, 0, n)`
+      in float32; the input slice is not modified); `Engine.EncodeVoice` applies it after loading, so WAV and raw PCM
+      prompts are both covered. Like upstream, only input shorter than one 20 ms frame comes back unchanged; longer
+      all-silent input keeps its full frames and still gets the pause (upstream's test only asserts "returned whole").
+      `TestEndOnPause_{TrimsFadesAndPads,SilentInputIsReturnedWhole}` (the upstream tests),
+      `TestEndOnPause_DefaultsAndInputUntouched` (fails with a 60 dB floor), `TestEncodeVoice_EndsPromptOnPause`
+      (fails without the call).
+- [x] WAV input: accept 24/32-bit int and float WAVs (`internal/audio/decode.go` rejects anything that isn't 16-bit).
+      (2026-10-04) — `DecodeWAV` accepts 16/24/32-bit PCM and 32/64-bit IEEE float (also as WAVE_FORMAT_EXTENSIBLE);
+      8-bit, A-law, µ-law and GSM stay `ErrFormatMismatch`, and 24 kHz mono is still required. Float samples are
+      clamped to ±1 by `cwbudde/wav` (upstream's soundfile does not clamp). `TestDecodeWAV` int24/int32/float32/float64
+      (all fail with the old 16-bit check); a synth WAV converted with `afconvert` to `LEI24`/`LEI32`/`LEF32` decodes to
+      the same samples as the 16-bit original.
+- [ ] Prompt preprocessing before `end_on_pause`: upstream `get_state_for_audio_prompt` truncates the prompt to 30 s,
+      downmixes to mono and resamples to the Mimi rate (`convert_audio`, `resample_poly`); Go rejects anything that
+      isn't 24 kHz mono and never truncates. (Found 2026-10-04.)
 - [ ] Encoder latent dim from config (`mimiEncoderLatentDim = 512` hard-coded in
       `internal/onnx/voice_encode.go`; new models use 32) + `speaker_proj_weight [1024, inner_dim]`
 - [ ] Cloning for new models requires the gated `kyutai/pocket-tts` weights (`weights_path`); the ungated
