@@ -341,6 +341,26 @@ Start the server (HTTP):
 ./pockettts serve
 ```
 
+Requests without a `voice` use the default voice: the language's built-in voice,
+or `--default-voice` (`server.default_voice`, `POCKETTTS_SERVER_DEFAULT_VOICE`).
+It takes a voice ID from the manifest, a local `.safetensors` file, an
+`https://` URL or a pinned `hf://<org>/<repo>/<path>@<revision>` reference. URL
+voices are downloaded once into `<user cache dir>/pockettts/voices/` (for
+example `~/Library/Caches/pockettts/voices/` on macOS) without a checksum
+check; redirects must stay on `https://`, and `hf://` downloads send `HF_TOKEN`
+when it is set. WAV prompts are not accepted yet.
+
+```bash
+./pockettts serve --language german \
+  --default-voice hf://kyutai/pocket-tts-without-voice-cloning/languages/german/embeddings/anna.safetensors@1e08e6a23401048648a9fdcfde2f89348215c2a7
+```
+
+On `native-safetensors`, `serve` loads the default voice at startup and refuses
+to start when it cannot (for example before `pockettts model download`) or when
+it does not fit the model (for example a `german` voice state with
+`german_24l`). The other backends have no default voice and reject
+`--default-voice`.
+
 Health check:
 
 ```bash
@@ -431,6 +451,8 @@ runtime:
 server:
   listen_addr: ":8080"
   grpc_addr: ":9090"
+  # Voice for requests without one (ID, .safetensors path, https:// or hf:// URL)
+  # default_voice: "juergen"
 
 tts:
   # Backend: native-safetensors (default), native-onnx, or cli

@@ -12,6 +12,7 @@ import (
 
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/cwbudde/go-pocket-tts/internal/tts"
 )
 
@@ -353,36 +354,65 @@ func TestNativeSynthesizer_ResolvesManifestVoiceIDs(t *testing.T) {
 	}
 }
 
-// A request without a voice uses the model config's default voice, like
-// upstream serve (get_default_voice_for_language); without one the native
-// model stops almost at once.
-func TestNativeSynthesizer_DefaultVoice(t *testing.T) {
-	dir := t.TempDir()
-	voiceFile := filepath.Join(dir, "juergen.safetensors")
+// writeTestVoice writes a minimal voice embedding that tts.CheckVoiceFile
+// accepts.
+func writeTestVoice(t *testing.T, path string) {
+	t.Helper()
 
-	err := os.WriteFile(voiceFile, []byte("voice-data"), 0o644)
+	err := safetensors.WriteFile(path, []safetensors.Tensor{
+		{Name: "audio_prompt", Shape: []int64{1, 1, 2}, Data: []float32{1, 2}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A request without a voice uses the default voice, like upstream serve
+// (get_default_voice_for_language); without one the native model stops
+// almost at once. It is resolved and loaded once at startup, so a broken
+// default voice keeps serve from starting.
+func TestRuntimeDeps_DefaultVoice(t *testing.T) {
+	dir := t.TempDir()
+	juergen := filepath.Join(dir, "juergen.safetensors")
+	anna := filepath.Join(dir, "anna.safetensors")
+
+	writeTestVoice(t, juergen)
+	writeTestVoice(t, anna)
+
+	corrupt := filepath.Join(dir, "corrupt.safetensors")
+
+	err := os.WriteFile(corrupt, []byte("voice-data"), 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	manifestPath := filepath.Join(dir, "manifest.json")
 
-	err = os.WriteFile(manifestPath,
-		[]byte(`{"voices":[{"id":"juergen","path":"juergen.safetensors","license":"CC-BY-4.0"}]}`), 0o644)
+	err = os.WriteFile(manifestPath, []byte(`{"voices":[`+
+		`{"id":"juergen","path":"juergen.safetensors","license":"CC-BY-4.0"},`+
+		`{"id":"anna","path":"anna.safetensors","license":"CC-BY-4.0"},`+
+		`{"id":"broken","path":"corrupt.safetensors","license":"CC-BY-4.0"},`+
+		`{"id":"gone","path":"gone.safetensors","license":"CC-BY-4.0"},`+
+		`{"id":"de/anna.safetensors","path":"anna.safetensors","license":"CC-BY-4.0"}]}`), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	newSynthFor := func(t *testing.T, backend, manifest, defaultVoice string) *nativeSynthesizer {
+	type setup struct {
+		backend, manifest, modelDefault, flag string
+	}
+
+	runtimeDeps := func(t *testing.T, s setup) (*nativeSynthesizer, error) {
 		t.Helper()
 
 		cfg := config.DefaultConfig()
-		cfg.Paths.VoiceManifest = manifest
-		cfg.Model = &modelcfg.ModelConfig{DefaultVoice: defaultVoice}
+		cfg.Paths.VoiceManifest = s.manifest
+		cfg.Model = &modelcfg.ModelConfig{DefaultVoice: s.modelDefault}
+		cfg.Server.DefaultVoice = s.flag
 
-		synth, _, _, _, err := New(cfg, &tts.Service{}).runtimeDeps(backend)
+		synth, _, _, _, err := New(cfg, &tts.Service{}).runtimeDeps(s.backend)
 		if err != nil {
-			t.Fatalf("runtimeDeps(%s) error = %v", backend, err)
+			return nil, err
 		}
 
 		ns, ok := synth.(*nativeSynthesizer)
@@ -390,32 +420,72 @@ func TestNativeSynthesizer_DefaultVoice(t *testing.T) {
 			t.Fatalf("synth = %T; want *nativeSynthesizer", synth)
 		}
 
-		return ns
-	}
-	newSynth := func(t *testing.T, manifest, defaultVoice string) *nativeSynthesizer {
-		t.Helper()
-
-		return newSynthFor(t, config.BackendNative, manifest, defaultVoice)
+		return ns, nil
 	}
 
-	got, err := newSynth(t, manifestPath, "juergen").voicePath("")
-	if err != nil || got != voiceFile {
-		t.Errorf("voicePath(no voice) = %q, %v; want the default voice %q", got, err, voiceFile)
-	}
+	native := config.BackendNative
 
-	for name, ns := range map[string]*nativeSynthesizer{
-		"not in manifest":  newSynth(t, manifestPath, "alba"),
-		"missing manifest": newSynth(t, filepath.Join(dir, "absent.json"), "juergen"),
+	for name, tc := range map[string]struct {
+		setup
+
+		want string
+	}{
+		"model default":             {setup{native, manifestPath, "juergen", ""}, juergen},
+		"--default-voice ID":        {setup{native, manifestPath, "juergen", "anna"}, anna},
+		"--default-voice path":      {setup{native, filepath.Join(dir, "absent.json"), "juergen", anna}, anna},
+		"path-like manifest ID":     {setup{native, manifestPath, "juergen", "de/anna.safetensors"}, anna},
+		"no model default":          {setup{native, manifestPath, "", ""}, ""},
+		"native-onnx gets no voice": {setup{config.BackendNativeONNX, manifestPath, "juergen", ""}, ""},
 	} {
+		ns, err := runtimeDeps(t, tc.setup)
+		if err != nil {
+			t.Errorf("%s: runtimeDeps error = %v", name, err)
+			continue
+		}
+
 		got, err := ns.voicePath("")
-		if err == nil || !strings.Contains(err.Error(), "default voice") {
-			t.Errorf("%s: voicePath(no voice) = %q, %v; want an error naming the default voice", name, got, err)
+		if err != nil || got != tc.want {
+			t.Errorf("%s: voicePath(no voice) = %q, %v; want %q", name, got, err, tc.want)
 		}
 	}
 
-	// The ONNX runtime rejects the predefined model-state voices.
-	got, err = newSynthFor(t, config.BackendNativeONNX, manifestPath, "juergen").voicePath("")
-	if err != nil || got != "" {
-		t.Errorf("native-onnx voicePath(no voice) = %q, %v; want empty", got, err)
+	for name, tc := range map[string]struct {
+		setup
+
+		errSub string
+	}{
+		"model default not in manifest":  {setup{native, manifestPath, "alba", ""}, "model download"},
+		"missing manifest":               {setup{native, filepath.Join(dir, "absent.json"), "juergen", ""}, "model download"},
+		"voice file missing":             {setup{native, manifestPath, "gone", ""}, "model download"},
+		"corrupt voice file":             {setup{native, manifestPath, "broken", ""}, "default voice"},
+		"--default-voice unknown ID":     {setup{native, manifestPath, "juergen", "nobody"}, "--default-voice"},
+		"--default-voice missing path":   {setup{native, manifestPath, "juergen", filepath.Join(dir, "x.safetensors")}, "--default-voice"},
+		"--default-voice on native-onnx": {setup{config.BackendNativeONNX, manifestPath, "juergen", "anna"}, "native-safetensors"},
+		"--default-voice on cli":         {setup{config.BackendCLI, manifestPath, "juergen", "anna"}, "native-safetensors"},
+	} {
+		_, err := runtimeDeps(t, tc.setup)
+		if err == nil || !strings.Contains(err.Error(), tc.errSub) {
+			t.Errorf("%s: runtimeDeps error = %v; want one containing %q", name, err, tc.errSub)
+		}
+	}
+}
+
+// Start must fail before listening when the default voice cannot be loaded.
+func TestStart_BrokenDefaultVoiceFailsFast(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Server.ListenAddr = "127.0.0.1:0"
+	cfg.Paths.VoiceManifest = filepath.Join(t.TempDir(), "absent.json")
+	cfg.Model = &modelcfg.ModelConfig{DefaultVoice: "juergen"}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := New(cfg, &tts.Service{}).Start(ctx)
+	if err == nil || !strings.Contains(err.Error(), "juergen") {
+		t.Fatalf("Start error = %v; want a default voice error", err)
+	}
+
+	if ctx.Err() != nil {
+		t.Fatal("Start blocked until the context ended; want an immediate error")
 	}
 }

@@ -48,6 +48,10 @@ type ServerConfig struct {
 	ShutdownTimeout int    `mapstructure:"shutdown_timeout_secs"`
 	MaxTextBytes    int    `mapstructure:"max_text_bytes"`
 	RequestTimeout  int    `mapstructure:"request_timeout_secs"`
+	// DefaultVoice replaces the model config's default voice for requests
+	// without one: a voice ID, a .safetensors path, or an https:// or hf://
+	// URL that serve downloads into the user cache.
+	DefaultVoice string `mapstructure:"default_voice"`
 }
 
 type TTSConfig struct {
@@ -156,6 +160,9 @@ func RegisterFlags(fs *pflag.FlagSet, defaults Config) {
 	fs.Int("shutdown-timeout", defaults.Server.ShutdownTimeout, "Graceful shutdown drain timeout in seconds")
 	fs.Int("max-text-bytes", defaults.Server.MaxTextBytes, "Maximum POST /tts text size in bytes")
 	fs.Int("request-timeout", defaults.Server.RequestTimeout, "Per-request synthesis timeout in seconds")
+	fs.String("default-voice", defaults.Server.DefaultVoice,
+		"serve: voice for requests without one (ID, .safetensors path, https:// or hf://…@rev URL); "+
+			"defaults to the language's built-in voice")
 	fs.String(
 		"backend",
 		defaults.TTS.Backend,
@@ -404,6 +411,7 @@ func setDefaults(v *viper.Viper, c Config) {
 	v.SetDefault("server.shutdown_timeout_secs", c.Server.ShutdownTimeout)
 	v.SetDefault("server.max_text_bytes", c.Server.MaxTextBytes)
 	v.SetDefault("server.request_timeout_secs", c.Server.RequestTimeout)
+	v.SetDefault("server.default_voice", c.Server.DefaultVoice)
 	v.SetDefault("tts.backend", c.TTS.Backend)
 	v.SetDefault("tts.language", c.TTS.Language)
 	v.SetDefault("tts.model_config", c.TTS.ModelConfigPath)
@@ -455,6 +463,7 @@ var keyBindings = []keyBinding{
 	{key: "server.shutdown_timeout_secs", flag: "shutdown-timeout"},
 	{key: "server.max_text_bytes", flag: "max-text-bytes"},
 	{key: "server.request_timeout_secs", flag: "request-timeout"},
+	{key: "server.default_voice", flag: "default-voice"},
 	{key: "tts.backend", flag: "backend"},
 	{key: "tts.language", flag: "language"},
 	{key: "tts.model_config", flag: "model-config"},

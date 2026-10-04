@@ -14,6 +14,7 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
 func TestNewNativeSafetensorsRuntime(t *testing.T) {
@@ -313,5 +314,66 @@ func TestGenerateAudio_FadesInChunkStart_RealCheckpoint(t *testing.T) {
 		if pcm[i] != w {
 			t.Fatalf("pcm[%d] = %v, want %v (decoded %v, fade over %d samples)", i, pcm[i], w, want[i], n)
 		}
+	}
+}
+
+// checkVoice primes the real model with the voice alone: a model-state voice
+// missing one of the model's layers and an embedding of the wrong width fail,
+// the shipped voice and a 1024-wide embedding pass.
+func TestCheckVoice_RealGermanCheckpoint(t *testing.T) {
+	modelPath := filepath.Join("..", "..", "models", "german", "model.safetensors")
+	voicePath := filepath.Join("..", "..", "voices", "german", "juergen.safetensors")
+
+	for _, p := range []string{modelPath, voicePath} {
+		_, err := os.Stat(p)
+		if err != nil {
+			t.Skipf("german assets not available: %v", err)
+		}
+	}
+
+	mc, err := modelcfg.Lookup("german")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := nativemodel.LoadModelFromSafetensors(modelPath, nativemodel.ConfigFor(mc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+
+	rt := &nativeSafetensorsRuntime{model: m}
+
+	state, err := safetensors.LoadVoiceModelState(voicePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = rt.checkVoice(voiceConditioning{modelState: state})
+	if err != nil {
+		t.Errorf("checkVoice(juergen) = %v; want nil", err)
+	}
+
+	err = rt.checkVoice(voiceConditioning{embedding: &VoiceEmbedding{Data: make([]float32, 2*1024), Shape: []int64{1, 2, 1024}}})
+	if err != nil {
+		t.Errorf("checkVoice(1024-wide embedding) = %v; want nil", err)
+	}
+
+	err = rt.checkVoice(voiceConditioning{embedding: &VoiceEmbedding{Data: make([]float32, 2*512), Shape: []int64{1, 2, 512}}})
+	if err == nil {
+		t.Error("checkVoice(512-wide embedding) = nil; want a width error")
+	}
+
+	// A voice state for a model with fewer layers lacks the last layer's module.
+	const last = "transformer.layers.5.self_attn"
+	if state.Modules[last] == nil {
+		t.Fatalf("juergen has no module %q; the german model has 6 layers", last)
+	}
+
+	delete(state.Modules, last)
+
+	err = rt.checkVoice(voiceConditioning{modelState: state})
+	if err == nil || !strings.Contains(err.Error(), last) {
+		t.Errorf("checkVoice(state without %s) = %v; want a missing-module error", last, err)
 	}
 }

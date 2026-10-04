@@ -195,8 +195,19 @@ func existingMatches(path, expected string) (bool, error) {
 }
 
 func downloadWithProgress(client *http.Client, repo string, file ModelFile, token, outPath string, stdout io.Writer) (string, error) {
-	url := resolveURL(repo, file)
+	return downloadURL(client, resolveURL(repo, file), file.Filename, repo, token, hfTokenHint, outPath, stdout)
+}
 
+// hfTokenHint ends the access-denied error of a Hugging Face download.
+//
+// #nosec G101 -- a hint naming the token flag, not a credential.
+const hfTokenHint = "; provide HF_TOKEN or --hf-token"
+
+// downloadURL streams url to outPath through a temp file of its own, printing
+// progress to stdout, and returns the sha256 of what it wrote. name and repo
+// only label errors, and deniedHint ends the 401/403 error; token, when set,
+// is sent as a bearer token.
+func downloadURL(client *http.Client, url, name, repo, token, deniedHint, outPath string, stdout io.Writer) (string, error) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return "", fmt.Errorf("build request: %w", err)
@@ -204,7 +215,8 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 
 	setAuth(req, token)
 
-	// #nosec G704 -- URL is built by resolveURL against a fixed Hugging Face host using pinned manifest data.
+	// #nosec G704 -- URL is either built by resolveURL against the fixed Hugging Face host or is an
+	// https:// voice URL the operator passed to serve --default-voice.
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("download request failed: %w", err)
@@ -215,19 +227,32 @@ func downloadWithProgress(client *http.Client, repo string, file ModelFile, toke
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return "", &AccessDeniedError{
 			Repo: repo,
-			Msg:  fmt.Sprintf("access denied for %s; provide HF_TOKEN or --hf-token", repo),
+			Msg:  "access denied for " + repo + deniedHint,
 		}
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", fmt.Errorf("download failed for %s: %s", file.Filename, resp.Status)
+		return "", fmt.Errorf("download failed for %s: %s", name, resp.Status)
 	}
 
-	tmp := outPath + ".tmp"
-
-	fh, err := os.Create(tmp)
+	// A temp file per download, so concurrent downloads of the same file
+	// don't write into each other; the rename below is atomic.
+	fh, err := os.CreateTemp(filepath.Dir(outPath), filepath.Base(outPath)+".*.tmp")
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
+	}
+
+	tmp := fh.Name()
+
+	// CreateTemp makes the file 0600; keep the permissions os.Create gave
+	// downloads before, so other users (e.g. a container user) can read models.
+	// #nosec G302 -- model and voice files are not secret.
+	err = fh.Chmod(0o644)
+	if err != nil {
+		_ = fh.Close()
+		_ = os.Remove(tmp)
+
+		return "", fmt.Errorf("chmod temp file: %w", err)
 	}
 
 	h := sha256.New()
@@ -312,7 +337,7 @@ func resolveChecksumFromMetadata(client *http.Client, repo string, f ModelFile, 
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return "", &AccessDeniedError{
 			Repo: repo,
-			Msg:  fmt.Sprintf("access denied for %s; provide HF_TOKEN or --hf-token", repo),
+			Msg:  "access denied for " + repo + hfTokenHint,
 		}
 	}
 

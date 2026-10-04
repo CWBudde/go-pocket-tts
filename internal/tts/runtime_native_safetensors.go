@@ -152,6 +152,36 @@ func (r *nativeSafetensorsRuntime) Close() {
 	}
 }
 
+// checkVoice primes a fresh flow state with the voice conditioning alone,
+// the voice half of prepareFlowState, and reports why the model rejects it.
+func (r *nativeSafetensorsRuntime) checkVoice(v voiceConditioning) error {
+	if v.modelState != nil {
+		_, err := r.model.NewFlowStateFromVoiceModelState(v.modelState)
+		return err
+	}
+
+	if v.embedding == nil {
+		return nil
+	}
+
+	voiceEmb, err := tensor.New(v.embedding.Data, v.embedding.Shape)
+	if err != nil {
+		return fmt.Errorf("build voice tensor: %w", err)
+	}
+
+	voiceEmb, err = r.model.VoicePrompt(voiceEmb)
+	if err != nil {
+		return err
+	}
+
+	state, err := r.model.NewFlowState()
+	if err != nil {
+		return err
+	}
+
+	return r.model.PromptFlow(state, voiceEmb)
+}
+
 // prepareFlowState applies voice conditioning to the text embeddings and
 // returns the flow state primed with the conditioning sequence.
 func (r *nativeSafetensorsRuntime) prepareFlowState(textEmb *tensor.Tensor, cfg RuntimeGenerateConfig) (*nativemodel.FlowLMState, error) {
