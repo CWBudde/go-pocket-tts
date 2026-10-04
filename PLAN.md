@@ -448,8 +448,8 @@ Follow-ups:
       default voice check it also reports `alba`. Give it real fixtures or skip without assets. (Found 2026-10-03.)
       (2026-10-04) — the test now points `doctor --backend native` at the real `models/tts_b6369a24.safetensors`,
       `models/tokenizer.model` and `voices/manifest.json` (new helper `requireNativeSafetensorsVoices` skips unless
-      the manifest and every voice it lists exist) and asserts `backend: native-safetensors`, the language, `✓ default
-      voice alba` and `tokenizer load: ok`. Passes locally; CI has no assets, so it skips there.
+      the manifest and every voice it lists exist) and asserts `backend: native-safetensors`, the language,
+      `✓ default voice alba` and `tokenizer load: ok`. Passes locally; CI has no assets, so it skips there.
 - [x] `TestSynthNativeSafetensors_ShortText` (`-tags integration`) broke with the default voice fallback: it runs
       `synth` without `--voice` from `cmd/pockettts/`, where `voices/manifest.json` does not resolve. (Found
       2026-10-04.) (2026-10-04) — the test passes `--paths-voice-manifest` from `requireNativeSafetensorsVoices`, so it
