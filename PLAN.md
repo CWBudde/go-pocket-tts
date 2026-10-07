@@ -471,10 +471,22 @@ Minimal path (precomputed voices only; needs Phases 1, 3, 4 and Phase 5 byte fal
     of audio, the temporary voice is gone after SIGINT (exit 0), the cached download stays and a restart reuses it;
     the ungated checkpoint exits 1. `synth --voice` still refuses remote WAVs (and does not download remote
     `.safetensors` voices either); see the follow-up below.
-- [ ] `synth --voice <URL>`: download remote voices (`.safetensors` and `.wav`) like `serve --default-voice`
+- [x] `synth --voice <URL>`: download remote voices (`.safetensors` and `.wav`) like `serve --default-voice`
       instead of refusing remote WAVs and failing on remote `.safetensors` only after the model loads. Sharing
       `resolveServeDefaultVoice` as one `resolveVoiceRef(ref, fetch, encode)` is about 20 lines; the fetcher must log
       to stderr because `synth --out -` writes the WAV to stdout. (Found 2026-10-04.)
+      (2026-10-07) — `resolveVoiceRef(flag, ref, fetch, encode)` in `cmd/pockettts/voice_wav.go` replaces
+      `resolveServeDefaultVoice`; `flag` only names `--voice` / `--default-voice` in errors, and `serve` behaves as
+      before. `resolveSynthVoice` sends WAV prompts and every `https://` / `hf://…@rev` voice through it, with the
+      user-cache fetcher reporting on stderr; a downloaded voice file is loaded with `tts.CheckVoiceFile` before the
+      model, so a broken download fails at once. A WAV on native-onnx still gets the export-voice hint, now before
+      any download; `cli` passes the ref to upstream unchanged. `TestResolveVoiceRef` (the former serve tests),
+      `TestResolveSynthVoice_Remote`, `TestRunSynthCommand_RemoteVoiceToStdout`; resolving remote refs as local
+      paths, skipping the voice check and logging the download to stdout each fail a test. Real runs
+      (`english_2026-01`, `--out -`): `hf://…/embeddings/marius.safetensors@2578fed` downloads once (2.7 s, a 24 kHz
+      WAV on stdout), a second run reuses the cache without a download line, a missing voice exits 1 after 0.14 s
+      with nothing on stdout; `hf://kyutai/tts-voices/alba-mackenna/casual.wav@323332d` downloads, clones and
+      synthesizes (2.8 s of audio), is reused on the next run, and leaves no temporary voice file.
 - [x] `doctor` validates the selected language's files
       (2026-10-03) — `doctor` prints the language; on the native backends a missing voice manifest fails (it was
       silently skipped), the default voice must resolve, and native-safetensors loads the tokenizer with the model

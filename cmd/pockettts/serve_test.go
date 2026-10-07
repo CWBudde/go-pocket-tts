@@ -11,16 +11,16 @@ import (
 	"testing"
 )
 
-func TestResolveServeDefaultVoice(t *testing.T) {
+func TestResolveVoiceRef(t *testing.T) {
 	errFetch := errors.New("fetch must not be called")
 	noFetch := func(string) (string, error) { return "", errFetch }
 	errEncode := errors.New("encode must not be called")
 	noEncode := func(string) (string, func(), error) { return "", nil, errEncode }
 
 	for _, ref := range []string{"", "juergen", "voices/german/anna.safetensors"} {
-		got, cleanup, err := resolveServeDefaultVoice(ref, noFetch, noEncode)
+		got, cleanup, err := resolveVoiceRef("--default-voice", ref, noFetch, noEncode)
 		if err != nil || got != ref {
-			t.Errorf("resolveServeDefaultVoice(%q) = %q, %v; want it unchanged", ref, got, err)
+			t.Errorf("resolveVoiceRef(%q) = %q, %v; want it unchanged", ref, got, err)
 		}
 
 		cleanup()
@@ -33,23 +33,23 @@ func TestResolveServeDefaultVoice(t *testing.T) {
 
 		removed := false
 
-		got, cleanup, err := resolveServeDefaultVoice(ref, noFetch, func(wav string) (string, func(), error) {
+		got, cleanup, err := resolveVoiceRef("--default-voice", ref, noFetch, func(wav string) (string, func(), error) {
 			encoded = wav
 
 			return "/tmp/voice.safetensors", func() { removed = true }, nil
 		})
 		if err != nil || got != "/tmp/voice.safetensors" || encoded != ref {
-			t.Errorf("resolveServeDefaultVoice(%q) = %q, %v (encoded %q); want the encoded voice", ref, got, err, encoded)
+			t.Errorf("resolveVoiceRef(%q) = %q, %v (encoded %q); want the encoded voice", ref, got, err, encoded)
 		}
 
 		cleanup()
 
 		if !removed {
-			t.Errorf("resolveServeDefaultVoice(%q): cleanup did not remove the encoded voice", ref)
+			t.Errorf("resolveVoiceRef(%q): cleanup did not remove the encoded voice", ref)
 		}
 	}
 
-	_, _, err := resolveServeDefaultVoice("prompt.wav", noFetch, func(string) (string, func(), error) {
+	_, _, err := resolveVoiceRef("--default-voice", "prompt.wav", noFetch, func(string) (string, func(), error) {
 		return "", nil, errors.New("weights are zeroed")
 	})
 	if err == nil || !strings.Contains(err.Error(), "zeroed") {
@@ -58,7 +58,7 @@ func TestResolveServeDefaultVoice(t *testing.T) {
 
 	var fetched string
 
-	got, cleanup, err := resolveServeDefaultVoice("hf://org/repo/anna.safetensors@rev", func(ref string) (string, error) {
+	got, cleanup, err := resolveVoiceRef("--default-voice", "hf://org/repo/anna.safetensors@rev", func(ref string) (string, error) {
 		fetched = ref
 
 		return "/cache/anna.safetensors", nil
@@ -69,15 +69,15 @@ func TestResolveServeDefaultVoice(t *testing.T) {
 
 	cleanup()
 
-	t.Run("remote WAV", testResolveServeDefaultVoiceRemoteWAV)
-	t.Run("remote WAV failures", testResolveServeDefaultVoiceRemoteWAVFailures)
+	t.Run("remote WAV", testResolveVoiceRefRemoteWAV)
+	t.Run("remote WAV failures", testResolveVoiceRefRemoteWAVFailures)
 }
 
 // A remote WAV prompt is downloaded into the voice cache, then cloned from
 // the cached file like a local one (upstream get_state_for_audio_prompt runs
 // download_if_necessary first). Stopping the server removes the cloned voice
 // but keeps the download for the next start.
-func testResolveServeDefaultVoiceRemoteWAV(t *testing.T) {
+func testResolveVoiceRefRemoteWAV(t *testing.T) {
 	for _, ref := range []string{
 		"https://example.com/prompts/casual.wav?download=1",
 		"hf://kyutai/tts-voices/alba-mackenna/casual.wav@abc123",
@@ -102,9 +102,9 @@ func testResolveServeDefaultVoiceRemoteWAV(t *testing.T) {
 				return encodedPath, func() { _ = os.Remove(encodedPath) }, err
 			}
 
-			got, cleanup, err := resolveServeDefaultVoice(ref, fetch, encode)
+			got, cleanup, err := resolveVoiceRef("--default-voice", ref, fetch, encode)
 			if err != nil {
-				t.Fatalf("resolveServeDefaultVoice: %v", err)
+				t.Fatalf("resolveVoiceRef: %v", err)
 			}
 
 			if len(fetched) != 1 || fetched[0] != ref {
@@ -136,13 +136,13 @@ func testResolveServeDefaultVoiceRemoteWAV(t *testing.T) {
 
 // A remote WAV that cannot be downloaded or encoded stops serve at startup,
 // and no encoded voice is left behind.
-func testResolveServeDefaultVoiceRemoteWAVFailures(t *testing.T) {
+func testResolveVoiceRefRemoteWAVFailures(t *testing.T) {
 	const ref = "hf://kyutai/tts-voices/alba-mackenna/casual.wav@abc123"
 
 	t.Run("fetch fails", func(t *testing.T) {
 		encodeCalled := false
 
-		got, cleanup, err := resolveServeDefaultVoice(ref,
+		got, cleanup, err := resolveVoiceRef("--default-voice", ref,
 			func(string) (string, error) { return "", errors.New("download failed: 404 Not Found") },
 			func(string) (string, func(), error) {
 				encodeCalled = true
@@ -162,7 +162,7 @@ func testResolveServeDefaultVoiceRemoteWAVFailures(t *testing.T) {
 	t.Run("encode fails", func(t *testing.T) {
 		var encoded string
 
-		got, cleanup, err := resolveServeDefaultVoice(ref,
+		got, cleanup, err := resolveVoiceRef("--default-voice", ref,
 			func(string) (string, error) { return "/cache/0123-casual.wav", nil },
 			func(wav string) (string, func(), error) {
 				// Like encodeWAVVoice: no voice file is left after a failure.

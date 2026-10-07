@@ -340,8 +340,11 @@ prompt with the checkpoint they load (`--paths-model-path`), which must be the
 gated one, into a temporary voice file that is removed when the command ends;
 `serve` encodes it once at startup. A 30 s prompt takes about 5 s to encode with
 the default `--conv-workers 2` and about 2 s with `--conv-workers 8` (Apple M5
-Pro). `serve` also takes a remote WAV prompt (see [Server](#server)); `synth`
-needs a local file.
+Pro). Both also take a remote WAV prompt or voice file: an `https://` URL or a
+pinned `hf://<org>/<repo>/<path>@<revision>`, downloaded once into the user
+cache like `serve --default-voice` (see [Server](#server)). `synth` reports the
+download on stderr, so `--out -` keeps stdout for the WAV, and it loads a
+downloaded voice file before the model, so a broken download fails at once.
 
 ```bash
 ./pockettts synth --language german --voice speaker.wav --text "Guten Tag." --out hallo.wav

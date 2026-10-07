@@ -112,7 +112,7 @@ func TestResolveSynthVoice_WAV(t *testing.T) {
 	cfg := wavVoiceConfig()
 
 	// No slash: still a WAV prompt, not a manifest ID (the manifest is missing).
-	path, remove, err := resolveSynthVoice(cfg, config.BackendNative, "speaker.wav")
+	path, remove, err := resolveSynthVoice(cfg, config.BackendNative, "speaker.wav", noVoiceFetch(t))
 	if err != nil {
 		t.Fatalf("native .wav: %v", err)
 	}
@@ -130,13 +130,13 @@ func TestResolveSynthVoice_WAV(t *testing.T) {
 
 	enc.input = ""
 
-	_, _, err = resolveSynthVoice(cfg, config.BackendNativeONNX, "speaker.wav")
+	_, _, err = resolveSynthVoice(cfg, config.BackendNativeONNX, "speaker.wav", noVoiceFetch(t))
 	if err == nil || !strings.Contains(err.Error(), "export-voice") || enc.input != "" {
 		t.Errorf("native-onnx .wav: err = %v, encoded %q; want an export-voice hint and no encoding", err, enc.input)
 	}
 
 	// Other voices resolve as before.
-	path, remove, err = resolveSynthVoice(cfg, config.BackendNative, "voices/anna.safetensors")
+	path, remove, err = resolveSynthVoice(cfg, config.BackendNative, "voices/anna.safetensors", noVoiceFetch(t))
 	if err != nil || path != "voices/anna.safetensors" || enc.input != "" {
 		t.Errorf("safetensors voice = %q, %v (encoded %q); want it unchanged", path, err, enc.input)
 	}
@@ -166,7 +166,7 @@ func TestResolveSynthVoice_RealCheckpoints(t *testing.T) {
 			t.Skipf("gated german checkpoint not found: %v", err)
 		}
 
-		path, remove, err := resolveSynthVoice(cfg, config.BackendNative, prompt)
+		path, remove, err := resolveSynthVoice(cfg, config.BackendNative, prompt, noVoiceFetch(t))
 		if err != nil {
 			t.Fatalf("resolveSynthVoice: %v", err)
 		}
@@ -191,7 +191,7 @@ func TestResolveSynthVoice_RealCheckpoints(t *testing.T) {
 			t.Skipf("ungated german checkpoint not found: %v", err)
 		}
 
-		_, _, err = resolveSynthVoice(cfg, config.BackendNative, prompt)
+		_, _, err = resolveSynthVoice(cfg, config.BackendNative, prompt, noVoiceFetch(t))
 		if !errors.Is(err, nativemodel.ErrMimiEncoderWeightsZeroed) {
 			t.Errorf("ungated checkpoint: err = %v; want %v", err, nativemodel.ErrMimiEncoderWeightsZeroed)
 		}
@@ -206,7 +206,7 @@ func TestResolveSynthVoice_BackendOverride(t *testing.T) {
 	cfg := wavVoiceConfig()
 	cfg.TTS.Backend = config.BackendNativeONNX
 
-	_, remove, err := resolveSynthVoice(cfg, config.BackendNative, "speaker.wav")
+	_, remove, err := resolveSynthVoice(cfg, config.BackendNative, "speaker.wav", noVoiceFetch(t))
 	if err != nil {
 		t.Fatalf("resolveSynthVoice: %v", err)
 	}

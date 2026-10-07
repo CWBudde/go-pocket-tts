@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -38,7 +37,7 @@ func newServeCmd() *cobra.Command {
 			if backend == config.BackendNative {
 				var removeVoice func()
 
-				cfg.Server.DefaultVoice, removeVoice, err = resolveServeDefaultVoice(
+				cfg.Server.DefaultVoice, removeVoice, err = resolveVoiceRef("--default-voice",
 					cfg.Server.DefaultVoice, userCacheVoiceFetcher(nil, os.Stdout),
 					func(wav string) (string, func(), error) { return encodeWAVVoice(cfg, wav) })
 				if err != nil {
@@ -64,67 +63,6 @@ func newServeCmd() *cobra.Command {
 	config.RegisterFlags(cmd.Flags(), defaults)
 
 	return cmd
-}
-
-// resolveServeDefaultVoice turns --default-voice into what the server takes:
-// a voice ID or .safetensors path passes through (the server resolves and
-// loads it at startup), an https:// or hf:// voice is downloaded by fetch,
-// and a WAV prompt (local, or downloaded by fetch first like upstream's
-// download_if_necessary) is cloned once by encode. cleanup removes a cloned
-// voice when the server stops, never the cached download, and is a no-op
-// otherwise.
-func resolveServeDefaultVoice(
-	ref string,
-	fetch func(string) (string, error),
-	encode func(string) (string, func(), error),
-) (string, func(), error) {
-	ref = strings.TrimSpace(ref)
-	noCleanup := func() {}
-
-	if isWAVVoice(ref) {
-		return cloneServeDefaultVoice(ref, fetch, encode)
-	}
-
-	if !model.IsRemoteVoice(ref) {
-		return ref, noCleanup, nil
-	}
-
-	path, err := fetch(ref)
-	if err != nil {
-		return "", nil, fmt.Errorf("--default-voice: %w", err)
-	}
-
-	return path, noCleanup, nil
-}
-
-// cloneServeDefaultVoice encodes the WAV prompt ref, downloading a remote one
-// with fetch first. cleanup removes only the encoded voice.
-func cloneServeDefaultVoice(
-	ref string,
-	fetch func(string) (string, error),
-	encode func(string) (string, func(), error),
-) (string, func(), error) {
-	if !model.IsRemoteVoice(ref) {
-		path, cleanup, err := encode(ref)
-		if err != nil {
-			return "", nil, fmt.Errorf("--default-voice: %w", err)
-		}
-
-		return path, cleanup, nil
-	}
-
-	wav, err := fetch(ref)
-	if err != nil {
-		return "", nil, fmt.Errorf("--default-voice: %w", err)
-	}
-
-	path, cleanup, err := encode(wav)
-	if err != nil {
-		// The encoder names the cache file; name the voice asked for too.
-		return "", nil, fmt.Errorf("--default-voice %q: %w", ref, err)
-	}
-
-	return path, cleanup, nil
 }
 
 // userCacheVoiceFetcher downloads URL voices once into
