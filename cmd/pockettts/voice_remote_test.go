@@ -88,6 +88,13 @@ func TestResolveSynthVoice_Remote(t *testing.T) {
 		t.Errorf("corrupt download: err = %v; want a --voice error naming %q", err, voiceRef)
 	}
 
+	// FetchVoice reuses a cached file without a request, so a broken one must
+	// go, or every later run fails without trying the server again.
+	_, err = os.Stat(corrupt)
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("corrupt download still cached after the failed check: %v", err)
+	}
+
 	_, _, err = resolveSynthVoice(cfg, config.BackendNative, voiceRef,
 		func(string) (string, error) { return "", errors.New("download failed: 404 Not Found") })
 	if err == nil || !strings.Contains(err.Error(), "404") || !strings.Contains(err.Error(), "--voice") {

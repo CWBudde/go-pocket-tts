@@ -95,10 +95,14 @@ func resolveSynthVoice(
 	}
 
 	// A downloaded voice file has no pinned checksum: load it now, so a broken
-	// one fails before the model weights do.
+	// one fails before the model weights do. FetchVoice reuses a cached file
+	// without a request, so drop the broken one for the next run to download
+	// again.
 	if !isWAVVoice(voice) {
 		err = tts.CheckVoiceFile(path)
 		if err != nil {
+			_ = os.Remove(path)
+
 			return "", nil, fmt.Errorf("--voice %q: %w", voice, err)
 		}
 	}
