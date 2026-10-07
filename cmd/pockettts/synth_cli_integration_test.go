@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/cwbudde/go-pocket-tts/internal/config"
@@ -185,16 +186,17 @@ func TestSynthCLI_Stdout(t *testing.T) {
 // model files are absent.
 func TestSynthNative_ShortText(t *testing.T) {
 	testutil.RequireONNXRuntime(t)
+	assets := nativeONNXAssetArgs(t)
 
 	out := filepath.Join(t.TempDir(), "out.wav")
 
 	root := NewRootCmd()
-	root.SetArgs([]string{
+	root.SetArgs(append(assets,
 		"synth",
 		"--backend", "native-onnx",
 		"--text", "Hello world.",
 		"--out", out,
-	})
+	))
 	if err := root.Execute(); err != nil {
 		t.Fatalf("synth --backend native failed: %v", err)
 	}
@@ -207,18 +209,20 @@ func TestSynthNative_ShortText(t *testing.T) {
 // native backend and asserts that the PCM sample count grows with chunk count.
 func TestSynthNative_Chunked(t *testing.T) {
 	testutil.RequireONNXRuntime(t)
+	assets := nativeONNXAssetArgs(t)
 
 	outSingle := filepath.Join(t.TempDir(), "single.wav")
 	outChunked := filepath.Join(t.TempDir(), "chunked.wav")
 
 	runSynth := func(text, out string, chunk bool) {
 		t.Helper()
-		args := []string{
+
+		args := append(slices.Clone(assets),
 			"synth",
 			"--backend", "native-onnx",
 			"--text", text,
 			"--out", out,
-		}
+		)
 		if chunk {
 			args = append(args, "--chunk")
 		}
@@ -318,6 +322,18 @@ func wavSampleCount(t testing.TB, data []byte) int {
 	}
 	t.Fatal("WAV: data chunk not found")
 	return 0
+}
+
+// nativeONNXAssetArgs returns the flags that point native-onnx synthesis at
+// the repo's ONNX export and tokenizer, and skips when either is missing: the
+// defaults are relative to the working directory, which is cmd/pockettts here.
+func nativeONNXAssetArgs(t *testing.T) []string {
+	t.Helper()
+
+	return []string{
+		"--paths-onnx-manifest", findRepoFile(t, filepath.Join("models", "onnx", "manifest.json")),
+		"--paths-tokenizer-model", findRepoFile(t, filepath.Join("models", "tokenizer.model")),
+	}
 }
 
 func requireNativeSafetensorsAssets(t testing.TB) (modelPath, tokPath string) {
