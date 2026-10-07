@@ -84,7 +84,8 @@ func TestSynthCLI_Chunked(t *testing.T) {
 
 // TestSynthCLI_DSPChain synthesizes with --normalize --dc-block --fade-in-ms
 // --fade-out-ms and asserts the output is still a valid WAV with equal sample
-// count (DSP does not add/remove samples).
+// count (DSP does not add/remove samples). Both runs use temperature 0, so
+// pocket-tts generates the same audio twice.
 func TestSynthCLI_DSPChain(t *testing.T) {
 	testutil.RequirePocketTTS(t)
 
@@ -99,6 +100,7 @@ func TestSynthCLI_DSPChain(t *testing.T) {
 			"--backend", "cli",
 			"--text", "Hello.",
 			"--voice", voice,
+			"--tts-arg", "temperature=0",
 			"--out", out,
 		}
 		if dsp {
