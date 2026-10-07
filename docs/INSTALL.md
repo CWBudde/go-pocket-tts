@@ -57,8 +57,14 @@ Only needed for export tooling commands:
 
 - `pockettts-tools model export`:
   - Python `>=3.10,<3.15`
-  - importable modules: `pocket_tts`, `torch`, `onnx`
+  - importable modules: `pocket_tts` (3.3.0, or the parity checkout below), `torch`, `onnx`
   - optional for `--int8`: `onnxruntime`
+  - the parity venv below works once it has `onnx` and `onnxruntime`
+    (`VIRTUAL_ENV=original/pockettts/.venv uv pip install onnx onnxruntime`); pass
+    `--python-bin original/pockettts/.venv/bin/python`
+  - the `internal/onnx` integration tests read the export from `models/onnx/`; the
+    generation tests also need `POCKETTTS_ONNX_TEST_VOICE`, a flat voice embedding
+    such as `embeddings/marius.safetensors` from `kyutai/pocket-tts-without-voice-cloning`
     To force compatibility mode that uses the Python CLI for synthesis:
 
 ```bash

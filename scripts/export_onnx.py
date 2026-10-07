@@ -13,6 +13,7 @@ Exports:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import shutil
@@ -32,18 +33,9 @@ except Exception as exc:  # pragma: no cover - runtime dependency
         "Install it in the selected python environment."
     ) from exc
 
-# Disable beartype claw instrumentation during export/tracing.
-# pocket_tts enables beartype at package import time, which can break ONNX tracing
-# when symbolic tensor shapes flow through functions expecting plain ints.
-try:  # pragma: no cover - best effort compatibility shim
-    import beartype.claw as _beartype_claw
-
-    _beartype_claw.beartype_this_package = lambda *args, **kwargs: None
-except Exception:
-    pass
-
-from pocket_tts.conditioners.base import TokenizedText
 from pocket_tts.models.tts_model import TTSModel
+from pocket_tts.modules import attention as pocket_attention
+from pocket_tts.modules import transformer as pocket_transformer
 from pocket_tts.modules.stateful_module import init_states
 
 
@@ -63,6 +55,22 @@ class ExportSpec:
     module: torch.nn.Module
 
 
+def uncached_causal_mask(t: int, context: int | None, device: torch.device) -> torch.Tensor:
+    """Build the stateless attention mask on every call.
+
+    Upstream caches the mask in a module-global dict at the largest t seen, so
+    a trace would bake that tensor in as a constant sized to the trace input.
+    """
+    pos = torch.arange(t, device=device, dtype=torch.long).view(1, -1)
+    return pocket_attention._build_attention_mask(pos, pos, context)
+
+
+def patch_for_tracing() -> None:
+    # transformer imports the function by name, so patch both modules.
+    pocket_attention._cached_causal_mask = uncached_causal_mask
+    pocket_transformer._cached_causal_mask = uncached_causal_mask
+
+
 def clone_model_state(state: dict[str, dict[str, torch.Tensor]]) -> dict[str, dict[str, torch.Tensor]]:
     out: dict[str, dict[str, torch.Tensor]] = {}
     for module_name, module_state in state.items():
@@ -74,12 +82,10 @@ def extract_kv_tensors(
     flow_lm: "torch.nn.Module",
     state: "dict[str, dict[str, torch.Tensor]]",
     t_written: int,
-) -> "tuple[list[torch.Tensor], torch.Tensor]":
-    """Extract per-layer KV tensors and offset from model_state after prefill.
+) -> "list[torch.Tensor]":
+    """Extract per-layer KV tensors from model_state after prefill.
 
-    Returns (kv_list, offset_tensor) where:
-    - kv_list[i] is the [2, B, t_written, H, Dh] slice of layer i's cache
-    - offset_tensor is int64[1] = t_written
+    kv_list[i] is the [2, B, t_written, H, Dh] slice of layer i's cache.
     """
     kv_list = []
     for _module_name, module in flow_lm.named_modules():
@@ -89,36 +95,40 @@ def extract_kv_tensors(
         # cache shape: [2, B, max_seq, H, Dh]; slice to written portion
         kv = layer_state["cache"][:, :, :t_written, :, :]
         kv_list.append(kv)
-    offset = torch.tensor([t_written], dtype=torch.long)
-    return kv_list, offset
+    return kv_list
 
 
-def rebuild_state_from_kv(
-    flow_lm: "torch.nn.Module",
-    kv_list: "list[torch.Tensor]",
-    offset: "torch.Tensor",
-    max_seq: int,
-) -> "dict[str, dict[str, torch.Tensor]]":
-    """Reconstruct a model_state dict from per-layer KV tensors.
+def append_kv_by_concat(
+    self: "pocket_attention._LinearKVCacheBackend",
+    k: torch.Tensor,
+    v: torch.Tensor,
+    state: "dict[str, torch.Tensor] | None",
+) -> "tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]":
+    """Trace-friendly _LinearKVCacheBackend.append_and_get for flow_lm_step.
 
-    Pads the cache back to [2, B, max_seq, H, Dh] with NaN.
+    Upstream writes k/v into a preallocated cache at int(offset.item()), which
+    a trace freezes at the example offset. Here the cache holds exactly the
+    written positions and grows by concatenation, so no Python int is taken
+    from a tensor.
     """
-    state: dict[str, dict[str, torch.Tensor]] = {}
-    kv_iter = iter(kv_list)
-    for _module_name, module in flow_lm.named_modules():
-        if not hasattr(module, "_cache_backend"):
-            continue
-        kv = next(kv_iter)  # [2, B, t_written, H, Dh]
-        t_written_local = kv.shape[2]
-        b, h, dh = kv.shape[1], kv.shape[3], kv.shape[4]
-        cache = torch.full((2, b, max_seq, h, dh), float("nan"), dtype=kv.dtype)
-        cache[:, :, :t_written_local, :, :] = kv
-        abs_name = module._module_absolute_name
-        state[abs_name] = {
-            "cache": cache,
-            "offset": offset.expand(b).clone(),
-        }
-    return state
+    cache = torch.cat([state["cache"], torch.stack([k, v])], dim=2)
+    state["cache"] = cache
+    k_attn = cache[0].permute(0, 2, 1, 3)
+    v_attn = cache[1].permute(0, 2, 1, 3)
+    pos_k = torch.arange(k_attn.shape[2], device=k_attn.device, dtype=torch.long)
+    pos_k = pos_k.view(1, -1).expand(k_attn.shape[0], -1)
+    return k_attn, v_attn, pos_k, state["offset"]
+
+
+@contextlib.contextmanager
+def kv_append_by_concat():
+    backend = pocket_attention._LinearKVCacheBackend
+    original = backend.append_and_get
+    backend.append_and_get = append_kv_by_concat
+    try:
+        yield
+    finally:
+        backend.append_and_get = original
 
 
 class TextConditionerWrapper(torch.nn.Module):
@@ -127,7 +137,7 @@ class TextConditionerWrapper(torch.nn.Module):
         self.conditioner = model.flow_lm.conditioner
 
     def forward(self, tokens: torch.Tensor) -> torch.Tensor:
-        return self.conditioner(TokenizedText(tokens=tokens))
+        return self.conditioner(tokens)
 
 
 class FlowLMMainWrapper(torch.nn.Module):
@@ -187,7 +197,10 @@ class FlowLMPrefillWrapper(torch.nn.Module):
         projected = self.flow_lm.input_linear(empty_seq)
         self.flow_lm.backbone(projected, text_embeddings, empty_seq, model_state=state)
 
-        kv_list, offset = extract_kv_tensors(self.flow_lm, state, T)
+        kv_list = extract_kv_tensors(self.flow_lm, state, T)
+        # T is a Python int, which a trace freezes; count the rows instead so
+        # the offset follows the input length.
+        offset = torch.ones_like(text_embeddings[0, :, 0], dtype=torch.long).sum().view(1)
         return tuple(kv_list) + (offset,)
 
 
@@ -199,14 +212,13 @@ class FlowLMStepWrapper(torch.nn.Module):
     updated offset. The Go caller maintains the KV state between steps.
     """
 
-    def __init__(self, model: TTSModel, max_sequence_length: int = 256):
+    def __init__(self, model: TTSModel):
         super().__init__()
         self.flow_lm = model.flow_lm
-        self.max_sequence_length = max_sequence_length
         self.register_buffer("bos_emb", model.flow_lm.bos_emb.detach().clone())
-        self._num_kv_layers = sum(
-            1 for _, m in model.flow_lm.named_modules() if hasattr(m, "_cache_backend")
-        )
+        self.kv_module_names = [
+            m._module_absolute_name for _, m in model.flow_lm.named_modules() if hasattr(m, "_cache_backend")
+        ]
 
     def forward(self, sequence_frame: torch.Tensor, *args: torch.Tensor) -> tuple:
         """
@@ -224,10 +236,9 @@ class FlowLMStepWrapper(torch.nn.Module):
         kv_list = list(args[:-1])
         offset = args[-1]
 
-        # Reconstruct state dict from KV tensors + offset.
-        state = rebuild_state_from_kv(
-            self.flow_lm, kv_list, offset, self.max_sequence_length
-        )
+        # Each layer's cache is exactly its kv input; kv_append_by_concat
+        # appends this step's k/v to it.
+        state = {name: {"cache": kv, "offset": offset} for name, kv in zip(self.kv_module_names, kv_list)}
 
         # Replace NaN BOS positions with the learned bos_emb embedding.
         frame = torch.where(torch.isnan(sequence_frame), self.bos_emb, sequence_frame)
@@ -235,17 +246,14 @@ class FlowLMStepWrapper(torch.nn.Module):
         # Run single AR step: empty text embeddings (already in KV cache from prefill).
         projected = self.flow_lm.input_linear(frame)
         empty_text = torch.zeros(1, 0, self.flow_lm.dim, dtype=frame.dtype)
-        hidden = self.flow_lm.backbone(projected, empty_text, frame, model_state=state)
-
-        if self.flow_lm.out_norm:
-            hidden = self.flow_lm.out_norm(hidden)
+        # backbone applies out_norm itself, as in flow_lm_main.
+        with kv_append_by_concat():
+            hidden = self.flow_lm.backbone(projected, empty_text, frame, model_state=state)
         last_hidden = hidden[:, -1, :]
         eos_logits = self.flow_lm.out_eos(last_hidden)
 
-        # Extract updated KV (offset is now offset+1).
-        new_t = int(offset.item()) + 1
-        new_kv_list, new_offset = extract_kv_tensors(self.flow_lm, state, new_t)
-        return (last_hidden, eos_logits) + tuple(new_kv_list) + (new_offset,)
+        new_kv_list = [state[name]["cache"] for name in self.kv_module_names]
+        return (last_hidden, eos_logits) + tuple(new_kv_list) + (offset + 1,)
 
 
 class FlowLMFlowWrapper(torch.nn.Module):
@@ -278,7 +286,8 @@ class MimiEncoderWrapper(torch.nn.Module):
         self.mimi = model.mimi
 
     def forward(self, audio: torch.Tensor) -> torch.Tensor:
-        return self.mimi.encode_to_latent(audio)
+        # encode_to_latent returns [B, T, 512]; the graph keeps [B, 512, T].
+        return self.mimi.encode_to_latent(audio).transpose(-1, -2)
 
 
 class MimiDecoderWrapper(torch.nn.Module):
@@ -292,8 +301,12 @@ class MimiDecoderWrapper(torch.nn.Module):
         )
 
     def forward(self, latent: torch.Tensor) -> torch.Tensor:
+        # latent is latent_to_mimi's output, already through the quantizer
+        # projection, so this is decode_from_latent without its first step.
         state = clone_model_state(self.base_state)
-        return self.mimi.decode_from_latent(latent, state)
+        emb = self.mimi._to_encoder_framerate(latent, state)
+        (emb,) = self.mimi.decoder_transformer(emb, state)
+        return self.mimi.decoder(emb, state)
 
 
 def export_one(spec: ExportSpec, out_dir: Path) -> Path:
@@ -438,7 +451,7 @@ def build_specs(model: TTSModel, max_sequence_length: int = 256) -> list[ExportS
                 *_example_kv,
                 _example_offset,
             ),
-            module=FlowLMStepWrapper(model, max_sequence_length=max_sequence_length),
+            module=FlowLMStepWrapper(model),
         ),
         ExportSpec(
             name="flow_lm_flow",
@@ -553,14 +566,24 @@ def main() -> int:
     source_label = ", ".join(f"{key}={value}" for key, value in load_kwargs.items())
     print(f"loading pocket-tts model {source_label}")
     model = TTSModel.load_model(**load_kwargs)
+    if model.flow_lm.flow_type != "lsd":
+        # flow_lm_flow takes (condition, s, t, x): two time conditions, as only
+        # the lsd flow head has.
+        raise SystemExit(f"flow type {model.flow_lm.flow_type!r} is not supported; only lsd configs export")
+    patch_for_tracing()
 
     specs = build_specs(model, max_sequence_length=args.max_seq)
     manifest: dict[str, Any] = {
         "variant": args.variant,
         **manifest_source,
         "int8": bool(args.int8),
+        "sample_rate": int(model.mimi.sample_rate),
         "graphs": [],
     }
+    if model.flow_lm.insert_bos_before_voice:
+        # Upstream puts this learned embedding in front of a voice prompt; the
+        # graphs never see the voice, so the Go caller prepends it.
+        manifest["bos_before_voice"] = model.flow_lm.bos_before_voice.detach().reshape(-1).tolist()
 
     for spec in specs:
         out_path = export_one(spec, out_dir)

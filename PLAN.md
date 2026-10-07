@@ -746,12 +746,29 @@ Follow-ups:
 
 ## Phase 8 — Parity Fixtures & Tests
 
-- [ ] Fix `scripts/dump_python_parity.py` and `scripts/export_onnx.py` for the new upstream layout:
+- [x] Fix `scripts/dump_python_parity.py` and `scripts/export_onnx.py` for the new upstream layout:
       `pocket_tts.conditioners.base.TokenizedText` is gone; use `modules/text_conditioner.LUTConditioner`
       (`prepare(str)` → tokens, `forward(tokens)`). Remove the dead beartype shim.
       (2026-10-04) — partial: `dump_python_parity.py` runs on `41cbc84`: `flow_lm.conditioner` (LUTConditioner)
       instead of `TokenizedText`, and `mimi.decode_from_latent` gets the un-quantized latent, since 3.x quantizes
       inside it. Remaining: `export_onnx.py` and its beartype shim (with the Phase 9 re-export).
+      (2026-10-07) — `export_onnx.py` runs on `41cbc84` (torch 2.14 CPU, `--language english_2026-01` and, through
+      `pockettts-tools model export`, `german`): conditioner without `TokenizedText`, beartype shim gone,
+      `mimi_decoder` runs `decode_from_latent` minus its quantizer step (`latent_to_mimi` already projects),
+      `mimi_encoder` transposes 3.x's `[B, T, 512]` back to `[B, 512, T]`, non-`lsd` flow heads are refused, and
+      upstream's cached stateless mask is rebuilt per call while tracing. Two bugs from 2.1.0 fixed on the way:
+      `flow_lm_step` applied `out_norm` twice, and it wrote the KV cache at `int(offset.item())`, which the trace
+      froze at the example offset 8 (so did the prefill `offset` output); the step now appends KV by concatenation
+      (`kv_append_by_concat`, export-time only). The manifest records `sample_rate` and, for configs with
+      `insert_bos_before_voice`, `bos_before_voice`, which the Go engine puts in front of a voice like native
+      (review; `TestGenerateAudio_PrependsBOSBeforeVoice`, German with a flat `export-voice` embedding matches native
+      over the first 0.8 s, without the BOS it does not). A scratch check against
+      upstream torch at non-trace shapes (13 tokens, 5 + 11 steps, offsets 11–13, 20 latents) matches every graph
+      but `mimi_encoder` within 6.4e-6 in both languages; teacher-forcing 150 steps after a 165-token prefill
+      (offsets 165–314) stays within 2.3e-6 with identical EOS logits. Before the fix the step graph returned 9
+      KV rows at any offset (error 0.29–0.77). Go (on 1.25.9, see the caveat below): the `internal/onnx` and
+      `VsONNX` integration tests pass on the new export; `synth --backend native-onnx --temperature 0` with a flat
+      `marius` embedding writes 37 frames like native (correlation 0.99996), the old export 92.
 - [x] Add `--language` to `dump_python_parity.py`. Generate fixtures for `english_2026-01` and `german`:
       tokenizer ids, text embeddings, voice model state, FlowLM prefill/step, latent → mimi → PCM.
       Store small ones in `testdata/` and keep large ones gitignored behind `POCKETTTS_NATIVE_PY_FIXTURE`.
@@ -802,10 +819,21 @@ Follow-ups:
       against context 250, comparing the last 3840 audio samples. Mutations `delta <= context`, ignoring the
       context, `delta <= 0` and `posK < -1` each fail the table test; the first two also fail the long Mimi case
       (148× and 3885× the tolerance). Not covered: a fully masked row, which cannot occur (each query sees itself).
-- [ ] Bump the `pocket-tts==2.1.0` pin in `test-integration.yml` / `model-export.yml` to the synced version once
+- [x] Bump the `pocket-tts==2.1.0` pin in `test-integration.yml` / `model-export.yml` to the synced version once
       the scripts above work with it
+      (2026-10-07) — both pin `3.3.0`. The nightly integration job had failed since July before running any
+      test: 2.x and 3.x have no `pocket-tts --version`, so the install step now prints `pip show`'s version, and
+      the test voice `mimi` (never a predefined voice) became `alba`. Locally, with `pip install pocket-tts==3.3.0`
+      on `PATH`, the cli-backend synth and serve integration tests pass; the remaining failures are the next item.
+- [ ] Nightly integration job on 3.3.0 (found 2026-10-07, never visible because the job stopped at the install
+      step): `doctor` checks the cli backend with `pocket-tts --version`, which 3.x lacks (`TestDoctorPasses_CLI`);
+      3.x streams its WAV to stdout with a placeholder data size of 1e9 samples, which `TestSynthCLI_DSPChain`
+      reads as the raw length; and the native/model-verify tests look for `models/` relative to `cmd/pockettts`, so
+      they fail rather than skip without downloaded models.
 - [ ] Known caveat: ONNX-backed native parity tests can panic inside `onnxruntime-purego` with
       `runtime.AddCleanup`; `go test ./... -skip 'TestParity_.*_VsONNX'` is the workaround. Re-check this on Go 1.27.
+      (2026-10-07) — Go 1.26.8 panics in every ORT tensor creation too ("cleanup function closes over ptr", an
+      unconditional check in `runtime.AddCleanup`); `GOTOOLCHAIN=go1.25.9` runs the ORT tests.
 
 ## Phase 9 — ONNX Backend
 
@@ -814,14 +842,29 @@ Follow-ups:
       The local `models/onnx/` export exists. Either re-package from it or re-export after Phase 2 (tanh GELU
       changes the graphs anyway).
 - [ ] Re-export per language (`scripts/export_onnx.py --language german`), then publish and update the lock file
-- [ ] Known issue: garbled audio at the beginning of longer inputs
-- [ ] `decodeLatentsToAudio` fades in over `audio.ExpectedSampleRate/200` samples; take the rate from the
+- [x] Known issue: garbled audio at the beginning of longer inputs
+      (2026-10-07) — cause: the `flow_lm_step` graph froze the KV offset at trace time (see Phase 8). With the new
+      export, a three-sentence input at `--temperature 0` (`marius`) matches native over the first second
+      (correlation 1.00000; the old export −0.0016).
+- [ ] native-onnx and native diverge later in longer chunks: at `--temperature 0` the three-sentence input runs
+      85 + 121 frames on native-onnx against 77 + 58 on native (121 is the step estimate, so EOS never fired), and
+      at 0.7 one sentence takes 52–125 frames against 51–63. The graphs track upstream torch for 150 steps, so the
+      difference is in the Go ONNX generation loop (sampling, EOS rule, voice handling). (Found 2026-10-07.)
+- [ ] `mimi_encoder` returns 13 frames for any prompt length (the 1 s trace input): upstream's conv padding
+      (`get_extra_padding_for_conv1d`, `math.ceil`) is frozen at trace time. Already so in the 2.1.0 export; it
+      affects `export-voice` on native-onnx only. (Found 2026-10-07.)
+- [x] `decodeLatentsToAudio` fades in over `audio.ExpectedSampleRate/200` samples; take the rate from the
       bundle's Mimi config instead of the 24 kHz constant (the native runtime uses `Mimi().SampleRate()`).
-- [ ] **Decide:** keep ONNX only as the voice-cloning encoder until the native Mimi encoder exists, or deprecate it.
+      (2026-10-07) — `export_onnx.py` writes Mimi's `sample_rate` into `manifest.json`; `SessionManager.SampleRate`
+      reads it and the fade uses it, falling back to 24 kHz for older manifests.
+      `TestSessionManagerSampleRate`, `TestGenerateAudio_FadeFollowsManifestSampleRate` (fails with the constant
+      put back).
+- [x] **Decide:** keep ONNX only as the voice-cloning encoder until the native Mimi encoder exists, or deprecate it.
       Upstream changes now have to be applied twice (Go + re-export), which is a strong argument for
       minimising it.
       (2026-10-04) — the native Mimi encoder exists (Phase 7), so `export-voice` needs ONNX only on the native-onnx
       backend; whether to deprecate ONNX is still open.
+      (2026-10-07) — decided with the user: keep ONNX; the export now runs on upstream 3.3 (Phase 8).
 
 ---
 

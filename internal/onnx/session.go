@@ -26,9 +26,11 @@ type Session struct {
 }
 
 type SessionManager struct {
-	mu       sync.RWMutex
-	sessions map[string]Session
-	order    []string
+	mu             sync.RWMutex
+	sessions       map[string]Session
+	order          []string
+	sampleRate     int
+	bosBeforeVoice []float32
 }
 
 var (
@@ -38,7 +40,13 @@ var (
 )
 
 type onnxManifest struct {
-	Graphs []onnxGraph `json:"graphs"`
+	// SampleRate is Mimi's output rate; manifests written before
+	// export_onnx.py recorded it leave it 0.
+	SampleRate int `json:"sample_rate"`
+	// BOSBeforeVoice is flow_lm.bos_before_voice for configs with
+	// insert_bos_before_voice; absent otherwise.
+	BOSBeforeVoice []float32   `json:"bos_before_voice"`
+	Graphs         []onnxGraph `json:"graphs"`
 }
 
 type onnxGraph struct {
@@ -69,10 +77,16 @@ func NewSessionManager(manifestPath string) (*SessionManager, error) {
 		return nil, errors.New("ONNX manifest has no graphs")
 	}
 
+	if manifest.SampleRate < 0 {
+		return nil, fmt.Errorf("ONNX manifest sample_rate %d is negative", manifest.SampleRate)
+	}
+
 	baseDir := filepath.Dir(manifestPath)
 	sm := &SessionManager{
-		sessions: make(map[string]Session, len(manifest.Graphs)),
-		order:    make([]string, 0, len(manifest.Graphs)),
+		sessions:       make(map[string]Session, len(manifest.Graphs)),
+		order:          make([]string, 0, len(manifest.Graphs)),
+		sampleRate:     manifest.SampleRate,
+		bosBeforeVoice: manifest.BOSBeforeVoice,
 	}
 
 	for _, g := range manifest.Graphs {
@@ -142,6 +156,18 @@ func (m *SessionManager) Session(name string) (Session, bool) {
 	s, ok := m.sessions[name]
 
 	return s, ok
+}
+
+// SampleRate returns the Mimi sample rate the manifest records, or 0 for a
+// manifest without one.
+func (m *SessionManager) SampleRate() int {
+	return m.sampleRate
+}
+
+// BOSBeforeVoice returns the embedding the FlowLM expects in front of a voice
+// prompt, or nil when the model's config does not insert one.
+func (m *SessionManager) BOSBeforeVoice() []float32 {
+	return m.bosBeforeVoice
 }
 
 func (m *SessionManager) Sessions() []Session {

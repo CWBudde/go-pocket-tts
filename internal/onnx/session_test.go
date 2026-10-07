@@ -71,6 +71,48 @@ func TestNewSessionManagerLoadsManifest(t *testing.T) {
 	}
 }
 
+// sessionManagerWithFields loads a one-graph manifest with the given extra
+// top-level JSON fields (each ending in a comma).
+func sessionManagerWithFields(t *testing.T, fields string) *SessionManager {
+	t.Helper()
+
+	tmp := t.TempDir()
+
+	err := os.WriteFile(filepath.Join(tmp, "mimi_decoder.onnx"), []byte("fake"), 0o644)
+	if err != nil {
+		t.Fatalf("write fake onnx file: %v", err)
+	}
+
+	manifest := `{` + fields + `
+  "graphs": [{"name": "mimi_decoder", "filename": "mimi_decoder.onnx", "inputs": [], "outputs": []}]
+}`
+	manifestPath := filepath.Join(tmp, "manifest.json")
+
+	err = os.WriteFile(manifestPath, []byte(manifest), 0o644)
+	if err != nil {
+		t.Fatalf("write manifest: %v", err)
+	}
+
+	sm, err := NewSessionManager(manifestPath)
+	if err != nil {
+		t.Fatalf("NewSessionManager: %v", err)
+	}
+
+	return sm
+}
+
+// TestSessionManagerSampleRate: export_onnx.py records Mimi's sample rate;
+// manifests from before that report 0.
+func TestSessionManagerSampleRate(t *testing.T) {
+	if got := sessionManagerWithFields(t, `"sample_rate": 16000,`).SampleRate(); got != 16000 {
+		t.Errorf("SampleRate() = %d, want 16000", got)
+	}
+
+	if got := sessionManagerWithFields(t, "").SampleRate(); got != 0 {
+		t.Errorf("SampleRate() without the field = %d, want 0", got)
+	}
+}
+
 func TestNewSessionManagerRejectsMissingFile(t *testing.T) {
 	tmp := t.TempDir()
 	manifest := `{
