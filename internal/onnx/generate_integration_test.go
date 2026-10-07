@@ -12,9 +12,67 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/text"
 	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
 )
+
+// testVoiceEmbedding loads the flat voice embedding named by
+// POCKETTTS_ONNX_TEST_VOICE (a 2.x audio-prompt .safetensors such as
+// embeddings/marius.safetensors from kyutai/pocket-tts-without-voice-cloning;
+// the ONNX runtime rejects model-state voices) and skips without it. The model
+// needs a voice like upstream, which never generates without one: voice-less,
+// generation ends after a few near-silent frames.
+func testVoiceEmbedding(t *testing.T) *Tensor {
+	t.Helper()
+
+	path := os.Getenv("POCKETTTS_ONNX_TEST_VOICE")
+	if path == "" {
+		t.Skip("set POCKETTTS_ONNX_TEST_VOICE to a flat voice embedding .safetensors")
+	}
+
+	data, shape, err := safetensors.LoadVoiceEmbedding(path)
+	if err != nil {
+		t.Fatalf("LoadVoiceEmbedding: %v", err)
+	}
+
+	voice, err := NewTensor(data, shape)
+	if err != nil {
+		t.Fatalf("NewTensor(voice): %v", err)
+	}
+
+	return voice
+}
+
+// preparedTokenIDs prepares input like synthesis does for english_2026-01
+// (short inputs are padded with spaces) and tokenizes it.
+func preparedTokenIDs(t *testing.T, tok *tokenizer.SentencePieceTokenizer, input string) []int64 {
+	t.Helper()
+
+	cfg, err := modelcfg.Lookup("english_2026-01")
+	if err != nil {
+		t.Fatalf("modelcfg.Lookup: %v", err)
+	}
+
+	prepared, _, err := text.PrepareText(input, text.OptionsFor(cfg))
+	if err != nil {
+		t.Fatalf("PrepareText: %v", err)
+	}
+
+	ids, err := tok.Encode(prepared)
+	if err != nil {
+		t.Fatalf("Encode: %v", err)
+	}
+
+	if len(ids) == 0 {
+		t.Fatal("tokenizer returned no token IDs")
+	}
+
+	t.Logf("tokenized %q → %d tokens", prepared, len(ids))
+
+	return ids
+}
 
 // TestGenerateAudioIntegration_ProducesPlausibleAudio runs the full generation
 // pipeline against real ONNX models and verifies that the output is non-trivial
@@ -23,21 +81,14 @@ func TestGenerateAudioIntegration_ProducesPlausibleAudio(t *testing.T) {
 	libPath := ortLibPath(t)
 	tokPath := tokenizerModelPath(t)
 	manifestPath := textConditionerManifestPath(t)
+	voice := testVoiceEmbedding(t)
 
 	tok, err := tokenizer.NewSentencePieceTokenizer(tokPath)
 	if err != nil {
 		t.Fatalf("NewSentencePieceTokenizer: %v", err)
 	}
 
-	const inputText = "Hello."
-	tokenIDs, err := tok.Encode(inputText)
-	if err != nil {
-		t.Fatalf("Encode: %v", err)
-	}
-	if len(tokenIDs) == 0 {
-		t.Fatal("tokenizer returned no token IDs")
-	}
-	t.Logf("tokenized %q → %d tokens: %v", inputText, len(tokenIDs), tokenIDs)
+	tokenIDs := preparedTokenIDs(t, tok, "Hello there, how are you?")
 
 	engine, err := NewEngine(manifestPath, RunnerConfig{
 		LibraryPath: libPath,
@@ -60,6 +111,7 @@ func TestGenerateAudioIntegration_ProducesPlausibleAudio(t *testing.T) {
 		EOSThreshold:       -4.0,
 		MaxSteps:           256,
 		SamplerDecodeSteps: 1,
+		VoiceEmbedding:     voice,
 	}
 
 	pcm, err := engine.GenerateAudio(context.Background(), tokenIDs, cfg)
@@ -115,7 +167,7 @@ func TestGenerateAudioIntegration_ProducesPlausibleAudio(t *testing.T) {
 	}
 
 	// EOS must have fired: for short text, generation should stop well before MaxSteps.
-	// 256 frames at 50 fps = 5.12 s; "Hello." should produce < 3 s.
+	// 256 frames at 12.5 fps = 20.48 s; this short sentence should produce < 5 s.
 	if len(pcm) >= maxSamples {
 		t.Errorf("generated %d samples (= maxSamples) — EOS probably never fired; check ONNX export", len(pcm))
 	}
@@ -282,6 +334,7 @@ func TestGenerateAudioIntegration_StatefulPath_ProducesPlausibleAudio(t *testing
 	libPath := ortLibPath(t)
 	tokPath := tokenizerModelPath(t)
 	manifestPath := textConditionerManifestPath(t)
+	voice := testVoiceEmbedding(t)
 
 	tok, err := tokenizer.NewSentencePieceTokenizer(tokPath)
 	if err != nil {
@@ -305,21 +358,15 @@ func TestGenerateAudioIntegration_StatefulPath_ProducesPlausibleAudio(t *testing
 		t.Skip("flow_lm_step graph not present in manifest; re-export ONNX with scripts/export_onnx.py to enable this test")
 	}
 
-	const inputText = "This is a longer sentence to test that the stateful KV-cache path works correctly."
-	tokenIDs, err := tok.Encode(inputText)
-	if err != nil {
-		t.Fatalf("Encode: %v", err)
-	}
-	if len(tokenIDs) == 0 {
-		t.Fatal("tokenizer returned no token IDs")
-	}
-	t.Logf("tokenized %q → %d tokens", inputText, len(tokenIDs))
+	tokenIDs := preparedTokenIDs(t, tok,
+		"This is a longer sentence to test that the stateful KV-cache path works correctly.")
 
 	cfg := GenerateConfig{
 		Temperature:        0.7,
 		EOSThreshold:       -4.0,
 		MaxSteps:           256,
 		SamplerDecodeSteps: 1,
+		VoiceEmbedding:     voice,
 	}
 
 	pcm, err := engine.GenerateAudio(context.Background(), tokenIDs, cfg)
