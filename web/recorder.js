@@ -107,16 +107,18 @@ export async function startRecording({ maxSeconds = 30, onProgress, onLimit } = 
     throw microphoneError(err);
   }
 
-  const ctx = new AudioContext();
+  // The microphone is live from here on: every failure below must stop it.
+  let ctx;
   const release = () => {
     for (const track of stream.getTracks()) track.stop();
-    void ctx.close().catch(() => {});
+    if (ctx) void ctx.close().catch(() => {});
   };
 
   let node;
   let mute;
   let source;
   try {
+    ctx = new AudioContext();
     const moduleURL = URL.createObjectURL(new Blob([workletSource], { type: "text/javascript" }));
     try {
       await ctx.audioWorklet.addModule(moduleURL);

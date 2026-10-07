@@ -216,6 +216,11 @@ function isRecording() {
   return state.recordPhase === "recording" || state.recordPhase === "stopping";
 }
 
+// microphoneBusy also covers the wait for microphone permission.
+function microphoneBusy() {
+  return state.recordPhase === "starting" || isRecording();
+}
+
 function cloneStatusText() {
   if (!modelReady()) return "waiting for the model";
   if (isRecording()) return "recording";
@@ -279,7 +284,7 @@ const btnLabel = document.getElementById("btn-label");
 function canSynthesize() {
   // The microphone would pick up the playback, and the kernel would stall the
   // page while it records.
-  if (isRecording() || state.recordPhase === "starting") return false;
+  if (microphoneBusy()) return false;
   const baseReady = state.kernelReady && modelReady() && selectedVoiceState() === "ready";
   // Allow clicking again if the user edited the text while a synthesis is running.
   return baseReady && (!state.isSynthesizing || state.textDirty);
@@ -294,7 +299,7 @@ function setSynthesizeEnabled() {
   btnLabel.textContent = showSpinner ? "Synthesizing…" : "Synthesize";
   // A synthesis runs on the loaded model; switching it away mid-run is not
   // supported, and a stopped kernel loads nothing.
-  const busy = state.isSynthesizing || state.isCloning || isRecording();
+  const busy = state.isSynthesizing || state.isCloning || microphoneBusy();
   languageSelect.disabled = busy || !state.catalog || state.kernelStopped;
   checkpointInput.disabled = busy || !state.catalog || state.kernelStopped;
   cloneInput.disabled = busy || !state.kernelReady || !modelReady() || !state.canClone;
