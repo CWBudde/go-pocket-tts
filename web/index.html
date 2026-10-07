@@ -226,6 +226,110 @@
         color: var(--muted);
         font-size: 0.85rem;
       }
+
+      /* Rules that set display (flex rows, button links) would otherwise
+         override the hidden attribute. */
+      [hidden] {
+        display: none !important;
+      }
+
+      .record-panel {
+        margin-top: 0.8rem;
+        background: #081122;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 0.65rem;
+      }
+
+      .record-panel.live {
+        border-color: #a8475a;
+      }
+
+      .record-panel .hint {
+        margin-top: 0;
+      }
+
+      .record-script {
+        margin: 0.65rem 0 0;
+        padding: 0.65rem 0.8rem;
+        background: #0b1830;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        color: var(--text);
+        font-size: 1.05rem;
+        line-height: 1.5;
+      }
+
+      .record-meter {
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+        margin-top: 0.8rem;
+      }
+
+      .record-meter .progress-bar {
+        flex: 1;
+        height: 8px;
+      }
+
+      /* The level follows the microphone every ~40 ms; a long transition lags. */
+      .record-meter .progress-bar-fill {
+        transition: width 0.05s linear;
+      }
+
+      .record-timer {
+        color: var(--muted);
+        font-size: 0.85rem;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .record-panel.live .record-timer {
+        color: var(--text);
+      }
+
+      .record-panel audio {
+        margin-top: 0.8rem;
+      }
+
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 0.35;
+          transform: scale(0.8);
+        }
+      }
+
+      button.live {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+      }
+
+      button.live::before {
+        content: "";
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #ff5f6d;
+        animation: pulse 1.1s ease-in-out infinite;
+      }
+
+      a.button-link {
+        display: inline-block;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 0.55rem 0.8rem;
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      a.button-link:hover {
+        border-color: var(--accent);
+      }
     </style>
   </head>
   <body>
@@ -261,8 +365,30 @@
 
           <label class="file-pick" for="clone-wav">Clone voice from WAV</label>
           <input type="file" id="clone-wav" accept=".wav,audio/wav,audio/x-wav" disabled />
+          <button id="record-voice" type="button" disabled>Record voice</button>
         </div>
         <p id="clone-hint" class="hint"></p>
+
+        <div id="record-panel" class="record-panel" hidden>
+          <p class="hint">
+            Read the text below aloud in your normal voice. 10–30 s of clear speech in a quiet room work best; recording
+            stops after 30 s.
+          </p>
+          <p id="record-script" class="record-script"></p>
+          <div id="record-meter" class="record-meter">
+            <div class="progress-bar"><div class="progress-bar-fill" id="record-level"></div></div>
+            <span id="record-timer" class="record-timer">0:00 / 0:30</span>
+          </div>
+          <audio id="record-preview" controls hidden></audio>
+          <div class="controls-row">
+            <button id="record-start" class="primary" type="button">Start recording</button>
+            <button id="record-stop" type="button" hidden>Stop</button>
+            <button id="record-clone" class="primary" type="button" hidden>Clone this recording</button>
+            <button id="record-retake" type="button" hidden>Retake</button>
+            <button id="record-discard" type="button">Close</button>
+            <a id="record-download" class="button-link" download="voice-prompt.wav" hidden>Download WAV</a>
+          </div>
+        </div>
 
         <div id="progress-wrap" class="progress-wrap">
           <div class="progress-label" id="progress-label">Loading model...</div>
