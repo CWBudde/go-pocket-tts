@@ -619,3 +619,25 @@ func TestGenerateAudio_FadesInChunkStart(t *testing.T) {
 		t.Errorf("pcm[60] = %v, want %v", pcm[60], want)
 	}
 }
+
+// TestGenerateAudio_FadeFollowsManifestSampleRate: the fade-in lasts 5 ms at
+// the sample rate the manifest records (16000/200 = 80 samples); manifests
+// without one keep 24 kHz (TestGenerateAudio_FadesInChunkStart).
+func TestGenerateAudio_FadeFollowsManifestSampleRate(t *testing.T) {
+	e := fakeGenerateEngine(t, 3)
+	e.sm = sessionManagerWithFields(t, `"sample_rate": 16000,`)
+
+	pcm, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, GenerateConfig{
+		EOSThreshold:       -4.0,
+		MaxSteps:           256,
+		SamplerDecodeSteps: 1,
+	})
+	if err != nil {
+		t.Fatalf("GenerateAudio: %v", err)
+	}
+
+	const n = 80
+	if pcm[n-2] >= 0.1 || pcm[n-1] != 0.1 {
+		t.Errorf("samples %d and %d = %v, %v; want the ramp to end at %d", n-2, n-1, pcm[n-2], pcm[n-1], n-1)
+	}
+}

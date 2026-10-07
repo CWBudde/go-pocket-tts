@@ -187,7 +187,17 @@ func (e *Engine) decodeLatentsToAudio(ctx context.Context, latentFrames []*Tenso
 		return nil, fmt.Errorf("generate: %w", err)
 	}
 
-	audio.ChunkFadeIn(pcm, audio.ExpectedSampleRate)
+	audio.ChunkFadeIn(pcm, e.mimiSampleRate())
 
 	return pcm, nil
+}
+
+// mimiSampleRate is the decoder's output rate from the manifest, or 24 kHz
+// for a manifest that predates the field (every upstream config so far).
+func (e *Engine) mimiSampleRate() int {
+	if e.sm != nil && e.sm.SampleRate() > 0 {
+		return e.sm.SampleRate()
+	}
+
+	return audio.ExpectedSampleRate
 }
