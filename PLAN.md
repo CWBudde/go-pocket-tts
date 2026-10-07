@@ -718,6 +718,12 @@ Follow-ups:
       still synthesizes); `PocketTTSKernel.cloneVoice(wav)` runs `DecodePromptWAV` → `PrepareVoicePrompt` →
       `Encode` and returns an `audio_prompt` embedding for `synthesize`. The page gets **Use local checkpoint** (the
       gated `model.safetensors` is picked locally; no HF token in the page) and **Clone voice from WAV**.
+      It also gets a **Record voice** panel (`web/recorder.js`): AudioWorklet microphone capture with the browser's
+      echo cancellation, noise suppression and auto gain off, a 16-bit mono WAV, a reading passage per language
+      (English, German for `german*`), auto-stop at 30 s, and preview / clone / retake / download.
+      Browser run (headless Chrome, fake microphone fed `voice_prompt.wav`, local gated german_24l checkpoint): a
+      6.2 s take cloned to 78 frames as `clone-recording-1`, synthesis with it gave 10.1 s of audio; Synthesize and
+      the model picker are disabled while recording, retake and discard reset the panel.
       `TestNewEngine_GatedCheckpointLoadsVoiceEncoder`, `TestNewEngine_ZeroedEncoderLoadsWithoutCloning`,
       `TestNewEngine_GatedGermanClonesVoice`, `TestNewEngine_UngatedGermanSynthesizesWithoutCloning`,
       `TestCloneVoice_{AudioPromptEmbedding,RejectsBadWAV}`; the encoder
