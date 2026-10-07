@@ -290,7 +290,8 @@ func TestConv1DLongInputMatchesNaive(t *testing.T) {
 				got, err := conv1DWithAsymmetricPadding(
 					mustTensorT(t, in, []int64{c.batch, c.inCh, c.length}),
 					mustTensorT(t, kernel, []int64{c.outCh, c.inCh, c.kSize}),
-					biasT, c.stride, c.leftPad, c.rightPad, c.dilation, 1)
+					biasT, c.stride, c.leftPad, c.rightPad, c.dilation, 1,
+				)
 				if err != nil {
 					t.Fatalf("conv1d: %v", err)
 				}
@@ -399,7 +400,8 @@ func TestConv1DShortInputMatchesNaive(t *testing.T) {
 				got, err := conv1DWithAsymmetricPadding(
 					mustTensorT(t, in, []int64{c.batch, c.inCh, c.length}),
 					mustTensorT(t, kernel, []int64{c.outCh, c.inCh, c.kSize}),
-					mustTensorT(t, bias, []int64{c.outCh}), c.stride, c.leftPad, c.rightPad, c.dilation, 1)
+					mustTensorT(t, bias, []int64{c.outCh}), c.stride, c.leftPad, c.rightPad, c.dilation, 1,
+				)
 				if err != nil {
 					t.Fatalf("conv1d: %v", err)
 				}

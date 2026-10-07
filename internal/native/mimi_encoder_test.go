@@ -71,7 +71,8 @@ func syntheticEncoderTensors(nf, innerDim, condDim int64, zero bool) []safetenso
 
 	for i := range 2 {
 		p := "mimi.encoder_transformer.transformer.layers." + strconv.Itoa(i) + "."
-		ts = append(ts,
+		ts = append(
+			ts,
 			ones(p+"norm1.weight", d), mk(p+"norm1.bias", d),
 			ones(p+"norm2.weight", d), mk(p+"norm2.bias", d),
 			mk(p+"self_attn.in_proj.weight", 3*d, d),
@@ -83,7 +84,8 @@ func syntheticEncoderTensors(nf, innerDim, condDim int64, zero bool) []safetenso
 		)
 	}
 
-	ts = append(ts,
+	ts = append(
+		ts,
 		mk("mimi.downsample.conv.conv.weight", innerDim, d, 32),
 		mk("flow_lm.speaker_proj_weight", condDim, innerDim),
 	)

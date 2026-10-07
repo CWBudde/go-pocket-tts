@@ -246,7 +246,8 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-			h.log.WarnContext(r.Context(), "synthesis timed out",
+			h.log.WarnContext(
+				r.Context(), "synthesis timed out",
 				slog.String("language", req.Language),
 				slog.String("voice", req.Voice),
 				slog.Int("text_len", len(req.Text)),
@@ -258,7 +259,8 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.log.ErrorContext(r.Context(), "synthesis failed",
+		h.log.ErrorContext(
+			r.Context(), "synthesis failed",
 			slog.String("language", req.Language),
 			slog.String("voice", req.Voice),
 			slog.Int("text_len", len(req.Text)),
@@ -270,7 +272,8 @@ func (h *handler) handleTTS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.log.InfoContext(r.Context(), "synthesis complete",
+	h.log.InfoContext(
+		r.Context(), "synthesis complete",
 		slog.String("language", req.Language),
 		slog.String("voice", req.Voice),
 		slog.Int("text_len", len(req.Text)),
@@ -322,7 +325,8 @@ func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
 	// streamChunks handles the synthesis and streaming, and returns the total number of audio samples sent.
 	totalSamples, err := h.streamChunks(ctx, cancel, w, flusher, backend.Streamer, req)
 	if err != nil {
-		h.log.ErrorContext(r.Context(), "streaming synthesis failed",
+		h.log.ErrorContext(
+			r.Context(), "streaming synthesis failed",
 			slog.String("language", req.Language),
 			slog.String("voice", req.Voice),
 			slog.Int("text_len", len(req.Text)),
@@ -333,7 +337,8 @@ func (h *handler) handleTTSStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.log.InfoContext(r.Context(), "streaming synthesis complete",
+	h.log.InfoContext(
+		r.Context(), "streaming synthesis complete",
 		slog.String("language", req.Language),
 		slog.String("voice", req.Voice),
 		slog.Int("text_len", len(req.Text)),

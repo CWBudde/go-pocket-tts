@@ -101,7 +101,8 @@ func TestSynthCLI_DSPChain(t *testing.T) {
 			"--out", out,
 		}
 		if dsp {
-			args = append(args,
+			args = append(
+				args,
 				"--normalize",
 				"--dc-block",
 				"--fade-in-ms", "10",
