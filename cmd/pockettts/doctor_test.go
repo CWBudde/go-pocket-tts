@@ -42,6 +42,44 @@ func TestProbePocketTTSVersion_RealExecutable(t *testing.T) {
 	}
 }
 
+func TestProbePocketTTSVersion_NoVersionFlag(t *testing.T) {
+	// pocket-tts 2.x and 3.x have no --version: typer exits 2 on the unknown
+	// option, while --help works.
+	tmp := t.TempDir()
+	script := filepath.Join(tmp, "pocket-tts")
+
+	body := "#!/bin/sh\nif [ \"$1\" = --help ]; then echo 'Usage: pocket-tts'; exit 0; fi\nexit 2\n"
+
+	writeErr := os.WriteFile(script, []byte(body), 0o755)
+	if writeErr != nil {
+		t.Fatalf("WriteFile: %v", writeErr)
+	}
+
+	got, err := probePocketTTSVersion(script)
+	if err != nil {
+		t.Fatalf("probePocketTTSVersion: %v", err)
+	}
+
+	if !strings.Contains(got, "version unknown") {
+		t.Errorf("version output %q, want it to say the version is unknown", got)
+	}
+}
+
+func TestProbePocketTTSVersion_BrokenExecutable(t *testing.T) {
+	tmp := t.TempDir()
+	script := filepath.Join(tmp, "pocket-tts")
+
+	writeErr := os.WriteFile(script, []byte("#!/bin/sh\nexit 1\n"), 0o755)
+	if writeErr != nil {
+		t.Fatalf("WriteFile: %v", writeErr)
+	}
+
+	_, err := probePocketTTSVersion(script)
+	if err == nil {
+		t.Fatal("expected an error when neither --version nor --help works")
+	}
+}
+
 func TestProbePythonVersion_ReturnsVersion(t *testing.T) {
 	// python3 or python must be present in CI / dev environments.
 	ver, err := probePythonVersion()

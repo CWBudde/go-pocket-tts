@@ -825,15 +825,40 @@ Follow-ups:
       test: 2.x and 3.x have no `pocket-tts --version`, so the install step now prints `pip show`'s version, and
       the test voice `mimi` (never a predefined voice) became `alba`. Locally, with `pip install pocket-tts==3.3.0`
       on `PATH`, the cli-backend synth and serve integration tests pass; the remaining failures are the next item.
-- [ ] Nightly integration job on 3.3.0 (found 2026-10-07, never visible because the job stopped at the install
+- [x] Nightly integration job on 3.3.0 (found 2026-10-07, never visible because the job stopped at the install
       step): `doctor` checks the cli backend with `pocket-tts --version`, which 3.x lacks (`TestDoctorPasses_CLI`);
       3.x streams its WAV to stdout with a placeholder data size of 1e9 samples, which `TestSynthCLI_DSPChain`
       reads as the raw length; and the native/model-verify tests look for `models/` relative to `cmd/pockettts`, so
       they fail rather than skip without downloaded models.
-- [ ] Known caveat: ONNX-backed native parity tests can panic inside `onnxruntime-purego` with
+      (2026-10-07) — `doctor` counts a working `pocket-tts --help` as installed when `--version` fails
+      (`TestProbePocketTTSVersion_NoVersionFlag`). The placeholder was a product bug, not only a test one:
+      `synth --backend cli` and `serve` passed 3.x's bytes through, so the WAV claimed 2 GB; the new
+      `audio.FixStreamedWAVSizes` shrinks the RIFF/data sizes to the bytes present on both paths
+      (`TestFixStreamedWAVSizes`, `TestSynthesizeViaCLI_FixesStreamedWAVSizes`,
+      `TestCLISynthesizer_FixesStreamedWAVSizes`; a real 3.3.0 run now gives `data` = 140160 bytes, the bytes
+      present). `TestSynthCLI_DSPChain` also compared two random generations; it runs both at
+      `--tts-arg temperature=0` now (byte-identical WAVs). `TestSynthNative_*` find the ONNX export and tokenizer
+      from the repo root and skip without them; `TestModelVerify_PassesWithValidONNX` verified the default
+      native-safetensors model and now passes `--backend native-onnx`. A CI-like run (models-free worktree,
+      `pip install pocket-tts==3.3.0`, `POCKETTTS_TEST_VOICE=alba`, Go 1.25.9, no ORT) passes every
+      `cmd/pockettts` test.
+- [x] Known caveat: ONNX-backed native parity tests can panic inside `onnxruntime-purego` with
       `runtime.AddCleanup`; `go test ./... -skip 'TestParity_.*_VsONNX'` is the workaround. Re-check this on Go 1.27.
       (2026-10-07) — Go 1.26.8 panics in every ORT tensor creation too ("cleanup function closes over ptr", an
       unconditional check in `runtime.AddCleanup`); `GOTOOLCHAIN=go1.25.9` runs the ORT tests.
+      (2026-10-07) — fixed upstream (onnxruntime-purego PR #11); bumped to `8db8bd7`. The ORT integration tests
+      (`go test -tags integration ./internal/onnx/... ./internal/native/ ./internal/model/ -run 'VsONNX|Integration'`)
+      run without a panic on Go 1.26.8 and 1.27.1; no workaround needed.
+- [ ] `TestPythonParity/english_2026-01/voice_prefill_step` fails instead of skipping when the local
+      `voices/alba.safetensors` (gitignored, downloaded) is an upstream model-state file while the fixture expects
+      the flat `audio_prompt` embedding ("voice file contains upstream model state"). Hidden until 2026-10-07
+      because the ORT panic aborted the `internal/native` test binary first. (Found 2026-10-07.)
+- [ ] `TestHasMimiEncoderWeights_UngatedCheckpoints` assumes `models/tts_b6369a24.safetensors` is the ungated
+      checkpoint and fails when the gated weights were downloaded to that path. (Found 2026-10-07.)
+- [ ] `internal/model/testdata/identity_float32.onnx` (86 bytes) is caught by `.gitignore`'s `*.onnx`, while its
+      `identity_manifest.json` is tracked: on a fresh clone with ONNX Runtime installed, the identity-model tests
+      (`TestRunnerIntegration_*`, `TestEngineIntegration_LoadAndRun`, `TestVerifyONNXIntegration`) fail. CI has
+      no ORT, so they skip there. (Found 2026-10-07.)
 
 ## Phase 9 — ONNX Backend
 
@@ -850,6 +875,8 @@ Follow-ups:
       85 + 121 frames on native-onnx against 77 + 58 on native (121 is the step estimate, so EOS never fired), and
       at 0.7 one sentence takes 52–125 frames against 51–63. The graphs track upstream torch for 150 steps, so the
       difference is in the Go ONNX generation loop (sampling, EOS rule, voice handling). (Found 2026-10-07.)
+      (2026-10-07) — this also makes `TestGenerateAudioIntegration_ProducesPlausibleAudio` (temperature 0.7,
+      `marius`) flaky: 2 of 3 runs on Go 1.26.8 hit all 256 steps (20.48 s > the 5 s bound).
 - [ ] `mimi_encoder` returns 13 frames for any prompt length (the 1 s trace input): upstream's conv padding
       (`get_extra_padding_for_conv1d`, `math.ceil`) is frozen at trace time. Already so in the 2.1.0 export; it
       affects `export-voice` on native-onnx only. (Found 2026-10-07.)

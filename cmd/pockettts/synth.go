@@ -274,7 +274,7 @@ func synthesizeViaCLI(ctx context.Context, opts synthCLIOptions) ([]byte, error)
 		return nil, err
 	}
 
-	return out.Bytes(), nil
+	return audio.FixStreamedWAVSizes(out.Bytes()), nil
 }
 
 func buildSynthesisChunks(input string, chunk bool, maxChunkChars int) ([]string, error) {

@@ -234,7 +234,8 @@ func syntheticEncoderCheckpoint(t *testing.T, zeroed bool) []byte {
 
 	for i := range 2 {
 		p := "mimi.encoder_transformer.transformer.layers." + strconv.Itoa(i) + "."
-		ts = append(ts,
+		ts = append(
+			ts,
 			ones(p+"norm1.weight", d), mk(p+"norm1.bias", d),
 			ones(p+"norm2.weight", d), mk(p+"norm2.bias", d),
 			mk(p+"self_attn.in_proj.weight", 3*d, d),
@@ -246,7 +247,8 @@ func syntheticEncoderCheckpoint(t *testing.T, zeroed bool) []byte {
 		)
 	}
 
-	ts = append(ts,
+	ts = append(
+		ts,
 		mk("mimi.downsample.conv.conv.weight", syntheticInnerDim, d, 32),
 		mk("flow_lm.speaker_proj_weight", syntheticCondDim, syntheticInnerDim),
 	)

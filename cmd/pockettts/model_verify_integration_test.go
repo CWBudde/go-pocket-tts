@@ -71,7 +71,7 @@ func TestModelVerify_PassesWithValidONNX(t *testing.T) {
 		t.Skipf("identity_manifest.json fixture not found at %q: %v", manifest, err)
 	}
 
-	out, err := runModelVerifyCapture(t, "--manifest", manifest)
+	out, err := runModelVerifyCapture(t, "--backend", "native-onnx", "--manifest", manifest)
 	if err != nil {
 		// ORT/IR version mismatch is a known compatibility issue — skip rather than fail.
 		if strings.Contains(out, "Unsupported model IR version") || strings.Contains(out, "IR version") {

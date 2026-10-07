@@ -155,13 +155,20 @@ func newDoctorConfig(cfg config.Config, backend string) doctor.Config {
 }
 
 // probePocketTTSVersion runs `pocket-tts --version` and returns its output.
+// pocket-tts 2.x and 3.x have no --version, so when it fails a working
+// `pocket-tts --help` still counts as installed.
 func probePocketTTSVersion(exe string) (string, error) {
 	out, err := exec.CommandContext(context.Background(), exe, "--version").Output()
-	if err != nil {
-		return "", fmt.Errorf("%s --version failed: %w", exe, err)
+	if err == nil {
+		return strings.TrimSpace(string(out)), nil
 	}
 
-	return strings.TrimSpace(string(out)), nil
+	helpErr := exec.CommandContext(context.Background(), exe, "--help").Run()
+	if helpErr != nil {
+		return "", fmt.Errorf("%s --version failed: %w; --help failed: %w", exe, err, helpErr)
+	}
+
+	return "installed (version unknown, no --version)", nil
 }
 
 // probePythonVersion tries python3 then python and returns the version string.

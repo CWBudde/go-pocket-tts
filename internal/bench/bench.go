@@ -179,7 +179,8 @@ func FormatTable(runs []RunResult, stats Stats, w io.Writer) {
 			cold = "yes"
 		}
 
-		fmt.Fprintf(sb, "%-5d  %-5s  %10.1f  %12.1f  %8.3f\n",
+		fmt.Fprintf(
+			sb, "%-5d  %-5s  %10.1f  %12.1f  %8.3f\n",
 			r.Index+1,
 			cold,
 			float64(r.Duration.Milliseconds()),

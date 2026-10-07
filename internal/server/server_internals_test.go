@@ -1,7 +1,9 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -535,5 +537,47 @@ func TestNativeSynthesizer_AppendsTrailingSilence(t *testing.T) {
 		if s != 0 {
 			t.Fatalf("sample %d of the tail = %v; want silence", i, s)
 		}
+	}
+}
+
+// --- cliSynthesizer ---
+
+func TestCLISynthesizer_FixesStreamedWAVSizes(t *testing.T) {
+	// pocket-tts 3.x streams its WAV to stdout with a header that declares
+	// 1e9 frames whatever follows.
+	var buf bytes.Buffer
+
+	_, _ = audio.WriteWAVHeaderStreaming(&buf)
+	_, _ = audio.WritePCM16Samples(&buf, []float32{0.1, -0.1, 0.2})
+
+	wav := buf.Bytes()
+	binary.LittleEndian.PutUint32(wav[4:8], 36+2_000_000_000)
+	binary.LittleEndian.PutUint32(wav[40:44], 2_000_000_000)
+
+	dir := t.TempDir()
+	wavFile := filepath.Join(dir, "out.wav")
+	exe := filepath.Join(dir, "pocket-tts")
+
+	err := os.WriteFile(wavFile, wav, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = os.WriteFile(exe, []byte("#!/bin/sh\ncat "+wavFile+"\n"), 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := (&cliSynthesizer{executablePath: exe}).Synthesize(context.Background(), "Hello.", "")
+	if err != nil {
+		t.Fatalf("Synthesize: %v", err)
+	}
+
+	if got, want := binary.LittleEndian.Uint32(data[40:44]), uint32(len(data)-44); got != want {
+		t.Errorf("data chunk size %d, want %d (the bytes present)", got, want)
+	}
+
+	if got, want := binary.LittleEndian.Uint32(data[4:8]), uint32(len(data)-8); got != want {
+		t.Errorf("RIFF size %d, want %d", got, want)
 	}
 }

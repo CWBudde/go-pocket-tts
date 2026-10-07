@@ -84,7 +84,8 @@ func TestDoctorPasses_Native(t *testing.T) {
 	modelPath, tokPath := requireNativeSafetensorsAssets(t)
 	manifestPath := requireNativeSafetensorsVoices(t)
 
-	out, err := runDoctorCapture(t,
+	out, err := runDoctorCapture(
+		t,
 		"--backend", "native",
 		"--paths-model-path", modelPath,
 		"--paths-tokenizer-model", tokPath,
@@ -147,7 +148,8 @@ func TestDoctorFails_MissingVoiceFile(t *testing.T) {
 		t.Fatalf("WriteFile manifest: %v", err)
 	}
 
-	out, err := runDoctorCapture(t,
+	out, err := runDoctorCapture(
+		t,
 		"--backend", "native",
 		"--paths-model-path", modelPath,
 		"--paths-tokenizer-model", tokPath,

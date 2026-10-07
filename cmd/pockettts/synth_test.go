@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -254,5 +255,46 @@ func TestWriteSynthOutput_File(t *testing.T) {
 	_, err = audio.DecodeWAV(got)
 	if err != nil {
 		t.Fatalf("written file is not a valid WAV: %v", err)
+	}
+}
+
+// pocketTTS3WAV returns samples as the WAV pocket-tts 3.x streams to stdout:
+// the header declares 1e9 frames whatever follows.
+func pocketTTS3WAV(t *testing.T, samples []float32) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+
+	_, err := audio.WriteWAVHeaderStreaming(&buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = audio.WritePCM16Samples(&buf, samples)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data := buf.Bytes()
+	binary.LittleEndian.PutUint32(data[4:8], 36+2_000_000_000)
+	binary.LittleEndian.PutUint32(data[40:44], 2_000_000_000)
+
+	return data
+}
+
+func TestSynthesizeViaCLI_FixesStreamedWAVSizes(t *testing.T) {
+	exe := writeFakeTTSScript(t, pocketTTS3WAV(t, []float32{0.1, -0.1, 0.2}))
+
+	data, err := synthesizeViaCLI(context.Background(), synthCLIOptions{ExecutablePath: exe, Text: "Hello."})
+	if err != nil {
+		t.Fatalf("synthesizeViaCLI: %v", err)
+	}
+
+	if got, want := binary.LittleEndian.Uint32(data[40:44]), uint32(len(data)-44); got != want {
+		t.Errorf("data chunk size %d, want %d (the bytes present)", got, want)
+	}
+
+	if got, want := binary.LittleEndian.Uint32(data[4:8]), uint32(len(data)-8); got != want {
+		t.Errorf("RIFF size %d, want %d", got, want)
 	}
 }
