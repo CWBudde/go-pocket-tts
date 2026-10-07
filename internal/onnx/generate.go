@@ -53,9 +53,9 @@ func (e *Engine) generateAudioStateful(ctx context.Context, tokens []int64, cfg 
 
 	// Optional: prepend voice embedding.
 	if cfg.VoiceEmbedding != nil {
-		textEmb, err = ConcatTensorsDim1(cfg.VoiceEmbedding, textEmb)
+		textEmb, err = e.prependVoice(cfg.VoiceEmbedding, textEmb)
 		if err != nil {
-			return nil, fmt.Errorf("generate: prepend voice embedding: %w", err)
+			return nil, err
 		}
 
 		slog.Debug("voice conditioning applied", "voice_frames", cfg.VoiceEmbedding.Shape()[1], "total_frames", textEmb.Shape()[1])
@@ -119,9 +119,9 @@ func (e *Engine) generateAudioStateless(ctx context.Context, tokens []int64, cfg
 	}
 
 	if cfg.VoiceEmbedding != nil {
-		textEmb, err = ConcatTensorsDim1(cfg.VoiceEmbedding, textEmb)
+		textEmb, err = e.prependVoice(cfg.VoiceEmbedding, textEmb)
 		if err != nil {
-			return nil, fmt.Errorf("generate: prepend voice embedding: %w", err)
+			return nil, err
 		}
 
 		slog.Debug("voice conditioning applied", "voice_frames", cfg.VoiceEmbedding.Shape()[1], "total_frames", textEmb.Shape()[1])
@@ -190,6 +190,35 @@ func (e *Engine) decodeLatentsToAudio(ctx context.Context, latentFrames []*Tenso
 	audio.ChunkFadeIn(pcm, e.mimiSampleRate())
 
 	return pcm, nil
+}
+
+// prependVoice puts the voice prompt in front of the text embeddings. With
+// the manifest's bos_before_voice (configs with insert_bos_before_voice) that
+// embedding comes first, like native FlowLM.VoicePrompt and upstream.
+func (e *Engine) prependVoice(voice, textEmb *Tensor) (*Tensor, error) {
+	var bos []float32
+	if e.sm != nil {
+		bos = e.sm.BOSBeforeVoice()
+	}
+
+	if bos != nil {
+		bosEmb, err := NewTensor(bos, []int64{1, 1, int64(len(bos))})
+		if err != nil {
+			return nil, fmt.Errorf("generate: bos_before_voice: %w", err)
+		}
+
+		voice, err = ConcatTensorsDim1(bosEmb, voice)
+		if err != nil {
+			return nil, fmt.Errorf("generate: prepend bos_before_voice: %w", err)
+		}
+	}
+
+	combined, err := ConcatTensorsDim1(voice, textEmb)
+	if err != nil {
+		return nil, fmt.Errorf("generate: prepend voice embedding: %w", err)
+	}
+
+	return combined, nil
 }
 
 // mimiSampleRate is the decoder's output rate from the manifest, or 24 kHz

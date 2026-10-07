@@ -759,7 +759,10 @@ Follow-ups:
       upstream's cached stateless mask is rebuilt per call while tracing. Two bugs from 2.1.0 fixed on the way:
       `flow_lm_step` applied `out_norm` twice, and it wrote the KV cache at `int(offset.item())`, which the trace
       froze at the example offset 8 (so did the prefill `offset` output); the step now appends KV by concatenation
-      (`kv_append_by_concat`, export-time only). The manifest records `sample_rate`. A scratch check against
+      (`kv_append_by_concat`, export-time only). The manifest records `sample_rate` and, for configs with
+      `insert_bos_before_voice`, `bos_before_voice`, which the Go engine puts in front of a voice like native
+      (review; `TestGenerateAudio_PrependsBOSBeforeVoice`, German with a flat `export-voice` embedding matches native
+      over the first 0.8 s, without the BOS it does not). A scratch check against
       upstream torch at non-trace shapes (13 tokens, 5 + 11 steps, offsets 11–13, 20 latents) matches every graph
       but `mimi_encoder` within 6.4e-6 in both languages; teacher-forcing 150 steps after a 165-token prefill
       (offsets 165–314) stays within 2.3e-6 with identical EOS logits. Before the fix the step graph returned 9

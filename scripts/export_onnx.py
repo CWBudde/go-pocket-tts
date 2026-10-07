@@ -580,6 +580,10 @@ def main() -> int:
         "sample_rate": int(model.mimi.sample_rate),
         "graphs": [],
     }
+    if model.flow_lm.insert_bos_before_voice:
+        # Upstream puts this learned embedding in front of a voice prompt; the
+        # graphs never see the voice, so the Go caller prepends it.
+        manifest["bos_before_voice"] = model.flow_lm.bos_before_voice.detach().reshape(-1).tolist()
 
     for spec in specs:
         out_path = export_one(spec, out_dir)

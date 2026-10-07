@@ -2,6 +2,7 @@ package onnx
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -268,5 +269,62 @@ func TestGenerateAudio_WithoutVoiceEmbedding_Unchanged(t *testing.T) {
 
 	if capturedTextEmbShape[1] != 3 {
 		t.Errorf("text_embeddings dim1 = %d, want 3 (no voice prefix)", capturedTextEmbShape[1])
+	}
+}
+
+// TestGenerateAudio_PrependsBOSBeforeVoice: a manifest with bos_before_voice
+// (configs with insert_bos_before_voice) puts it in front of the voice
+// frames, like native FlowLM.VoicePrompt, on both generation paths; without
+// it the voice is prepended as is (TestGenerateAudio_WithVoiceEmbedding_PrependsToTextEmb).
+func TestGenerateAudio_PrependsBOSBeforeVoice(t *testing.T) {
+	bos := make([]string, VoiceEmbeddingDim)
+	for i := range bos {
+		bos[i] = "7"
+	}
+
+	for _, tc := range []struct {
+		name   string
+		engine func(*testing.T, int) *Engine
+		graph  string
+	}{
+		{"stateless", fakeGenerateEngine, "flow_lm_main"},
+		{"stateful", fakeStatefulEngine, "flow_lm_prefill"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := tc.engine(t, 1)
+			e.sm = sessionManagerWithFields(t, `"bos_before_voice": [`+strings.Join(bos, ",")+`],`)
+
+			var got []float32
+
+			inner := e.runners[tc.graph]
+			e.runners[tc.graph] = &fakeRunner{name: tc.graph, fn: func(ctx context.Context, in map[string]*Tensor) (map[string]*Tensor, error) {
+				if got == nil {
+					got = append([]float32(nil), in["text_embeddings"].Data().([]float32)...)
+				}
+
+				return inner.Run(ctx, in)
+			}}
+
+			voice := make([]float32, 2*VoiceEmbeddingDim)
+			for i := range voice {
+				voice[i] = 99
+			}
+
+			voiceEmb, _ := NewTensor(voice, []int64{1, 2, VoiceEmbeddingDim})
+
+			_, err := e.GenerateAudio(context.Background(), []int64{1, 2, 3}, GenerateConfig{
+				EOSThreshold: -4.0, MaxSteps: 8, SamplerDecodeSteps: 1, VoiceEmbedding: voiceEmb,
+			})
+			if err != nil {
+				t.Fatalf("GenerateAudio: %v", err)
+			}
+
+			// BOS, 2 voice frames, 3 text frames.
+			const d = VoiceEmbeddingDim
+			if len(got) != 6*d || got[0] != 7 || got[d-1] != 7 || got[d] != 99 || got[3*d-1] != 99 || got[3*d] == 99 {
+				t.Errorf("%s text_embeddings: %d values, frames start %v, %v, %v; want 6 frames: BOS 7, voice 99, text",
+					tc.graph, len(got), got[0], got[d], got[3*d])
+			}
+		})
 	}
 }
