@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,7 +66,8 @@ func newSynthCmd() *cobra.Command {
 		"Synthesis backend override (native-safetensors|native-onnx|cli; native is alias for native-safetensors)",
 	)
 	cmd.Flags().StringVar(&voice, "voice", "", "Voice ID from the voice manifest (--paths-voice-manifest), a voice file path, or a .wav prompt "+
-		"to clone (native backend, gated weights; overrides config)")
+		"to clone (native backend, gated weights); a voice file or prompt may also be an https:// URL or a "+
+		"pinned hf://<org>/<repo>/<path>@<revision>, downloaded once into the user cache (overrides config)")
 	cmd.Flags().BoolVar(&chunk, "chunk", false, "Split text into sentence chunks and synthesize sequentially")
 	cmd.Flags().IntVar(&maxChunkChars, "max-chunk-chars", 220, "Maximum characters per chunk when --chunk is enabled")
 	cmd.Flags().BoolVar(&normalize, "normalize", false, "Peak-normalize output audio")
@@ -118,6 +120,10 @@ var runChunkSynthesis = synthesizeViaCLI
 
 // runNativeSynthesis is a var so tests can stub out the native model.
 var runNativeSynthesis = synthesizeNative
+
+// synthVoiceClient downloads --voice URLs; nil means http.DefaultClient. A
+// var so tests can trust their TLS server.
+var synthVoiceClient *http.Client
 
 func runSynthCommand(ctx context.Context, cfg config.Config, opts synthRunOptions, stdin io.Reader, stdout io.Writer, stderr io.Writer) error {
 	selectedBackend, err := resolveSynthBackend(opts.Backend, cfg.TTS.Backend)
@@ -187,7 +193,9 @@ func synthesizeForBackend(
 			return nil, errors.New("--tts-arg is only supported with --backend cli")
 		}
 
-		resolvedVoice, removeVoice, err := resolveSynthVoice(cfg, selectedBackend, selectedVoice)
+		// --out - writes the WAV to stdout, so downloads report on stderr.
+		resolvedVoice, removeVoice, err := resolveSynthVoice(cfg, selectedBackend, selectedVoice,
+			userCacheVoiceFetcher(synthVoiceClient, stderr))
 		if err != nil {
 			return nil, err
 		}
