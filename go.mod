@@ -7,7 +7,7 @@ require (
 	github.com/cwbudde/go-call-pocket-tts v0.0.0-20260418165153-7767db81cb09
 	github.com/cwbudde/wav v0.0.0-20260207095734-97d781a5fb8a
 	github.com/go-audio/audio v1.0.0
-	github.com/shota3506/onnxruntime-purego v0.0.0-20251207004809-1c85186598a5
+	github.com/shota3506/onnxruntime-purego v0.0.0-20260315223538-8db8bd7424b2
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.19.0
