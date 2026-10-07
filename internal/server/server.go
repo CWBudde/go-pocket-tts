@@ -923,5 +923,5 @@ func (c *cliSynthesizer) Synthesize(ctx context.Context, text, voice string) ([]
 		return nil, err
 	}
 
-	return out.Bytes(), nil
+	return audio.FixStreamedWAVSizes(out.Bytes()), nil
 }
