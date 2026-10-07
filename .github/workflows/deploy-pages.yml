@@ -38,7 +38,7 @@ jobs:
       # The page fetches models, tokenizers and voices from Hugging Face at
       # the revisions web/languages.json pins (go generate ./internal/webmanifest/).
       - name: Copy static web assets
-        run: cp web/index.html web/main.js web/languages.json web/dist/
+        run: cp web/index.html web/main.js web/recorder.js web/languages.json web/dist/
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

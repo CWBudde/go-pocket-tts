@@ -456,7 +456,7 @@ Try it at <https://cwbudde.github.io/go-pocket-tts/>. This repo includes a GitHu
 
 - Go wasm kernel: `web/dist/pockettts-kernel.wasm`
 - Go runtime JS shim: `web/dist/wasm_exec.js`
-- Static app: `web/dist/index.html`, `web/dist/main.js`
+- Static app: `web/dist/index.html`, `web/dist/main.js`, `web/dist/recorder.js`
 - Language catalog: `web/dist/languages.json`
 
 The page does not bundle models or voices. It fetches the selected config's
@@ -490,6 +490,16 @@ from WAV** then encodes a WAV prompt like `export-voice` (cut to 30 s, any rate
 and channel count) and adds it to the voice list for this session. With an
 ungated checkpoint the clone button stays disabled and the page says why.
 
+**Record voice** captures a prompt from the microphone instead: the panel shows
+a reading passage (English, or German for the `german*` configs) with a level
+meter and a timer that stops the recording at 30 s, then offers a preview with
+**Clone this recording**, **Retake**, **Discard** and **Download WAV**. The
+browser asks for microphone permission, and capture needs a secure context
+(`https` or `http://localhost`). Browser echo cancellation, noise suppression
+and auto gain are switched off. Recorded voices appear as
+`clone-recording-N (cloned)`; the downloaded 16-bit mono WAV can be reused offline with
+`pockettts export-voice`.
+
 Run/deploy workflow:
 
 - GitHub Actions -> `Deploy Web App to GitHub Pages` -> `Run workflow`
@@ -503,7 +513,7 @@ server:
 mkdir -p web/dist
 GOOS=js GOARCH=wasm go build -o web/dist/pockettts-kernel.wasm ./cmd/pockettts-wasm
 cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" web/dist/
-cp web/index.html web/main.js web/languages.json web/dist/
+cp web/index.html web/main.js web/recorder.js web/languages.json web/dist/
 python3 -m http.server -d web/dist 8080
 ```
 
