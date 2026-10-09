@@ -14,6 +14,7 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
+	"github.com/cwbudde/go-pocket-tts/internal/nativert"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/cwbudde/go-pocket-tts/internal/text/texttest"
@@ -852,7 +853,7 @@ func TestServiceCheckVoice_AsksTheRuntime(t *testing.T) {
 	}
 
 	// A native runtime without a loaded flow model rejects every voice.
-	svc := &Service{runtime: &nativeSafetensorsRuntime{model: &nativemodel.Model{}}}
+	svc := &Service{runtime: nativert.New(&nativemodel.Model{})}
 
 	err = svc.CheckVoice(voice)
 	if err == nil || !strings.Contains(err.Error(), "flow_lm") {

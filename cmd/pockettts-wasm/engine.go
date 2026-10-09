@@ -7,6 +7,7 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
+	"github.com/cwbudde/go-pocket-tts/internal/nativert"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
 	"github.com/cwbudde/go-pocket-tts/internal/tts"
@@ -91,7 +92,7 @@ func newEngine(modelSafetensors, tokenizerBytes []byte, name string, emit emitFu
 	}
 
 	return &nativeEngine{
-		runtime:   tts.NewNativeSafetensorsRuntime(model),
+		runtime:   nativert.New(model),
 		tokenizer: tok,
 		name:      name,
 		model:     mc,

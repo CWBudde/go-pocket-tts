@@ -3,32 +3,15 @@ package tts
 import (
 	"context"
 
-	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
+	"github.com/cwbudde/go-pocket-tts/internal/nativert"
 )
 
 // VoiceEmbedding is a runtime-neutral voice conditioning tensor payload.
 // Shape is expected to be [1, T, D] when present.
-type VoiceEmbedding struct {
-	Data  []float32
-	Shape []int64
-}
+type VoiceEmbedding = nativert.VoiceEmbedding
 
 // RuntimeGenerateConfig controls a single chunk generation call.
-type RuntimeGenerateConfig struct {
-	Temperature        float64
-	EOSThreshold       float64
-	MaxSteps           int
-	EstimatedMaxSteps  int
-	SamplerDecodeSteps int
-	FramesAfterEOS     int
-	MimiStepsPerLatent int
-	MimiSequenceLength int
-	VoiceEmbedding     *VoiceEmbedding
-	VoiceModelState    *safetensors.VoiceModelState
-	// StepCallback is called after each AR step with the 1-based step index
-	// and the configured maxSteps ceiling. It may be nil.
-	StepCallback func(step, maxSteps int)
-}
+type RuntimeGenerateConfig = nativert.Config
 
 // PCMChunk is a chunk of PCM audio produced during streaming synthesis.
 type PCMChunk struct {

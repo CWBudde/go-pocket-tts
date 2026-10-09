@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"math"
 
 	"github.com/cwbudde/wav"
 )
@@ -96,26 +95,10 @@ func DecodePromptWAV(data []byte) ([]float32, int, error) {
 		return nil, 0, fmt.Errorf("reading PCM data: %w", err)
 	}
 
-	interleaved := buf.Data
-	if is8Bit {
-		// cwbudde/wav centres 8-bit samples on 127.5; recover the byte and
-		// re-centre it on 128 so that silence (128) decodes to exactly 0.
-		interleaved = make([]float32, len(buf.Data))
-		for i, v := range buf.Data {
-			b := math.Round(float64(v)*pcm8Half + pcm8Half)
-			interleaved[i] = float32((b - pcm8Center) / pcm8Center)
-		}
-	}
-
-	return downmixMean(interleaved, int(dec.NumChans)), int(dec.SampleRate), nil
+	// cwbudde/wav (v0.1.4+) already scales unsigned 8-bit PCM like
+	// libsndfile, and so upstream, as (b−128)/128.
+	return downmixMean(buf.Data, int(dec.NumChans)), int(dec.SampleRate), nil
 }
-
-// cwbudde/wav decodes unsigned 8-bit PCM as (b−127.5)/127.5; libsndfile, and
-// so upstream, as (b−128)/128.
-const (
-	pcm8Half   = 127.5
-	pcm8Center = 128.0
-)
 
 // downmixMean averages interleaved frames of channels samples into mono, like
 // numpy's mean(axis=1) on float32 data; mono input is returned as is.
