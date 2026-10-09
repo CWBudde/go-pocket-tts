@@ -299,7 +299,6 @@ func (r *Runtime) runARLoop(
 		}
 
 		frame, isEOS, err := r.sampleStep(sample, flowState, sequenceFrame, decodeSteps, cfg)
-
 		if err != nil {
 			return nil, fmt.Errorf("generate step %d: %w", step, err)
 		}

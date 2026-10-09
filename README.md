@@ -78,6 +78,40 @@ synthesizes `hello-world.wav`.
 ls -lh hello.wav
 ```
 
+## Go library
+
+The module root is an importable package for programs that synthesize
+speech themselves. It builds for `js/wasm` and pulls in neither ONNX Runtime
+nor the network:
+
+```go
+import (
+	pockettts "github.com/cwbudde/go-pocket-tts"
+	"github.com/cwbudde/go-pocket-tts/download"
+)
+
+m, _ := pockettts.LookupModel("german")
+_ = download.Model(ctx, "models", m, []string{"juergen"}, download.Options{})
+
+engine, _ := pockettts.LoadDir("models", "german")
+defer engine.Close()
+
+voice, _ := pockettts.LoadVoiceDir("models", "german", "juergen")
+opts := engine.DefaultOptions()
+opts.Seed = 42
+pcm, _ := engine.Synthesize(ctx, "Guten Tag.", voice, opts) // mono float32 at 24 kHz
+```
+
+- `LoadCatalog`/`LookupModel` list the six model configs with revision-pinned
+  Hugging Face URLs, SHA-256 checksums, sizes and the path of each file below
+  a model root. `go generate .` regenerates `catalog.json`; an offline test
+  checks it against the pinned download manifests.
+- `Load(name, weights, tokenizer)` builds an engine from bytes, e.g. fetched
+  in a browser; `LoadDir` reads the layout `download.Model` writes.
+- `Synthesize` splits the text into sentence chunks, reports progress per
+  frame and checks its context before every frame. A seed reproduces its
+  audio for the same build, platform and `SetWorkers` count.
+
 ## Requirements
 
 ### Runtime (no Python required)
@@ -623,6 +657,12 @@ just test
 just lint
 just ci
 ```
+
+## License
+
+The code is MIT-licensed (see [LICENSE](LICENSE)). The PocketTTS model
+weights and predefined voices from Kyutai are licensed CC-BY-4.0 and are
+downloaded at runtime, not distributed with this repository.
 
 ## Acknowledgements
 
