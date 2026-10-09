@@ -14,6 +14,7 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/audio"
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
+	"github.com/cwbudde/go-pocket-tts/internal/nativert"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 	textpkg "github.com/cwbudde/go-pocket-tts/internal/text"
@@ -110,7 +111,7 @@ func Main() {
 	}
 	defer model.Close()
 
-	rt := tts.NewNativeSafetensorsRuntime(model)
+	rt := nativert.New(model)
 	defer rt.Close()
 
 	ctx := context.Background()

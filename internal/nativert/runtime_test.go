@@ -1,4 +1,4 @@
-package tts
+package nativert
 
 import (
 	"context"
@@ -17,15 +17,10 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
-func TestNewNativeSafetensorsRuntime(t *testing.T) {
-	rt := NewNativeSafetensorsRuntime(&nativemodel.Model{})
-	if rt == nil {
-		t.Fatal("NewNativeSafetensorsRuntime returned nil")
-	}
-
-	impl, ok := rt.(*nativeSafetensorsRuntime)
-	if !ok {
-		t.Fatalf("runtime type = %T, want *nativeSafetensorsRuntime", rt)
+func TestNew(t *testing.T) {
+	impl := New(&nativemodel.Model{})
+	if impl == nil {
+		t.Fatal("New returned nil")
 	}
 
 	if impl.rng == nil {
@@ -35,36 +30,36 @@ func TestNewNativeSafetensorsRuntime(t *testing.T) {
 
 func TestNativeSafetensorsRuntimeGenerateAudio_Guards(t *testing.T) {
 	t.Run("nil receiver", func(t *testing.T) {
-		var rt *nativeSafetensorsRuntime
+		var rt *Runtime
 
-		_, err := rt.GenerateAudio(context.Background(), []int64{1}, RuntimeGenerateConfig{})
+		_, err := rt.GenerateAudio(context.Background(), []int64{1}, Config{})
 		if err == nil || !strings.Contains(err.Error(), "runtime unavailable") {
 			t.Fatalf("expected runtime unavailable error, got: %v", err)
 		}
 	})
 
 	t.Run("nil model", func(t *testing.T) {
-		rt := &nativeSafetensorsRuntime{}
+		rt := &Runtime{}
 
-		_, err := rt.GenerateAudio(context.Background(), []int64{1}, RuntimeGenerateConfig{})
+		_, err := rt.GenerateAudio(context.Background(), []int64{1}, Config{})
 		if err == nil || !strings.Contains(err.Error(), "runtime unavailable") {
 			t.Fatalf("expected runtime unavailable error, got: %v", err)
 		}
 	})
 
 	t.Run("empty tokens", func(t *testing.T) {
-		rt := &nativeSafetensorsRuntime{model: &nativemodel.Model{}}
+		rt := &Runtime{model: &nativemodel.Model{}}
 
-		_, err := rt.GenerateAudio(context.Background(), nil, RuntimeGenerateConfig{})
+		_, err := rt.GenerateAudio(context.Background(), nil, Config{})
 		if err == nil || !strings.Contains(err.Error(), "must not be empty") {
 			t.Fatalf("expected empty token error, got: %v", err)
 		}
 	})
 
 	t.Run("model text embedding error is wrapped", func(t *testing.T) {
-		rt := &nativeSafetensorsRuntime{model: &nativemodel.Model{}}
+		rt := &Runtime{model: &nativemodel.Model{}}
 
-		_, err := rt.GenerateAudio(context.Background(), []int64{1, 2, 3}, RuntimeGenerateConfig{})
+		_, err := rt.GenerateAudio(context.Background(), []int64{1, 2, 3}, Config{})
 		if err == nil {
 			t.Fatal("expected non-nil error")
 		}
@@ -76,13 +71,13 @@ func TestNativeSafetensorsRuntimeGenerateAudio_Guards(t *testing.T) {
 }
 
 func TestNativeSafetensorsRuntimeClose_NoPanic(_ *testing.T) {
-	var nilRuntime *nativeSafetensorsRuntime
+	var nilRuntime *Runtime
 	nilRuntime.Close()
 
-	rt := &nativeSafetensorsRuntime{}
+	rt := &Runtime{}
 	rt.Close()
 
-	rt = &nativeSafetensorsRuntime{model: &nativemodel.Model{}}
+	rt = &Runtime{model: &nativemodel.Model{}}
 	rt.Close()
 }
 
@@ -183,14 +178,14 @@ func TestPrepareFlowState_BOSBeforeVoice_RealGermanCheckpoint(t *testing.T) {
 			}
 			defer m.Close()
 
-			rt := &nativeSafetensorsRuntime{model: m}
+			rt := &Runtime{model: m}
 
 			text, err := m.TextEmbeddings([]int64{1, 2, 3})
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			state, err := rt.prepareFlowState(text, RuntimeGenerateConfig{VoiceEmbedding: voice})
+			state, err := rt.prepareFlowState(text, Config{VoiceEmbedding: voice})
 			if err != nil {
 				t.Fatalf("prepareFlowState: %v", err)
 			}
@@ -232,9 +227,9 @@ func TestRunARLoop_EOSStopRule(t *testing.T) {
 		{0, 6},
 	} {
 		sample, calls := fakeSampler(t, 2, nil)
-		rt := &nativeSafetensorsRuntime{sample: sample}
+		rt := &Runtime{sample: sample}
 
-		frames, err := rt.runARLoop(context.Background(), nil, nil, 256, 1, RuntimeGenerateConfig{FramesAfterEOS: tc.framesAfter})
+		frames, err := rt.runARLoop(context.Background(), nil, nil, 256, 1, Config{FramesAfterEOS: tc.framesAfter})
 		if err != nil {
 			t.Fatalf("runARLoop: %v", err)
 		}
@@ -257,9 +252,9 @@ func TestRunARLoop_CancelStopsWithinOneStep(t *testing.T) {
 			cancel()
 		}
 	})
-	rt := &nativeSafetensorsRuntime{sample: sample}
+	rt := &Runtime{sample: sample}
 
-	_, err := rt.runARLoop(ctx, nil, nil, 256, 1, RuntimeGenerateConfig{})
+	_, err := rt.runARLoop(ctx, nil, nil, 256, 1, Config{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("runARLoop err = %v, want context.Canceled", err)
 	}
@@ -271,7 +266,7 @@ func TestRunARLoop_CancelStopsWithinOneStep(t *testing.T) {
 }
 
 func TestGenerateAudio_FadesInChunkStart_RealCheckpoint(t *testing.T) {
-	modelPath, _ := requireNativeSafetensorsAssetsForUnit(t)
+	modelPath := requireCheckpoint(t)
 
 	m, err := nativemodel.LoadModelFromSafetensors(modelPath, nativemodel.DefaultConfig())
 	if err != nil {
@@ -281,9 +276,9 @@ func TestGenerateAudio_FadesInChunkStart_RealCheckpoint(t *testing.T) {
 
 	// Seven zero latents with EOS on the last: 6 frames are kept.
 	sample, _ := fakeSampler(t, genloop.MinFramesBeforeEOS, nil)
-	rt := &nativeSafetensorsRuntime{model: m, sample: sample}
+	rt := &Runtime{model: m, sample: sample}
 
-	pcm, err := rt.GenerateAudio(context.Background(), []int64{1, 2, 3}, RuntimeGenerateConfig{MaxSteps: 20})
+	pcm, err := rt.GenerateAudio(context.Background(), []int64{1, 2, 3}, Config{MaxSteps: 20})
 	if err != nil {
 		t.Fatalf("GenerateAudio: %v", err)
 	}
@@ -317,7 +312,7 @@ func TestGenerateAudio_FadesInChunkStart_RealCheckpoint(t *testing.T) {
 	}
 }
 
-// checkVoice primes the real model with the voice alone: a model-state voice
+// CheckVoice primes the real model with the voice alone: a model-state voice
 // missing one of the model's layers and an embedding of the wrong width fail,
 // the shipped voice and a 1024-wide embedding pass.
 func TestCheckVoice_RealGermanCheckpoint(t *testing.T) {
@@ -342,26 +337,26 @@ func TestCheckVoice_RealGermanCheckpoint(t *testing.T) {
 	}
 	defer m.Close()
 
-	rt := &nativeSafetensorsRuntime{model: m}
+	rt := &Runtime{model: m}
 
 	state, err := safetensors.LoadVoiceModelState(voicePath)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = rt.checkVoice(voiceConditioning{modelState: state})
+	err = rt.CheckVoice(nil, state)
 	if err != nil {
-		t.Errorf("checkVoice(juergen) = %v; want nil", err)
+		t.Errorf("CheckVoice(juergen) = %v; want nil", err)
 	}
 
-	err = rt.checkVoice(voiceConditioning{embedding: &VoiceEmbedding{Data: make([]float32, 2*1024), Shape: []int64{1, 2, 1024}}})
+	err = rt.CheckVoice(&VoiceEmbedding{Data: make([]float32, 2*1024), Shape: []int64{1, 2, 1024}}, nil)
 	if err != nil {
-		t.Errorf("checkVoice(1024-wide embedding) = %v; want nil", err)
+		t.Errorf("CheckVoice(1024-wide embedding) = %v; want nil", err)
 	}
 
-	err = rt.checkVoice(voiceConditioning{embedding: &VoiceEmbedding{Data: make([]float32, 2*512), Shape: []int64{1, 2, 512}}})
+	err = rt.CheckVoice(&VoiceEmbedding{Data: make([]float32, 2*512), Shape: []int64{1, 2, 512}}, nil)
 	if err == nil {
-		t.Error("checkVoice(512-wide embedding) = nil; want a width error")
+		t.Error("CheckVoice(512-wide embedding) = nil; want a width error")
 	}
 
 	// A voice state for a model with fewer layers lacks the last layer's module.
@@ -372,8 +367,23 @@ func TestCheckVoice_RealGermanCheckpoint(t *testing.T) {
 
 	delete(state.Modules, last)
 
-	err = rt.checkVoice(voiceConditioning{modelState: state})
+	err = rt.CheckVoice(nil, state)
 	if err == nil || !strings.Contains(err.Error(), last) {
-		t.Errorf("checkVoice(state without %s) = %v; want a missing-module error", last, err)
+		t.Errorf("CheckVoice(state without %s) = %v; want a missing-module error", last, err)
 	}
+}
+
+// requireCheckpoint returns the flat english checkpoint, skipping the test
+// when it has not been downloaded.
+func requireCheckpoint(t testing.TB) string {
+	t.Helper()
+
+	modelPath := filepath.Join("..", "..", "models", "tts_b6369a24.safetensors")
+
+	_, err := os.Stat(modelPath)
+	if err != nil {
+		t.Skipf("native safetensors checkpoint unavailable: %v", err)
+	}
+
+	return modelPath
 }

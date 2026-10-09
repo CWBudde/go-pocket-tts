@@ -12,6 +12,7 @@ import (
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
+	"github.com/cwbudde/go-pocket-tts/internal/nativert"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
 	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
@@ -86,7 +87,7 @@ func NewService(cfg config.Config) (*Service, error) {
 
 		slog.Info("loaded safetensors model", "path", modelPath)
 
-		rt = newNativeSafetensorsRuntime(model)
+		rt = nativert.New(model)
 
 		slog.Info("created native runtime", "backend", config.BackendNative)
 	case config.BackendNativeONNX:
@@ -246,7 +247,7 @@ func CheckVoiceFile(voicePath string) error {
 // voiceChecker is implemented by runtimes that can check voice conditioning
 // against their loaded model without generating audio.
 type voiceChecker interface {
-	checkVoice(v voiceConditioning) error
+	CheckVoice(embedding *VoiceEmbedding, modelState *safetensors.VoiceModelState) error
 }
 
 // CheckVoice loads the voice at voicePath like CheckVoiceFile and then primes
@@ -269,7 +270,7 @@ func (s *Service) CheckVoice(voicePath string) error {
 		return nil
 	}
 
-	return checker.checkVoice(v)
+	return checker.CheckVoice(v.embedding, v.modelState)
 }
 
 func loadVoiceConditioning(voicePath string) (voiceConditioning, error) {
