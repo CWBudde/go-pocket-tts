@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cwbudde/algo-tensor/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/audio"
 	"github.com/cwbudde/go-pocket-tts/internal/genloop"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
-	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/cwbudde/go-pocket-tts/internal/text"
 )

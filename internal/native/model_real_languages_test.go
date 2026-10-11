@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cwbudde/algo-tensor/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
-	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 

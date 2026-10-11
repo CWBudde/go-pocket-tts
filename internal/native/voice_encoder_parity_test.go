@@ -9,10 +9,10 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/cwbudde/algo-tensor/ops"
+	"github.com/cwbudde/algo-tensor/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/audio"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
-	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
-	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 

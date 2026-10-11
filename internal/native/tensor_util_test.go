@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/algo-tensor/tensor"
 )
 
 func TestMulLastDimInPlaceMatchesBroadcastMul(t *testing.T) {

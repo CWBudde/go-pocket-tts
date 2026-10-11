@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cwbudde/algo-tensor/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
-	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 )
 
 // Synthetic flow_net sizes: latent, model channels, condition, frequency

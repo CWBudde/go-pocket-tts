@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/algo-tensor/tensor"
 )
 
 type Linear struct {

@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cwbudde/algo-tensor/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/config"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/onnx"
-	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 )
 
