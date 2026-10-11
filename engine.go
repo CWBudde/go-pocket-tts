@@ -18,7 +18,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"sync/atomic"
+	"sync"
 
 	"github.com/cwbudde/algo-tensor/ops"
 	"github.com/cwbudde/algo-tensor/tensor"
@@ -304,11 +304,20 @@ func (e *Engine) Synthesize(ctx context.Context, input string, voice *Voice, opt
 
 // workersSet records that the worker count was chosen: by SetWorkers, or by
 // the first Load or LoadDir, which sets the default of 1. algo-tensor's own
-// default is GOMAXPROCS.
-var workersSet atomic.Bool
+// default is GOMAXPROCS. workersMu makes every Load wait until the count is
+// set, so no caller synthesizes with the GOMAXPROCS default.
+var (
+	workersMu  sync.Mutex
+	workersSet bool
+)
 
 func defaultWorkers() {
-	if workersSet.CompareAndSwap(false, true) {
+	workersMu.Lock()
+	defer workersMu.Unlock()
+
+	if !workersSet {
+		workersSet = true
+
 		tensor.SetWorkers(1)
 	}
 }
@@ -317,7 +326,10 @@ func defaultWorkers() {
 // summation order follows the worker count, so a seed reproduces its audio
 // only at the same count. It is process-wide; call it before Load.
 func SetWorkers(n int) {
-	workersSet.Store(true)
+	workersMu.Lock()
+	defer workersMu.Unlock()
+
+	workersSet = true
 
 	if n < 1 {
 		n = 1
