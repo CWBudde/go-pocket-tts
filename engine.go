@@ -18,12 +18,13 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sync"
 
+	"github.com/cwbudde/algo-tensor/ops"
+	"github.com/cwbudde/algo-tensor/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/modelcfg"
 	nativemodel "github.com/cwbudde/go-pocket-tts/internal/native"
 	"github.com/cwbudde/go-pocket-tts/internal/nativert"
-	"github.com/cwbudde/go-pocket-tts/internal/runtime/ops"
-	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
 	"github.com/cwbudde/go-pocket-tts/internal/safetensors"
 	"github.com/cwbudde/go-pocket-tts/internal/text"
 	"github.com/cwbudde/go-pocket-tts/internal/tokenizer"
@@ -55,6 +56,8 @@ type Engine struct {
 // tokenizer (a tokenizer.model or tokenizer.json, sniffed from the bytes).
 // The weights are decoded and not retained, so the caller may drop them.
 func Load(name string, weights, tokenizerData []byte) (*Engine, error) {
+	defaultWorkers()
+
 	cfg, tok, err := lookup(name, tokenizerData)
 	if err != nil {
 		return nil, err
@@ -77,6 +80,8 @@ func Load(name string, weights, tokenizerData []byte) (*Engine, error) {
 // LoadDir builds the engine of the catalog model name from the files below
 // root at their catalog paths (the layout the download package writes).
 func LoadDir(root, name string) (*Engine, error) {
+	defaultWorkers()
+
 	m, err := LookupModel(name)
 	if err != nil {
 		return nil, err
@@ -297,10 +302,35 @@ func (e *Engine) Synthesize(ctx context.Context, input string, voice *Voice, opt
 	return pcm, nil
 }
 
+// workersSet records that the worker count was chosen: by SetWorkers, or by
+// the first Load or LoadDir, which sets the default of 1. algo-tensor's own
+// default is GOMAXPROCS. workersMu makes every Load wait until the count is
+// set, so no caller synthesizes with the GOMAXPROCS default.
+var (
+	workersMu  sync.Mutex
+	workersSet bool
+)
+
+func defaultWorkers() {
+	workersMu.Lock()
+	defer workersMu.Unlock()
+
+	if !workersSet {
+		workersSet = true
+
+		tensor.SetWorkers(1)
+	}
+}
+
 // SetWorkers sets the goroutines the native kernels use (default 1). The
 // summation order follows the worker count, so a seed reproduces its audio
 // only at the same count. It is process-wide; call it before Load.
 func SetWorkers(n int) {
+	workersMu.Lock()
+	defer workersMu.Unlock()
+
+	workersSet = true
+
 	if n < 1 {
 		n = 1
 	}

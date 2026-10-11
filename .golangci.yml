@@ -93,11 +93,6 @@ linters:
           - goconst
         path: _test\.go
 
-      # unsafe is intentional in SIMD/tensor code
-      - linters: [gosec]
-        path: internal/runtime/tensor/.*\.go
-        text: "G103:"
-
       # wrapcheck too noisy in internal packages
       - linters: [wrapcheck]
         path: internal/
@@ -124,8 +119,6 @@ linters:
         path: internal/native/
       - linters: [cyclop, gocognit]
         path: internal/onnx/
-      - linters: [cyclop, gocognit]
-        path: internal/runtime/
       - linters: [cyclop, gocognit]
         path: internal/model/
 

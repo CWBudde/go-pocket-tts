@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cwbudde/go-pocket-tts/internal/runtime/tensor"
+	"github.com/cwbudde/algo-tensor/tensor"
 )
 
 func TestLinearForwardIntoMatchesTensorLinear(t *testing.T) {
