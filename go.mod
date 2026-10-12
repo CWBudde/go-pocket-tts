@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/cwbudde/algo-dsp v0.12.4
-	github.com/cwbudde/algo-tensor v0.1.0
+	github.com/cwbudde/algo-tensor v0.3.1
 	github.com/cwbudde/go-call-pocket-tts v0.0.0-20260418165153-7767db81cb09
 	github.com/cwbudde/wav v0.1.4
 	github.com/go-audio/audio v1.0.0
