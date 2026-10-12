@@ -1,8 +1,8 @@
 github.com/cpuguy83/go-md2man/v2 v2.0.4/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
 github.com/cwbudde/algo-dsp v0.12.4 h1:hCN9DyyRt3CWpU/NJrbAHhbfcaOL4521GnjWSCNleas=
 github.com/cwbudde/algo-dsp v0.12.4/go.mod h1:WHf7IHUr1XZza4oQbGAymnuVM+gqbtRbIB7bMjvQHSc=
-github.com/cwbudde/algo-tensor v0.3.1 h1:70euG7eihcz5eph9q6htkYLj2NTw4fotWrRp3bWDRlU=
-github.com/cwbudde/algo-tensor v0.3.1/go.mod h1:ZCYTGL2nJyVC9YVosu1bovnPPFF6bBU3jbq0YCKqXPc=
+github.com/cwbudde/algo-tensor v0.4.0 h1:b/nPSZBRVM/vDrxzRpGopVe3r6isDFGC6qHV8/ymBG8=
+github.com/cwbudde/algo-tensor v0.4.0/go.mod h1:ZCYTGL2nJyVC9YVosu1bovnPPFF6bBU3jbq0YCKqXPc=
 github.com/cwbudde/algo-vecmath v0.1.3 h1:lzXRUI1XP/RLgyCfSPGvAB7HFEU4bjQtZdfel6ZUjjw=
 github.com/cwbudde/algo-vecmath v0.1.3/go.mod h1:lc9dLv41D4RCmhXG/CsIesfJXmONI7pQXcFrkxQSfeQ=
 github.com/cwbudde/go-call-pocket-tts v0.0.0-20260418165153-7767db81cb09 h1:eqfLNQcQsrKhCRCX8vI82zMRGL5Cx5kaF/U4xRGy7PU=
